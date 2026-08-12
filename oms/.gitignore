@@ -1,0 +1,94 @@
+# See https://help.github.com/articles/ignoring-files/ for comprehensive git ignore rules.
+
+# Dependencies & Package Managers
+node_modules/
+/node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Agent Skills Lock Files
+skills-lock.json
+
+# Next.js Build Outputs & Cache
+/.next/
+/out/
+/.turbo/
+
+# Build & Production Distribution Artifacts
+/build/
+/dist/
+
+# Test Coverage & Reports
+/coverage/
+*.lcov
+.nyc_output/
+
+# IDE, Code Editor & Tooling Caches
+.vscode/
+.idea/
+*.swp
+*.swo
+.project
+.classpath
+.settings/
+
+# Local AI Assistant & IDE Caches
+.agents/
+.claude/
+.windsurf/
+.gemini/
+
+# Operating System & Meta Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.pem
+*.key
+
+# Debugging & Error Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+lerna-debug.log*
+
+# Environment Secret Files (Strictly Ignored from Git Version Control)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# Allow committing environment variable example template
+!.env.example
+
+# Deployment Caches & Infrastructure
+.vercel/
+.serverless/
+.aws/
+
+# Temporary Directories & Scratch Files
+/tmp/
+/temp/
+/scratch/
+*.tmp
+*.temp
+
+# TypeScript & Compiler Build Info
+*.tsbuildinfo
+next-env.d.ts
+
+# Generated Code & Database Artifacts
+/app/generated/prisma
+prisma/migrations/*.sql.bak

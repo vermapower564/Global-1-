@@ -1,0 +1,409 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model adcampaign {
+  id             String   @id @default(cuid())
+  name           String
+  platform       String
+  budget         Float
+  adSpend        Float
+  leadsGenerated Int
+  cpl            Float
+  roas           Float
+  ctr            String
+  impressions    String
+  status         String   @default("Active")
+  createdAt      DateTime @default(now())
+}
+
+model attendance {
+  id           String    @id @default(cuid())
+  userId       String
+  date         DateTime  @default(now())
+  checkInTime  DateTime
+  checkOutTime DateTime?
+  hoursWorked  Float     @default(0)
+  status       String    @default("PRESENT")
+  createdAt    DateTime  @default(now())
+  user         user      @relation(fields: [userId], references: [id], map: "Attendance_userId_fkey")
+
+  @@index([userId], map: "Attendance_userId_fkey")
+}
+
+model auditlog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  details   String   @db.Text
+  ipAddress String?
+  timestamp DateTime @default(now())
+  user      user?    @relation(fields: [userId], references: [id], map: "AuditLog_userId_fkey")
+
+  @@index([userId], map: "AuditLog_userId_fkey")
+}
+
+model client {
+  id            String   @id @default(cuid())
+  companyName   String   @unique(map: "Client_companyName_key")
+  contactPerson String
+  email         String   @unique(map: "Client_email_key")
+  phone         String
+  industry      String
+  totalBilled   Float    @default(0)
+  createdAt     DateTime @default(now())
+}
+
+model completedprojecthistory {
+  id                String   @id @default(cuid())
+  projectId         String   @unique(map: "CompletedProjectHistory_projectId_key")
+  completionDate    DateTime
+  rating            Int      @default(5)
+  lastContactedNote String?  @db.Text
+  codeSnippet       String?  @db.Text
+  createdAt         DateTime @default(now())
+  project           project  @relation(fields: [projectId], references: [id], map: "CompletedProjectHistory_projectId_fkey")
+}
+
+model dailyworkupdate {
+  id             String                   @id @default(cuid())
+  userId         String
+  date           DateTime                 @default(now())
+  hoursWorked    Float
+  description    String                   @db.Text
+  achievements   String?                  @db.Text
+  blockers       String?                  @db.Text
+  tomorrowPlan   String?                  @db.Text
+  status         dailyworkupdate_status   @default(PENDING)
+  rating         Int?
+  managerRemarks String?                  @db.Text
+  clientName     String?
+  driveLinks     String?                  @db.Text
+  endTime        String?
+  gitCommits     String?                  @db.Text
+  priority       dailyworkupdate_priority @default(MEDIUM)
+  projectName    String
+  screenshots    String?                  @db.Text
+  startTime      String?
+  submittedAt    DateTime                 @default(now())
+  user           user                     @relation(fields: [userId], references: [id], map: "DailyWorkUpdate_userId_fkey")
+
+  @@index([userId], map: "DailyWorkUpdate_userId_fkey")
+}
+
+model department {
+  id        String   @id @default(cuid())
+  name      String   @unique(map: "Department_name_key")
+  code      String   @unique(map: "Department_code_key")
+  createdAt DateTime @default(now())
+  budget    Float    @default(0)
+  headName  String?
+  user      user[]
+}
+
+model designasset {
+  id           String   @id @default(cuid())
+  assetTitle   String
+  platform     String
+  format       String
+  designerName String
+  status       String   @default("APPROVED")
+  assetUrl     String
+  createdAt    DateTime @default(now())
+}
+
+model devcommittracker {
+  id            String   @id @default(cuid())
+  userId        String
+  commitHash    String   @unique(map: "DevCommitTracker_commitHash_key")
+  repository    String
+  branch        String   @default("main")
+  linesAdded    Int
+  linesDeleted  Int
+  commitMessage String   @db.Text
+  committedAt   DateTime @default(now())
+  user          user     @relation(fields: [userId], references: [id], map: "DevCommitTracker_userId_fkey")
+
+  @@index([userId], map: "DevCommitTracker_userId_fkey")
+}
+
+model employeeinvitation {
+  id           String    @id @default(cuid())
+  token        String    @unique(map: "EmployeeInvitation_token_key")
+  email        String
+  name         String
+  employeeId   String
+  department   String
+  role         String
+  phone        String?
+  status       String    @default("INVITED")
+  expiresAt    DateTime
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  activatedAt  DateTime?
+}
+
+model financetransaction {
+  id          String   @id @default(cuid())
+  type        String
+  category    String
+  amount      Float
+  description String   @db.Text
+  referenceNo String   @unique(map: "FinanceTransaction_referenceNo_key")
+  date        DateTime @default(now())
+}
+
+model internassignment {
+  id              String        @id @default(cuid())
+  internStudentId String
+  taskTitle       String
+  assignedDate    DateTime      @default(now())
+  dueDate         DateTime
+  githubRepo      String
+  status          String        @default("In Review")
+  grade           String?
+  mentorFeedback  String?       @db.Text
+  createdAt       DateTime      @default(now())
+  internstudent   internstudent @relation(fields: [internStudentId], references: [id], map: "InternAssignment_internStudentId_fkey")
+
+  @@index([internStudentId], map: "InternAssignment_internStudentId_fkey")
+}
+
+model internstudent {
+  id                    String             @id @default(cuid())
+  name                  String
+  university            String
+  degree                String
+  department            String
+  mentorName            String
+  stipend               Float              @default(20000)
+  startDate             DateTime
+  endDate               DateTime
+  daysCompleted         Int                @default(0)
+  totalDays             Int                @default(90)
+  performanceScore      Float              @default(5)
+  completedTasks        Int                @default(0)
+  totalTasks            Int                @default(12)
+  status                String             @default("Active Intern")
+  assignedProject       String
+  githubRepo            String?
+  offeredFullTimeSalary Float              @default(750000)
+  createdAt             DateTime           @default(now())
+  internassignment      internassignment[]
+}
+
+model itasset {
+  id                String   @id @default(cuid())
+  assetName         String
+  category          String
+  serialNumber      String   @unique(map: "ITAsset_serialNumber_key")
+  allocatedToUserId String?
+  status            String   @default("Assigned")
+  createdAt         DateTime @default(now())
+  user              user?    @relation(fields: [allocatedToUserId], references: [id], map: "ITAsset_allocatedToUserId_fkey")
+
+  @@index([allocatedToUserId], map: "ITAsset_allocatedToUserId_fkey")
+}
+
+model leaverequest {
+  id        String   @id @default(cuid())
+  userId    String
+  leaveType String
+  startDate DateTime
+  endDate   DateTime
+  totalDays Int
+  reason    String   @db.Text
+  status    String   @default("Pending")
+  hrRemarks String?  @db.Text
+  appliedAt DateTime @default(now())
+  user      user     @relation(fields: [userId], references: [id], map: "LeaveRequest_userId_fkey")
+
+  @@index([userId], map: "LeaveRequest_userId_fkey")
+}
+
+model payrollapproval {
+  id           String   @id @default(cuid())
+  userId       String
+  employeeName String
+  monthYear    String
+  baseSalary   Float
+  bonus        Float    @default(0)
+  deductions   Float    @default(0)
+  netPayable   Float
+  status       String   @default("APPROVED")
+  bankRefNo    String?
+  approvedAt   DateTime @default(now())
+  user         user     @relation(fields: [userId], references: [id], map: "PayrollApproval_userId_fkey")
+
+  @@index([userId], map: "PayrollApproval_userId_fkey")
+}
+
+model pdfdocument {
+  id           String   @id @default(cuid())
+  documentType String   
+  title        String
+  fileUrl      String   @db.Text
+  relatedId    String?  
+  uploadedBy   String   @default("System Admin")
+  fileSize     String   @default("1.2 MB")
+  status       String   @default("VERIFIED")
+  createdAt    DateTime @default(now())
+}
+
+model project {
+  id                      String                   @id @default(cuid())
+  projectTitle            String
+  clientCompany           String
+  clientContactPerson     String
+  clientEmail             String
+  clientPhone             String
+  startDate               DateTime
+  endDate                 DateTime
+  contractValue           Float
+  status                  String                   @default("IN_PROGRESS")
+  createdAt               DateTime                 @default(now())
+  completedprojecthistory completedprojecthistory?
+  user                    user[]                   @relation("assignedstaffprojects")
+}
+
+model resignation {
+  id                      String   @id @default(cuid())
+  resignationId           String   @unique(map: "Resignation_resignationId_key")
+  userId                  String?
+  employeeId              String
+  employeeName            String
+  email                   String
+  department              String
+  role                    String
+  resignationDate         DateTime @default(now())
+  noticePeriodDays        Int      @default(15)
+  lastWorkingDay          DateTime
+  lastWorkingDayFormatted String
+  reason                  String   @db.Text
+  status                  String   @default("SUBMITTED")
+  submittedAt             DateTime @default(now())
+  user                    user?    @relation(fields: [userId], references: [id], map: "Resignation_userId_fkey")
+
+  @@index([userId], map: "Resignation_userId_fkey")
+}
+
+model salesdeal {
+  id            String   @id @default(cuid())
+  dealTitle     String
+  clientName    String
+  dealValue     Float
+  pipelineStage String   @default("PROSPECT")
+  probability   Int      @default(50)
+  closeDate     DateTime
+  assignedExec  String
+  createdAt     DateTime @default(now())
+}
+
+model seokeyword {
+  id           String   @id @default(cuid())
+  keyword      String   @unique(map: "SeoKeyword_keyword_key")
+  searchVolume String
+  currentRank  Int
+  previousRank Int
+  targetUrl    String
+  status       String   @default("Improving")
+  createdAt    DateTime @default(now())
+}
+
+model smtplog {
+  id        String   @id @default(cuid())
+  recipient String
+  subject   String
+  emailType String
+  status    String   @default("DISPATCHED")
+  messageId String?
+  createdAt DateTime @default(now())
+}
+
+model user {
+  id                 String             @id @default(cuid())
+  employeeId         String             @unique(map: "User_employeeId_key")
+  name               String
+  email              String             @unique(map: "User_email_key")
+  password           String
+  phone              String?
+  role               user_role          @default(DEVELOPER)
+  departmentId       String?
+  managerId          String?
+  joiningDate        DateTime           @default(now())
+  isActive           Boolean            @default(true)
+  isResigned         Boolean            @default(false)
+  noticePeriodDays   Int                @default(15)
+  lastLoginAt        DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  avatarUrl          String?
+  documentsVerified  Boolean            @default(false)
+  emergencyContact   String?
+  isProfileCompleted Boolean            @default(false)
+  salary             Float              @default(0)
+  attendance         attendance[]
+  auditlog           auditlog[]
+  dailyworkupdate    dailyworkupdate[]
+  devcommittracker   devcommittracker[]
+  itasset            itasset[]
+  leaverequest       leaverequest[]
+  payrollapproval    payrollapproval[]
+  resignation        resignation[]
+  department         department?        @relation(fields: [departmentId], references: [id], map: "User_departmentId_fkey")
+  user               user?              @relation("userTouser", fields: [managerId], references: [id], map: "User_managerId_fkey")
+  other_user         user[]             @relation("userTouser")
+  project            project[]          @relation("assignedstaffprojects")
+
+  @@index([departmentId], map: "User_departmentId_fkey")
+  @@index([managerId], map: "User_managerId_fkey")
+}
+
+model videoproductionitem {
+  id            String   @id @default(cuid())
+  projectTitle  String
+  shootLocation String
+  cameraLead    String
+  editorName    String
+  renderStage   String
+  status        String   @default("FINAL_APPROVED")
+  versionUrl    String
+  createdAt     DateTime @default(now())
+}
+
+enum user_role {
+  SUPER_ADMIN
+  DIRECTOR
+  HR
+  FINANCE
+  SALES_MANAGER
+  SALES_EXECUTIVE
+  DIGITAL_MARKETING_MANAGER
+  SEO_EXECUTIVE
+  CONTENT_WRITER
+  GRAPHIC_DESIGNER
+  VIDEO_EDITOR
+  CAMERA_TEAM
+  PROJECT_MANAGER
+  DEVELOPER
+  UI_UX_DESIGNER
+  INTERN
+  CLIENT
+}
+
+enum dailyworkupdate_status {
+  PENDING
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+}
+
+enum dailyworkupdate_priority {
+  HIGH
+  MEDIUM
+  LOW
+}

@@ -1,0 +1,18 @@
+{
+  "name": "global1-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "oms",
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=oms",
+    "build": "npm run build --workspace=oms",
+    "start": "npm run start --workspace=oms",
+    "lint": "npm run lint --workspace=oms",
+    "prisma:push": "npm run prisma:push --workspace=oms",
+    "prisma:generate": "npm run prisma:generate --workspace=oms"
+  }
+}
