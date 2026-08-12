@@ -21,8 +21,8 @@ export async function GET() {
     });
 
     if (dbTxs.length > 0) {
-      const totalRevenue = dbTxs.filter((t) => t.type === "INCOME").reduce((acc, t) => acc + t.amount, 0);
-      const monthlyExpenses = dbTxs.filter((t) => t.type === "EXPENSE").reduce((acc, t) => acc + t.amount, 0);
+      const totalRevenue = dbTxs.filter((t: any) => t.type === "INCOME").reduce((acc: number, t: any) => acc + t.amount, 0);
+      const monthlyExpenses = dbTxs.filter((t: any) => t.type === "EXPENSE").reduce((acc: number, t: any) => acc + t.amount, 0);
 
       return NextResponse.json({
         success: true,

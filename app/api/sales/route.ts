@@ -39,7 +39,7 @@ export async function GET() {
         success: true,
         message: "Sales deals fetched from MySQL (SalesDeal table) via Prisma.",
         total: dbDeals.length,
-        pipelineValue: dbDeals.reduce((sum, d) => sum + d.dealValue, 0),
+        pipelineValue: dbDeals.reduce((sum: number, d: any) => sum + (d.dealValue || 0), 0),
         data: dbDeals,
       });
     }
@@ -51,7 +51,7 @@ export async function GET() {
     success: true,
     message: "Sales pipeline & deals fetched successfully.",
     total: initialDeals.length,
-    pipelineValue: initialDeals.reduce((sum, d) => sum + d.dealValue, 0),
+    pipelineValue: initialDeals.reduce((sum: number, d: any) => sum + (d.dealValue || 0), 0),
     data: initialDeals,
   });
 }

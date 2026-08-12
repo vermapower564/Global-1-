@@ -43,8 +43,8 @@ export async function GET() {
       return NextResponse.json({
         success: true,
         data: dbPayrolls,
-        totalGross: dbPayrolls.reduce((sum, p) => sum + p.baseSalary + p.bonus, 0),
-        totalNet: dbPayrolls.reduce((sum, p) => sum + p.netPayable, 0),
+        totalGross: dbPayrolls.reduce((sum: number, p: any) => sum + (p.baseSalary || 0) + (p.bonus || 0), 0),
+        totalNet: dbPayrolls.reduce((sum: number, p: any) => sum + (p.netPayable || 0), 0),
       });
     }
   } catch (dbErr: any) {
