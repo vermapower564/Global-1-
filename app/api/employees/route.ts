@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     if (authResult.response) return authResult.response;
 
     const body = await request.json();
-    const { name, email, department, role, salary, phone, id } = body;
+    const { name, email, department, role, salary, phone, id, password } = body;
 
     if (!name || !email) {
       return NextResponse.json(
@@ -53,6 +53,7 @@ export async function POST(request: Request) {
     let createdRecord;
     try {
       const { prisma } = await import("@/lib/prisma");
+      const { hashPassword } = await import("@/lib/authService");
       
       let deptRecord;
       if (department) {
@@ -61,12 +62,14 @@ export async function POST(request: Request) {
         });
       }
 
+      const hashedPassword = await hashPassword(password || "password123");
+
       createdRecord = await prisma.user.create({
         data: {
           employeeId: assignedId,
           name,
           email,
-          password: "hashed_secure_password_123",
+          password: hashedPassword,
           phone: phone || "+91 98765 00000",
           role: role ? (role.toUpperCase().replace(/\s+/g, "_") as any) : "DEVELOPER",
           departmentId: deptRecord ? deptRecord.id : null,

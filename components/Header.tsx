@@ -99,6 +99,24 @@ export default function Header() {
     setThemeMode(storedTheme);
     applyThemeToDocument(storedTheme);
     setCompanyProfile(getStoredCompanyProfile());
+
+    // Server-side session validation from MySQL via /api/auth/me
+    fetch("/api/auth/me")
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.success && json.user) {
+          const authUser: CurrentUser = {
+            id: json.user.id,
+            name: json.user.name,
+            email: json.user.email,
+            role: json.user.role,
+            activeMode: json.user.role === "SUPER_ADMIN" || json.user.role === "HR" ? "ADMIN_HR" : "EMPLOYEE_USER",
+            assignedProjectTitle: "OMS Enterprise System",
+          };
+          setUserContext(authUser);
+        }
+      })
+      .catch((err) => console.warn("Session check fallback:", err));
   }, []);
 
   const handleThemeToggle = () => {
@@ -267,20 +285,38 @@ export default function Header() {
           <IconBell className="h-5 w-5 text-slate-700 dark:text-slate-200" />
         </button>
 
-        {/* Profile Card */}
-        <Link href="/employees/id" className="flex items-center gap-3 pl-2 border-l border-slate-200 dark:border-slate-800 group">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-red-600 to-rose-700 text-xs font-extrabold text-white shadow-md group-hover:scale-105 transition">
-            {userContext?.activeMode === "ADMIN_HR" ? "RV" : "AR"}
-          </div>
-          <div className="hidden text-left md:block">
-            <p className="text-xs font-extrabold text-slate-900 dark:text-white leading-none group-hover:text-red-600 transition">
-              {userContext?.activeMode === "ADMIN_HR" ? "Roushan Verma" : "Aditya Raj"}
-            </p>
-            <p className="text-[10px] font-bold text-red-600 dark:text-red-400 mt-0.5 uppercase tracking-wider">
-              {userContext?.activeMode === "ADMIN_HR" ? "Administrator / HR" : "Developer (User)"}
-            </p>
-          </div>
-        </Link>
+        {/* Profile Card & Logout */}
+        <div className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800">
+          <Link href="/employees/id" className="flex items-center gap-3 group">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-red-600 to-rose-700 text-xs font-extrabold text-white shadow-md group-hover:scale-105 transition">
+              {userContext?.activeMode === "ADMIN_HR" ? "RV" : "AR"}
+            </div>
+            <div className="hidden text-left md:block">
+              <p className="text-xs font-extrabold text-slate-900 dark:text-white leading-none group-hover:text-red-600 transition">
+                {userContext?.name || (userContext?.activeMode === "ADMIN_HR" ? "Roushan Verma" : "Aditya Raj")}
+              </p>
+              <p className="text-[10px] font-bold text-red-600 dark:text-red-400 mt-0.5 uppercase tracking-wider">
+                {userContext?.role || (userContext?.activeMode === "ADMIN_HR" ? "Administrator / HR" : "Developer (User)")}
+              </p>
+            </div>
+          </Link>
+
+          <button
+            onClick={async () => {
+              try {
+                await fetch("/api/auth/logout", { method: "POST" });
+              } catch (e) {}
+              if (typeof window !== "undefined") {
+                localStorage.removeItem("oms_current_user_context_v1");
+              }
+              router.push("/auth/login");
+            }}
+            title="Sign Out of OMS Enterprise Portal"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/60 text-xs font-extrabold text-rose-700 dark:text-rose-400 hover:bg-rose-600 hover:text-white transition shadow-2xs"
+          >
+            🚪 Sign Out
+          </button>
+        </div>
       </div>
     </header>
   );

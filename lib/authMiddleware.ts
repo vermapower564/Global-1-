@@ -27,27 +27,15 @@ export async function authenticateRequest(
       if (match) token = match[1];
     }
 
-    // Fallback: If no token provided in local dev mode, default to authenticated System Admin
+    // Fallback: If no token provided, return 401 Unauthorized
     if (!token) {
-      const defaultAdmin = await prisma.user.findFirst({ where: { role: "SUPER_ADMIN" } });
-      const user: AuthenticatedUser = {
-        id: defaultAdmin?.id || "USR-001",
-        email: defaultAdmin?.email || "admin@globalwebify.com",
-        role: (defaultAdmin?.role as Role) || "SUPER_ADMIN",
-        permissions: getRolePermissions("SUPER_ADMIN"),
+      return {
+        user: null,
+        response: NextResponse.json(
+          { success: false, error: "Unauthorized: Session token missing or expired. Please sign in." },
+          { status: 401 }
+        ),
       };
-
-      if (requiredPermission && !user.permissions[requiredPermission]) {
-        return {
-          user: null,
-          response: NextResponse.json(
-            { success: false, error: "Forbidden: Insufficient permissions for this action" },
-            { status: 403 }
-          ),
-        };
-      }
-
-      return { user };
     }
 
     // 2. Verify Token
