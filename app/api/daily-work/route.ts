@@ -3,12 +3,21 @@ import { getStoredWorkUpdates, addStoredWorkUpdate, evaluateWorkUpdate, WorkStat
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { authenticateRequest } = await import("@/lib/authMiddleware");
+    const authResult = await authenticateRequest(request);
+    const authUser = authResult.user;
+
     const { prisma } = await import("@/lib/prisma");
+
+    const isAdminOrManager = authUser && ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"].includes(authUser.role);
+    const whereClause = (authUser && !isAdminOrManager) ? { userId: authUser.id } : {};
+
     const dbUpdates = await prisma.dailyworkupdate.findMany({
+      where: whereClause,
       include: {
-        user: { select: { name: true, employeeId: true } },
+        user: { select: { id: true, name: true, employeeId: true } },
       },
       orderBy: { submittedAt: "desc" },
     });
