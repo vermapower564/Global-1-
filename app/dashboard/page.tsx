@@ -7,9 +7,9 @@ import { getStoredLeaveRequests } from "@/utils/leaveStore";
 import ProfileAlertBanner from "@/components/ProfileAlertBanner";
 
 export default function Dashboard() {
-  // Attendance Clock-in State
   const [clockedIn, setClockedIn] = useState(false);
   const [clockTime, setClockTime] = useState<string | null>(null);
+  const [userContext, setUserContext] = useState<any>(null);
 
   // Staff Tasks State
   const [tasks, setTasks] = useState([
@@ -21,14 +21,35 @@ export default function Dashboard() {
   ]);
 
   const [newTaskText, setNewTaskText] = useState("");
-
-  // Pending Approvals Count
   const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
     const eodPending = getStoredWorkUpdates().filter((u) => u.status === "PENDING").length;
     const leavePending = getStoredLeaveRequests().filter((l) => l.status === "Pending").length;
     setPendingCount(eodPending + leavePending);
+
+    // Get current user context
+    if (typeof window !== "undefined") {
+      const { getCurrentUserContext } = require("@/utils/userContextStore");
+      setUserContext(getCurrentUserContext());
+    }
+
+    // Fetch active attendance record from MySQL server API
+    fetch("/api/attendance")
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.success && json.data && json.data.length > 0) {
+          const todayStr = new Date().toISOString().split("T")[0];
+          const activeToday = json.data.find(
+            (rec: any) => rec.date?.startsWith(todayStr) && !rec.checkOutTime
+          );
+          if (activeToday) {
+            setClockedIn(true);
+            setClockTime(new Date(activeToday.checkInTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+          }
+        }
+      })
+      .catch((err) => console.warn("Attendance fetch error:", err));
   }, []);
 
   const toggleTask = (id: number) => {
@@ -45,13 +66,42 @@ export default function Dashboard() {
     setNewTaskText("");
   };
 
-  const handleClockToggle = () => {
+  const handleClockToggle = async () => {
     if (!clockedIn) {
-      const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      setClockTime(now);
-      setClockedIn(true);
+      try {
+        const res = await fetch("/api/attendance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: userContext?.id }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          setClockTime(now);
+          setClockedIn(true);
+        } else {
+          alert(`⚠️ Check-In Notice: ${data.error}`);
+        }
+      } catch (err) {
+        console.warn("Check In API error:", err);
+      }
     } else {
-      setClockedIn(false);
+      try {
+        const res = await fetch("/api/attendance", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: userContext?.id }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          setClockedIn(false);
+          alert(`✓ Check-Out Successful! Shift duration: ${data.data?.hoursWorked || 8} hrs logged in MySQL.`);
+        } else {
+          alert(`⚠️ Check-Out Notice: ${data.error}`);
+        }
+      } catch (err) {
+        console.warn("Check Out API error:", err);
+      }
     }
   };
 
@@ -70,7 +120,9 @@ export default function Dashboard() {
           <span className="text-xs font-extrabold uppercase tracking-wider text-purple-300">
             Executive Command & Analytics Engine
           </span>
-          <h1 className="text-2xl font-black text-indigo-100 tracking-tight mt-1">Welcome Back, Roushan Verma</h1>
+          <h1 className="text-2xl font-black text-indigo-100 tracking-tight mt-1">
+            Welcome Back, {userContext?.name || "Employee"}
+          </h1>
           <p className="text-xs text-indigo-200/80 mt-1">
             Track your personal work completion percentage, active pending tasks, attendance hours, and approvals.
           </p>

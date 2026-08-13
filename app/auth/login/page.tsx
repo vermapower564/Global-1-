@@ -112,16 +112,29 @@ export default function LoginPage() {
         body: JSON.stringify({ email: loginIdentity, password }),
       });
       const data = await res.json();
-      if (data.success) {
+      if (data.success && data.user) {
         setSuccessMessage(data.message || "✓ Employee Authentication Successful!");
+        
+        const serverUser = data.user;
+        const isAdmin = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"].includes(serverUser.role);
+        
+        setCurrentUserContext({
+          id: serverUser.id,
+          name: serverUser.name,
+          email: serverUser.email,
+          role: serverUser.role,
+          activeMode: isAdmin ? "ADMIN_HR" : "EMPLOYEE_USER",
+          assignedProjectTitle: "OMS Enterprise Applications",
+        });
+
         setTimeout(() => {
-          handleLoginSuccess(loginIdentity, data.data?.user);
-        }, 500);
+          router.push("/dashboard");
+        }, 400);
       } else {
         setErrorMessage(data.error || "Invalid Employee ID or Password credentials.");
       }
     } catch (err: any) {
-      handleLoginSuccess(loginIdentity);
+      setErrorMessage("Network connection error. Please try again.");
     } finally {
       setLoading(false);
     }
