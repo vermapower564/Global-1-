@@ -35,24 +35,17 @@ export async function GET(req: NextRequest) {
     let dbUser: any = null;
     try {
       const { prisma } = await import("@/lib/prisma");
-      dbUser = await prisma.user.findUnique({
-        where: { id: decoded.id },
+      dbUser = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { id: decoded.id },
+            { email: decoded.email },
+          ],
+        },
         include: { department: { select: { name: true, code: true } } },
       });
     } catch (dbErr: any) {
-      console.warn("Prisma user validation fallback:", dbErr.message);
-    }
-
-    if (!dbUser && decoded.id.startsWith("usr-admin")) {
-      dbUser = {
-        id: "usr-admin-01",
-        employeeId: "EMP001",
-        name: "Roushan Verma",
-        email: "admin@oms.com",
-        role: "SUPER_ADMIN",
-        isActive: true,
-        department: { name: "Executive Management" },
-      };
+      console.warn("Prisma user validation error:", dbErr.message);
     }
 
     if (!dbUser || !dbUser.isActive) {
