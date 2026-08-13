@@ -22,15 +22,15 @@ model adcampaign {
 }
 
 model attendance {
-  id           String    @id @default(cuid())
+  id           String            @id @default(cuid())
   userId       String
-  date         DateTime  @default(now())
+  date         DateTime          @default(now())
   checkInTime  DateTime
   checkOutTime DateTime?
-  hoursWorked  Float     @default(0)
-  status       String    @default("PRESENT")
-  createdAt    DateTime  @default(now())
-  user         user      @relation(fields: [userId], references: [id], map: "Attendance_userId_fkey")
+  hoursWorked  Float             @default(0)
+  status       attendance_status @default(PRESENT)
+  createdAt    DateTime          @default(now())
+  user         user              @relation(fields: [userId], references: [id], map: "Attendance_userId_fkey")
 
   @@index([userId], map: "Attendance_userId_fkey")
 }
@@ -48,14 +48,15 @@ model auditlog {
 }
 
 model client {
-  id            String   @id @default(cuid())
-  companyName   String   @unique(map: "Client_companyName_key")
+  id            String    @id @default(cuid())
+  companyName   String    @unique(map: "Client_companyName_key")
   contactPerson String
-  email         String   @unique(map: "Client_email_key")
+  email         String    @unique(map: "Client_email_key")
   phone         String
   industry      String
-  totalBilled   Float    @default(0)
-  createdAt     DateTime @default(now())
+  totalBilled   Float     @default(0)
+  createdAt     DateTime  @default(now())
+  project       project[]
 }
 
 model completedprojecthistory {
@@ -72,6 +73,7 @@ model completedprojecthistory {
 model dailyworkupdate {
   id             String                   @id @default(cuid())
   userId         String
+  projectId      String?
   date           DateTime                 @default(now())
   hoursWorked    Float
   description    String                   @db.Text
@@ -91,8 +93,10 @@ model dailyworkupdate {
   startTime      String?
   submittedAt    DateTime                 @default(now())
   user           user                     @relation(fields: [userId], references: [id], map: "DailyWorkUpdate_userId_fkey")
+  project        project?                 @relation(fields: [projectId], references: [id], map: "DailyWorkUpdate_projectId_fkey")
 
   @@index([userId], map: "DailyWorkUpdate_userId_fkey")
+  @@index([projectId], map: "DailyWorkUpdate_projectId_fkey")
 }
 
 model department {
@@ -132,19 +136,19 @@ model devcommittracker {
 }
 
 model employeeinvitation {
-  id           String    @id @default(cuid())
-  token        String    @unique(map: "EmployeeInvitation_token_key")
-  email        String
-  name         String
-  employeeId   String
-  department   String
-  role         String
-  phone        String?
-  status       String    @default("INVITED")
-  expiresAt    DateTime
-  createdById  String?
-  createdAt    DateTime  @default(now())
-  activatedAt  DateTime?
+  id          String    @id @default(cuid())
+  token       String    @unique(map: "EmployeeInvitation_token_key")
+  email       String
+  name        String
+  employeeId  String
+  department  String
+  role        String
+  phone       String?
+  status      String    @default("INVITED")
+  expiresAt   DateTime
+  createdById String?
+  createdAt   DateTime  @default(now())
+  activatedAt DateTime?
 }
 
 model financetransaction {
@@ -210,52 +214,57 @@ model itasset {
 }
 
 model leaverequest {
-  id        String   @id @default(cuid())
+  id        String       @id @default(cuid())
   userId    String
   leaveType String
   startDate DateTime
   endDate   DateTime
   totalDays Int
-  reason    String   @db.Text
-  status    String   @default("Pending")
-  hrRemarks String?  @db.Text
-  appliedAt DateTime @default(now())
-  user      user     @relation(fields: [userId], references: [id], map: "LeaveRequest_userId_fkey")
+  reason    String       @db.Text
+  status    leave_status @default(PENDING)
+  hrRemarks String?      @db.Text
+  appliedAt DateTime     @default(now())
+  user      user         @relation(fields: [userId], references: [id], map: "LeaveRequest_userId_fkey")
 
   @@index([userId], map: "LeaveRequest_userId_fkey")
 }
 
 model payrollapproval {
-  id           String   @id @default(cuid())
+  id           String         @id @default(cuid())
   userId       String
   employeeName String
   monthYear    String
   baseSalary   Float
-  bonus        Float    @default(0)
-  deductions   Float    @default(0)
+  bonus        Float          @default(0)
+  deductions   Float          @default(0)
   netPayable   Float
-  status       String   @default("APPROVED")
+  status       payroll_status @default(APPROVED)
   bankRefNo    String?
-  approvedAt   DateTime @default(now())
-  user         user     @relation(fields: [userId], references: [id], map: "PayrollApproval_userId_fkey")
+  approvedAt   DateTime       @default(now())
+  user         user           @relation(fields: [userId], references: [id], map: "PayrollApproval_userId_fkey")
 
   @@index([userId], map: "PayrollApproval_userId_fkey")
 }
 
 model pdfdocument {
   id           String   @id @default(cuid())
-  documentType String   
+  documentType String
   title        String
   fileUrl      String   @db.Text
-  relatedId    String?  
+  relatedId    String?
+  uploadedById String?
   uploadedBy   String   @default("System Admin")
   fileSize     String   @default("1.2 MB")
   status       String   @default("VERIFIED")
   createdAt    DateTime @default(now())
+  user         user?    @relation(fields: [uploadedById], references: [id], map: "PdfDocument_uploadedById_fkey")
+
+  @@index([uploadedById], map: "PdfDocument_uploadedById_fkey")
 }
 
 model project {
   id                      String                   @id @default(cuid())
+  clientId                String?
   projectTitle            String
   clientCompany           String
   clientContactPerson     String
@@ -264,29 +273,38 @@ model project {
   startDate               DateTime
   endDate                 DateTime
   contractValue           Float
-  status                  String                   @default("IN_PROGRESS")
+  status                  project_status           @default(IN_PROGRESS)
   createdAt               DateTime                 @default(now())
+  client                  client?                  @relation(fields: [clientId], references: [id], map: "Project_clientId_fkey")
   completedprojecthistory completedprojecthistory?
+  dailyworkupdate         dailyworkupdate[]
   user                    user[]                   @relation("assignedstaffprojects")
+
+  @@index([clientId], map: "Project_clientId_fkey")
 }
 
 model resignation {
-  id                      String   @id @default(cuid())
-  resignationId           String   @unique(map: "Resignation_resignationId_key")
-  userId                  String?
-  employeeId              String
-  employeeName            String
-  email                   String
-  department              String
-  role                    String
-  resignationDate         DateTime @default(now())
-  noticePeriodDays        Int      @default(15)
-  lastWorkingDay          DateTime
-  lastWorkingDayFormatted String
-  reason                  String   @db.Text
-  status                  String   @default("SUBMITTED")
-  submittedAt             DateTime @default(now())
-  user                    user?    @relation(fields: [userId], references: [id], map: "Resignation_userId_fkey")
+  id               String             @id @default(cuid())
+  resignationId    String             @unique(map: "Resignation_resignationId_key")
+  userId           String?
+  employeeId       String
+  employeeName     String
+  email            String
+  department       String
+  role             String
+  resignationDate  DateTime           @default(now())
+  noticePeriodDays Int                @default(15)
+  lastWorkingDay   DateTime
+  reason           String             @db.Text
+  status           resignation_status @default(SUBMITTED)
+  managerRemarks   String?            @db.Text
+  hrRemarks        String?            @db.Text
+  approvedAt       DateTime?
+  rejectedAt       DateTime?
+  submittedAt      DateTime           @default(now())
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @default(now()) @updatedAt
+  user             user?              @relation(fields: [userId], references: [id], map: "Resignation_userId_fkey")
 
   @@index([userId], map: "Resignation_userId_fkey")
 }
@@ -352,11 +370,12 @@ model user {
   devcommittracker   devcommittracker[]
   itasset            itasset[]
   leaverequest       leaverequest[]
+  pdfdocument        pdfdocument[]
   payrollapproval    payrollapproval[]
   resignation        resignation[]
   department         department?        @relation(fields: [departmentId], references: [id], map: "User_departmentId_fkey")
-  user               user?              @relation("userTouser", fields: [managerId], references: [id], map: "User_managerId_fkey")
-  other_user         user[]             @relation("userTouser")
+  manager            user?              @relation("ManagerEmployees", fields: [managerId], references: [id], map: "User_managerId_fkey")
+  employees          user[]             @relation("ManagerEmployees")
   project            project[]          @relation("assignedstaffprojects")
 
   @@index([departmentId], map: "User_departmentId_fkey")
@@ -406,4 +425,43 @@ enum dailyworkupdate_priority {
   HIGH
   MEDIUM
   LOW
+}
+
+enum resignation_status {
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  WITHDRAWN
+  COMPLETED
+}
+
+enum leave_status {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum attendance_status {
+  PRESENT
+  ABSENT
+  HALF_DAY
+  ON_LEAVE
+  LATE
+}
+
+enum payroll_status {
+  PENDING_APPROVAL
+  APPROVED
+  DISBURSED
+  REJECTED
+}
+
+enum project_status {
+  NOT_STARTED
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
 }

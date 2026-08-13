@@ -196,3 +196,5 @@ export function updateResignationStatus(id: string, status: ResignationRecord["s
   }
   return updated;
 }
+
+export const updateStoredResignationStatus = updateResignationStatus;

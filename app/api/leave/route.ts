@@ -70,7 +70,7 @@ export async function POST(request: Request) {
           endDate: new Date(endDate || Date.now()),
           totalDays: parseInt(totalDays) || 1,
           reason: reason || "Personal Leave",
-          status: "Pending",
+          status: "PENDING",
         },
       });
     } catch (dbErr: any) {
@@ -109,18 +109,20 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     const { id, status } = body;
 
-    if (!id || !["Approved", "Rejected"].includes(status)) {
+    if (!id || !["Approved", "Rejected", "APPROVED", "REJECTED"].includes(status)) {
       return NextResponse.json(
         { success: false, error: "Valid ID and status ('Approved' or 'Rejected') are required." },
         { status: 400 }
       );
     }
 
+    const enumStatus = status.toUpperCase() === "APPROVED" ? "APPROVED" : "REJECTED";
+
     try {
       const { prisma } = await import("@/lib/prisma");
       await prisma.leaverequest.update({
         where: { id },
-        data: { status },
+        data: { status: enumStatus as any },
       });
     } catch (dbErr: any) {
       console.warn("Prisma update fallback:", dbErr.message);
