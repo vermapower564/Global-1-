@@ -151,6 +151,17 @@ model employeeinvitation {
   activatedAt DateTime?
 }
 
+model otptoken {
+  id        String   @id @default(cuid())
+  email     String
+  otpHash   String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([email], map: "OtpToken_email_idx")
+}
+
 model financetransaction {
   id          String   @id @default(cuid())
   type        String
@@ -279,6 +290,7 @@ model project {
   completedprojecthistory completedprojecthistory?
   dailyworkupdate         dailyworkupdate[]
   user                    user[]                   @relation("assignedstaffprojects")
+  tasks                   task[]
 
   @@index([clientId], map: "Project_clientId_fkey")
 }
@@ -373,6 +385,9 @@ model user {
   pdfdocument        pdfdocument[]
   payrollapproval    payrollapproval[]
   resignation        resignation[]
+  assignedTasks      task[]             @relation("AssignedTasks")
+  createdTasks       task[]             @relation("CreatedTasks")
+  taskhistory        taskhistory[]
   department         department?        @relation(fields: [departmentId], references: [id], map: "User_departmentId_fkey")
   manager            user?              @relation("ManagerEmployees", fields: [managerId], references: [id], map: "User_managerId_fkey")
   employees          user[]             @relation("ManagerEmployees")
@@ -380,6 +395,50 @@ model user {
 
   @@index([departmentId], map: "User_departmentId_fkey")
   @@index([managerId], map: "User_managerId_fkey")
+}
+
+model task {
+  id               String        @id @default(cuid())
+  title            String
+  description      String?       @db.Text
+  projectId        String?
+  assignedToUserId String
+  createdById      String?
+  status           String        @default("ASSIGNED")
+  priority         String        @default("MEDIUM")
+  progress         Int           @default(0)
+  startDate        DateTime      @default(now())
+  dueDate          DateTime
+  completedAt      DateTime?
+  estimatedHours   Float         @default(8.0)
+  actualHours      Float         @default(0.0)
+  blockerReason    String?       @db.Text
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  assignedToUser   user          @relation("AssignedTasks", fields: [assignedToUserId], references: [id], map: "Task_assignedToUserId_fkey")
+  createdBy        user?         @relation("CreatedTasks", fields: [createdById], references: [id], map: "Task_createdById_fkey")
+  project          project?      @relation(fields: [projectId], references: [id], map: "Task_projectId_fkey")
+  taskhistory      taskhistory[]
+
+  @@index([assignedToUserId], map: "Task_assignedToUserId_fkey")
+  @@index([createdById], map: "Task_createdById_fkey")
+  @@index([projectId], map: "Task_projectId_fkey")
+}
+
+model taskhistory {
+  id          String   @id @default(cuid())
+  taskId      String
+  userId      String?
+  action      String
+  oldValue    String?  @db.Text
+  newValue    String?  @db.Text
+  description String   @db.Text
+  createdAt   DateTime @default(now())
+  task        task     @relation(fields: [taskId], references: [id], onDelete: Cascade, map: "TaskHistory_taskId_fkey")
+  user        user?    @relation(fields: [userId], references: [id], map: "TaskHistory_userId_fkey")
+
+  @@index([taskId], map: "TaskHistory_taskId_fkey")
+  @@index([userId], map: "TaskHistory_userId_fkey")
 }
 
 model videoproductionitem {

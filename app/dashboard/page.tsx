@@ -2,39 +2,59 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { getStoredWorkUpdates } from "@/utils/workUpdateStore";
-import { getStoredLeaveRequests } from "@/utils/leaveStore";
+import { getCurrentUserContext } from "@/utils/userContextStore";
 import ProfileAlertBanner from "@/components/ProfileAlertBanner";
 
+const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
+
 export default function Dashboard() {
+  const [userContext, setUserContext] = useState<any>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Command Center Metrics
+  const [workforceCount, setWorkforceCount] = useState(0);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [taskSummary, setTaskSummary] = useState<any>(null);
+  const [overdueTasks, setOverdueTasks] = useState<any[]>([]);
+  const [blockedTasks, setBlockedTasks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Attendance Clock
   const [clockedIn, setClockedIn] = useState(false);
   const [clockTime, setClockTime] = useState<string | null>(null);
-  const [userContext, setUserContext] = useState<any>(null);
-
-  // Staff Tasks State
-  const [tasks, setTasks] = useState([
-    { id: 1, text: "Review Phase 1 Foundation & Employee Directory", completed: true },
-    { id: 2, text: "Approve pending Q3 leave applications & payroll", completed: true },
-    { id: 3, text: "Inspect EOD work updates & rate 1-5 stars", completed: false },
-    { id: 4, text: "Publish weekly digital marketing & ROAS report", completed: false },
-    { id: 5, text: "Upload verified ID documents to master profile", completed: false },
-  ]);
-
-  const [newTaskText, setNewTaskText] = useState("");
-  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
-    const eodPending = getStoredWorkUpdates().filter((u) => u.status === "PENDING").length;
-    const leavePending = getStoredLeaveRequests().filter((l) => l.status === "Pending").length;
-    setPendingCount(eodPending + leavePending);
+    const user = getCurrentUserContext();
+    setUserContext(user);
+    const roleUpper = (user.role || "").toUpperCase();
+    const adminCheck = ADMIN_ROLES.includes(roleUpper) || user.activeMode === "ADMIN_HR";
+    setIsAdmin(adminCheck);
 
-    // Get current user context
-    if (typeof window !== "undefined") {
-      const { getCurrentUserContext } = require("@/utils/userContextStore");
-      setUserContext(getCurrentUserContext());
-    }
+    // Fetch real metrics from MySQL
+    fetch("/api/employees")
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.success) {
+          setWorkforceCount(json.total);
+          setEmployees(json.data);
+        }
+      })
+      .catch(() => {});
 
-    // Fetch active attendance record from MySQL server API
+    fetch("/api/tasks")
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.success) {
+          setTaskSummary(json.summary);
+          const tasks = json.tasks || [];
+          setOverdueTasks(tasks.filter((t: any) => t.isOverdue));
+          setBlockedTasks(tasks.filter((t: any) => t.status === "BLOCKED"));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+
+    // Fetch attendance clock
     fetch("/api/attendance")
       .then((res) => res.json())
       .then((json) => {
@@ -49,22 +69,8 @@ export default function Dashboard() {
           }
         }
       })
-      .catch((err) => console.warn("Attendance fetch error:", err));
+      .catch(() => {});
   }, []);
-
-  const toggleTask = (id: number) => {
-    setTasks(tasks.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)));
-  };
-
-  const handleAddTask = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTaskText.trim()) return;
-    setTasks([
-      ...tasks,
-      { id: Date.now(), text: newTaskText.trim(), completed: false },
-    ]);
-    setNewTaskText("");
-  };
 
   const handleClockToggle = async () => {
     if (!clockedIn) {
@@ -105,144 +111,166 @@ export default function Dashboard() {
     }
   };
 
-  const completedCount = tasks.filter((t) => t.completed).length;
-  const pendingTaskCount = tasks.length - completedCount;
-  const completionPercentage = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
+  const overloadedEmployees = employees.filter((e) => e.metrics?.workloadLevel === "OVERLOADED");
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12">
-      {/* Profile Incomplete Warning Alert Banner */}
+    <div className="space-y-6 max-w-7xl mx-auto pb-16">
       <ProfileAlertBanner />
 
-      {/* 💜 Unique Header Banner - Royal Indigo & Midnight Purple Theme */}
-      <div className="bg-gradient-to-r from-indigo-950 via-purple-900 to-slate-950 p-6 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl border border-indigo-800/40 text-indigo-50">
+      {/* Header Banner */}
+      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
         <div>
-          <span className="text-xs font-extrabold uppercase tracking-wider text-purple-300">
-            Executive Command & Analytics Engine
+          <span className="text-xs font-bold uppercase tracking-wider text-blue-600">
+            {isAdmin ? "Admin Command Center • Task Intelligence Engine" : "Employee Workspace"}
           </span>
-          <h1 className="text-2xl font-black text-indigo-100 tracking-tight mt-1">
-            Welcome Back, {userContext?.name || "Employee"}
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
+            Welcome Back, {userContext?.name || "User"}
           </h1>
-          <p className="text-xs text-indigo-200/80 mt-1">
-            Track your personal work completion percentage, active pending tasks, attendance hours, and approvals.
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            {isAdmin
+              ? "Real-time enterprise workforce analytics, task completion ratios, blocked items, and risk alerts."
+              : "Track your active assigned tasks, update progress percentages, and log shift hours."}
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Link href="/daily-work/approvals" className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md border border-purple-400 transition">
-            ★ Pending Approvals ({pendingCount})
-          </Link>
-          <Link href="/daily-work" className="bg-indigo-950/70 hover:bg-indigo-900/80 text-indigo-200 font-extrabold text-xs px-4 py-2.5 rounded-xl border border-indigo-800/40 transition">
-            📝 EOD Work Log
-          </Link>
+          {isAdmin ? (
+            <>
+              <Link href="/employees" className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition">
+                Workforce Intelligence →
+              </Link>
+              <Link href="/employees/add" className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-extrabold text-xs px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 transition">
+                + Add Employee
+              </Link>
+            </>
+          ) : (
+            <Link href="/employee/workspace" className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition">
+              My Task Workboard →
+            </Link>
+          )}
         </div>
       </div>
 
-      {/* Staff Work % Progress & Task Completion Overview Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-indigo-900/40 border-l-4 border-l-purple-600 shadow-xs space-y-2">
+      {/* ⚠️ SMART "ATTENTION REQUIRED" ALERTS */}
+      {isAdmin && (overdueTasks.length > 0 || blockedTasks.length > 0 || overloadedEmployees.length > 0) && (
+        <div className="p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-slate-500 dark:text-indigo-300/80">Personal Work Done %</span>
-            <span className="text-xs font-extrabold text-purple-600 dark:text-purple-400">{completionPercentage}% Completed</span>
+            <span className="text-xs font-black uppercase tracking-wider text-amber-800 dark:text-amber-300">
+              ⚠️ Attention Required (Intelligent Risk Detector)
+            </span>
+            <span className="text-[11px] text-amber-700 font-bold">Action Needed Today</span>
           </div>
-          <p className="text-3xl font-black text-slate-900 dark:text-white">{completionPercentage}%</p>
-          {/* Visual Progress Bar */}
-          <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
-            <div
-              className="bg-gradient-to-r from-indigo-500 to-purple-600 h-2 rounded-full transition-all duration-500"
-              style={{ width: `${completionPercentage}%` }}
-            ></div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+            {overdueTasks.length > 0 && (
+              <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900 space-y-1">
+                <span className="font-black text-amber-800 dark:text-amber-300">{overdueTasks.length} Tasks Overdue</span>
+                <p className="text-[11px] text-slate-500 line-clamp-1">{overdueTasks[0]?.title}</p>
+              </div>
+            )}
+
+            {blockedTasks.length > 0 && (
+              <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900 space-y-1">
+                <span className="font-black text-rose-700 dark:text-rose-400">{blockedTasks.length} Tasks Blocked</span>
+                <p className="text-[11px] text-slate-500 line-clamp-1">{blockedTasks[0]?.title}</p>
+              </div>
+            )}
+
+            {overloadedEmployees.length > 0 && (
+              <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900 space-y-1">
+                <span className="font-black text-slate-900 dark:text-white">{overloadedEmployees.length} Staff Overloaded</span>
+                <p className="text-[11px] text-slate-500 line-clamp-1">{overloadedEmployees[0]?.name} (High Active Tasks)</p>
+              </div>
+            )}
           </div>
         </div>
+      )}
 
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-indigo-900/40 border-l-4 border-l-blue-600 shadow-xs">
-          <span className="text-xs font-bold uppercase text-slate-500 dark:text-indigo-300/80">Completed Work Tasks</span>
-          <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">{completedCount} Tasks</p>
-          <span className="text-[11px] font-extrabold text-blue-600 dark:text-blue-400">Successfully Signed Off</span>
+      {/* KPI Cards Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+          <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Total Workforce</p>
+          <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{workforceCount}</p>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-indigo-900/40 border-l-4 border-l-amber-500 shadow-xs">
-          <span className="text-xs font-bold uppercase text-slate-500 dark:text-indigo-300/80">Tasks Still Pending</span>
-          <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">{pendingTaskCount} Tasks</p>
-          <span className="text-[11px] font-extrabold text-amber-600 dark:text-amber-400">Action Required Today</span>
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-blue-200 dark:border-blue-900 shadow-2xs">
+          <p className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600">In Progress</p>
+          <p className="mt-1 text-2xl font-black text-blue-600">{taskSummary?.inProgress || 0}</p>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-indigo-900/40 border-l-4 border-l-indigo-600 shadow-xs">
-          <span className="text-xs font-bold uppercase text-slate-500 dark:text-indigo-300/80">System Approvals</span>
-          <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">{pendingCount}</p>
-          <span className="text-[11px] font-extrabold text-indigo-600 dark:text-indigo-400">EOD Updates + Leave Requests</span>
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-emerald-200 dark:border-emerald-900 shadow-2xs">
+          <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600">Completed</p>
+          <p className="mt-1 text-2xl font-black text-emerald-600">{taskSummary?.completed || 0}</p>
+        </div>
+
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-rose-200 dark:border-rose-900 shadow-2xs">
+          <p className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600">Blocked Tasks</p>
+          <p className="mt-1 text-2xl font-black text-rose-600">{taskSummary?.blocked || 0}</p>
+        </div>
+
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-amber-200 dark:border-amber-900 shadow-2xs">
+          <p className="text-[10px] font-extrabold uppercase tracking-wider text-amber-600">Overdue Tasks</p>
+          <p className="mt-1 text-2xl font-black text-amber-600">{taskSummary?.overdue || 0}</p>
+        </div>
+
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+          <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Completion %</p>
+          <p className="mt-1 text-2xl font-black text-blue-600">{taskSummary?.completionRate || 0}%</p>
         </div>
       </div>
 
-      {/* Main Grid: Work Progress Checklist & Attendance */}
+      {/* Main Command & Attendance Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Staff Interactive Work Tracker & Checklist */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Staff Work Checklist with Live % Completion */}
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-indigo-900/40 shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 dark:border-indigo-900/30 pb-3 gap-2">
-              <div>
-                <h2 className="font-extrabold text-slate-900 dark:text-white text-base">My Daily Work & Task Tracker</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Check off items as you complete them to automatically update your work % ratio.</p>
-              </div>
-              <div className="flex items-center gap-2 bg-indigo-950/10 dark:bg-indigo-950/60 px-3 py-1.5 rounded-xl border border-indigo-900/30">
-                <span className="text-xs font-extrabold text-indigo-950 dark:text-indigo-200">
-                  {completedCount} of {tasks.length} ({completionPercentage}%)
-                </span>
-              </div>
+          {/* Workforce Summary Quick Directory */}
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h2 className="font-extrabold text-slate-900 dark:text-white text-base">Workforce Task Distribution</h2>
+              <Link href="/employees" className="text-xs font-bold text-blue-600 hover:underline">
+                View Full Workforce Intelligence →
+              </Link>
             </div>
 
-            {/* Quick Add Task Form */}
-            <form onSubmit={handleAddTask} className="flex gap-2">
-              <input
-                type="text"
-                value={newTaskText}
-                onChange={(e) => setNewTaskText(e.target.value)}
-                placeholder="+ Add new work task for today..."
-                className="flex-1 rounded-xl border border-slate-200 dark:border-indigo-900/60 bg-slate-50 dark:bg-slate-950 px-3.5 py-2 text-xs text-slate-900 dark:text-white focus:border-purple-600 focus:outline-none font-semibold"
-              />
-              <button type="submit" className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs px-4 py-2 rounded-xl shadow-md transition">
-                Add Task
-              </button>
-            </form>
+            <div className="space-y-3">
+              {employees.slice(0, 5).map((emp) => {
+                const m = emp.metrics || { activeTasks: 0, completedTasks: 0, progressRate: 100, workloadLevel: "NORMAL" };
 
-            {/* Tasks List */}
-            <div className="space-y-2.5">
-              {tasks.map((task) => (
-                <div
-                  key={task.id}
-                  onClick={() => toggleTask(task.id)}
-                  className={`p-3.5 rounded-xl border transition cursor-pointer flex items-center justify-between gap-3 ${
-                    task.completed
-                      ? "bg-slate-50 dark:bg-slate-950/50 border-slate-200 dark:border-slate-800 text-slate-400 line-through"
-                      : "bg-white dark:bg-slate-900 border-slate-200 dark:border-indigo-900/40 hover:border-purple-500 text-slate-900 dark:text-white font-semibold shadow-xs"
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={task.completed}
-                      onChange={() => {}}
-                      className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                    />
-                    <span className="text-xs">{task.text}</span>
+                return (
+                  <div key={emp.id} className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-lg bg-blue-600 text-white font-extrabold flex items-center justify-center">
+                        {emp.name ? emp.name.charAt(0) : "E"}
+                      </div>
+                      <div>
+                        <Link href={`/admin/employees/${emp.id}`} className="font-extrabold text-slate-900 dark:text-white hover:text-blue-600">
+                          {emp.name}
+                        </Link>
+                        <p className="text-[10px] text-slate-500">{emp.role || "Developer"}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <span className="font-bold text-blue-600">{m.activeTasks} Active</span>
+                      <span className="font-bold text-emerald-600">{m.completedTasks} Done</span>
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold ${
+                        m.workloadLevel === "OVERLOADED" ? "bg-rose-100 text-rose-700" : "bg-blue-100 text-blue-700"
+                      }`}>
+                        {m.workloadLevel}
+                      </span>
+                    </div>
                   </div>
-
-                  <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-lg ${task.completed ? "bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300" : "bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300"}`}>
-                    {task.completed ? "Completed ✓" : "Pending ⏳"}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
           {/* Attendance Check-In / Check-Out Widget */}
-          <div className="p-6 rounded-2xl bg-gradient-to-r from-indigo-950 via-slate-950 to-purple-950 text-white flex flex-col sm:flex-row items-center justify-between gap-4 border border-indigo-900/60 shadow-xl">
+          <div className="p-6 rounded-2xl bg-slate-900 text-white flex flex-col sm:flex-row items-center justify-between gap-4 border border-slate-800 shadow-lg">
             <div className="space-y-1 text-center sm:text-left">
-              <span className="text-xs font-extrabold uppercase tracking-wider text-purple-400">Attendance Punch Clock</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Attendance Punch Clock</span>
               <h3 className="text-xl font-black text-white">
                 {clockedIn ? `Checked In at ${clockTime}` : "Not Checked In Today"}
               </h3>
-              <p className="text-xs text-indigo-200/80">
+              <p className="text-xs text-slate-300">
                 {clockedIn ? "Your shift hours are actively being logged." : "Click below to punch in for today's work shift."}
               </p>
             </div>
@@ -252,7 +280,7 @@ export default function Dashboard() {
               className={`px-6 py-3 rounded-xl font-extrabold text-xs transition shadow-lg shrink-0 border ${
                 clockedIn
                   ? "bg-rose-600 hover:bg-rose-700 text-white border-rose-400"
-                  : "bg-purple-600 hover:bg-purple-700 text-white border-purple-400"
+                  : "bg-blue-600 hover:bg-blue-700 text-white border-blue-400"
               }`}
             >
               {clockedIn ? "🛑 Punch Out / End Shift" : "⏱️ Punch In / Start Shift"}
@@ -260,53 +288,24 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Pending Approvals & Live Notifications Panel */}
+        {/* Quick Links & Shortcuts Panel */}
         <div className="space-y-6">
-          {/* Pending Approvals Desk Widget */}
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-indigo-900/40 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-indigo-900/30 pb-3">
-              <h2 className="font-extrabold text-slate-900 dark:text-white text-base">Pending Approvals Desk</h2>
-              <span className="bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 font-extrabold text-xs px-2.5 py-1 rounded-lg">{pendingCount} Pending</span>
-            </div>
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+            <h2 className="font-extrabold text-slate-900 dark:text-white text-base border-b pb-3">Quick Navigation Desk</h2>
 
-            <div className="space-y-3 text-xs">
-              <Link
-                href="/daily-work/approvals"
-                className="block p-3 rounded-xl border border-slate-200 dark:border-indigo-900/40 bg-slate-50 dark:bg-slate-950 hover:bg-indigo-950/20 transition space-y-1"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-900 dark:text-white">EOD Work Updates</span>
-                  <span className="text-purple-600 dark:text-purple-400 font-bold">Review Desk →</span>
-                </div>
-                <p className="text-slate-500 dark:text-slate-400 text-[11px]">Inspect submissions, ratings, and Git commits</p>
+            <div className="space-y-2.5 text-xs">
+              <Link href="/employees" className="block p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-500 font-bold text-slate-900 dark:text-white transition">
+                👥 Workforce & Access Control Desk →
               </Link>
-
-              <Link
-                href="/hr"
-                className="block p-3 rounded-xl border border-slate-200 dark:border-indigo-900/40 bg-slate-50 dark:bg-slate-950 hover:bg-indigo-950/20 transition space-y-1"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-900 dark:text-white">HR Leave Applications</span>
-                  <span className="text-indigo-600 dark:text-indigo-400 font-bold">HR Desk →</span>
-                </div>
-                <p className="text-slate-500 dark:text-slate-400 text-[11px]">Review formal leave letters and email dispatches</p>
+              <Link href="/attendance" className="block p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-500 font-bold text-slate-900 dark:text-white transition">
+                📅 Attendance Ledger & Shift Clock →
               </Link>
-            </div>
-          </div>
-
-          {/* Live Notifications Panel */}
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-indigo-900/40 shadow-xs space-y-4">
-            <h2 className="font-extrabold text-slate-900 dark:text-white text-base border-b border-slate-100 dark:border-indigo-900/30 pb-3">
-              Live System Notifications
-            </h2>
-
-            <div className="space-y-3 text-xs">
-              <div className="p-3 bg-indigo-950/10 dark:bg-indigo-950/40 border border-indigo-900/30 rounded-xl text-indigo-900 dark:text-indigo-200 font-semibold">
-                🔔 <span className="font-bold">System Notice:</span> Staff Work Completion Tracker active.
-              </div>
-              <div className="p-3 bg-purple-950/10 dark:bg-purple-950/40 border border-purple-900/30 rounded-xl text-purple-900 dark:text-purple-200 font-semibold">
-                ✓ <span className="font-bold">HR Notice:</span> 4 Leave applications dispatched via automated email.
-              </div>
+              <Link href="/daily-work/approvals" className="block p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-500 font-bold text-slate-900 dark:text-white transition">
+                ⭐ Daily Work EOD Review Desk →
+              </Link>
+              <Link href="/audit-logs" className="block p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-500 font-bold text-slate-900 dark:text-white transition">
+                📜 System Security Audit Logs →
+              </Link>
             </div>
           </div>
         </div>

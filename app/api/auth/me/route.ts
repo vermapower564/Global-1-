@@ -35,13 +35,11 @@ export async function GET(req: NextRequest) {
     let dbUser: any = null;
     try {
       const { prisma } = await import("@/lib/prisma");
+      const whereConditions: any[] = [{ id: decoded.id }];
+      if (decoded.email) whereConditions.push({ email: decoded.email });
+
       dbUser = await prisma.user.findFirst({
-        where: {
-          OR: [
-            { id: decoded.id },
-            { email: decoded.email },
-          ],
-        },
+        where: { OR: whereConditions },
         include: { department: { select: { name: true, code: true } } },
       });
     } catch (dbErr: any) {

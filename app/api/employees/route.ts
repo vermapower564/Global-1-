@@ -8,16 +8,59 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const { prisma } = await import("@/lib/prisma");
+    const now = new Date();
+
     const dbUsers = await prisma.user.findMany({
-      include: { department: true },
+      include: {
+        department: true,
+        assignedTasks: true,
+        project: { select: { id: true, projectTitle: true } },
+      },
       orderBy: { createdAt: "desc" },
     });
 
     if (dbUsers.length > 0) {
+      const enrichedUsers = dbUsers.map((u) => {
+        const tasks = u.assignedTasks || [];
+        const totalTasks = tasks.length;
+        const completedTasks = tasks.filter((t) => t.status === "COMPLETED").length;
+        const activeTasks = tasks.filter((t) => t.status === "IN_PROGRESS" || t.status === "ASSIGNED" || t.status === "IN_REVIEW").length;
+        const pendingTasks = tasks.filter((t) => t.status === "ASSIGNED" || t.status === "BACKLOG").length;
+        const blockedTasks = tasks.filter((t) => t.status === "BLOCKED").length;
+        const overdueTasks = tasks.filter(
+          (t) => t.status !== "COMPLETED" && t.status !== "CANCELLED" && new Date(t.dueDate) < now
+        ).length;
+
+        const progressRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 100;
+
+        let workloadLevel: "LOW" | "NORMAL" | "HIGH" | "OVERLOADED" = "NORMAL";
+        if (activeTasks === 0) workloadLevel = "LOW";
+        else if (activeTasks <= 2) workloadLevel = "NORMAL";
+        else if (activeTasks <= 4) workloadLevel = "HIGH";
+        else workloadLevel = "OVERLOADED";
+
+        const currentProjectTitle = u.project && u.project.length > 0 ? u.project[0].projectTitle : "OMS Enterprise";
+
+        return {
+          ...u,
+          currentProjectTitle,
+          metrics: {
+            totalTasks,
+            activeTasks,
+            completedTasks,
+            pendingTasks,
+            blockedTasks,
+            overdueTasks,
+            progressRate,
+            workloadLevel,
+          },
+        };
+      });
+
       return NextResponse.json({
         success: true,
-        total: dbUsers.length,
-        data: dbUsers,
+        total: enrichedUsers.length,
+        data: enrichedUsers,
       });
     }
   } catch (dbErr: any) {

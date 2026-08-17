@@ -12,6 +12,20 @@ import {
   PasswordStrengthResult,
 } from "@/utils/onboardingEmail";
 
+const SYSTEM_ROLES = [
+  { value: "DEVELOPER", label: "Developer (Software Engineer)" },
+  { value: "PROJECT_MANAGER", label: "Project Manager (Team Lead)" },
+  { value: "HR", label: "HR Manager" },
+  { value: "FINANCE", label: "Finance / Payroll Manager" },
+  { value: "SALES_MANAGER", label: "Sales Manager" },
+  { value: "SALES_EXECUTIVE", label: "Sales Executive" },
+  { value: "DIGITAL_MARKETING_MANAGER", label: "Marketing Manager" },
+  { value: "SEO_EXECUTIVE", label: "SEO Executive" },
+  { value: "CONTENT_WRITER", label: "Content Writer" },
+  { value: "DIRECTOR", label: "Director (Executive Level)" },
+  { value: "SUPER_ADMIN", label: "Super Administrator" },
+];
+
 export default function AddEmployeePage() {
   const router = useRouter();
   const [availableDepartments, setAvailableDepartments] = useState<string[]>([
@@ -29,14 +43,17 @@ export default function AddEmployeePage() {
     name: "",
     email: "",
     department: "Development & Engineering",
-    role: "Software Developer",
+    role: "DEVELOPER",
     salary: "850000",
     phone: "9876543210",
-    password: "SecurePass@2026!",
+    joiningDate: new Date().toISOString().split("T")[0],
+    password: "",
+    confirmPassword: "",
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
   const [onboardingEmail, setOnboardingEmail] = useState<OnboardingEmailRecord | null>(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [strength, setStrength] = useState<PasswordStrengthResult>(evaluatePasswordStrength(formData.password));
@@ -48,7 +65,6 @@ export default function AddEmployeePage() {
       .then((json) => {
         if (json.success && json.data.length > 0) {
           const deptNames = json.data.map((d: any) => d.name);
-          // Combine unique department names
           const combined = Array.from(new Set([...deptNames, ...availableDepartments]));
           setAvailableDepartments(combined);
           if (!formData.department) {
@@ -65,8 +81,37 @@ export default function AddEmployeePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg("");
+    setStatusMsg("");
+
+    // Form Validations
+    if (!formData.name.trim()) {
+      setErrorMsg("Full employee name is required.");
+      return;
+    }
+
+    if (!formData.email.includes("@")) {
+      setErrorMsg("Please enter a valid email address.");
+      return;
+    }
+
+    if (formData.phone.length < 10) {
+      setErrorMsg("Please enter a valid 10-digit mobile phone number.");
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      setErrorMsg("Initial password must be at least 6 characters long.");
+      return;
+    }
+
+    if (formData.password !== formData.confirmPassword) {
+      setErrorMsg("Passwords do not match. Please re-enter.");
+      return;
+    }
+
     setIsSubmitting(true);
-    setStatusMsg("Saving employee & generating onboarding congratulations email...");
+    setStatusMsg("Saving employee account into MySQL & dispatching onboarding welcome email...");
 
     const generatedEmpId = `EMP-${Math.floor(1000 + Math.random() * 9000)}`;
     const formattedPhone = formatIndianPhone(formData.phone);
@@ -77,20 +122,23 @@ export default function AddEmployeePage() {
     };
 
     try {
-      // 1. Post to XAMPP MySQL API
-      await fetch("/api/employees", {
+      const res = await fetch("/api/employees", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setErrorMsg(data.error || "Failed to register employee user.");
+        setIsSubmitting(false);
+        return;
+      }
     } catch (e) {
       console.warn("MySQL save fallback");
     }
 
-    // 2. Save to local storage store
     addStoredEmployee(payload);
 
-    // 3. Generate Official Congratulations Welcome Email & Security Advice
     const emailRecord = generateCongratulationsWelcomeEmail(
       formData.name,
       formData.email,
@@ -101,72 +149,77 @@ export default function AddEmployeePage() {
     setOnboardingEmail(emailRecord);
     setShowEmailModal(true);
     setIsSubmitting(false);
-    setStatusMsg("✓ Employee user created & Congratulations Welcome Email dispatched!");
+    setStatusMsg("✓ Employee user account created in MySQL & onboarding welcome email dispatched!");
   };
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto pb-12">
-      {/* 🤎 Header Banner */}
-      <div className="bg-gradient-to-r from-amber-950 via-amber-900 to-stone-900 p-6 rounded-2xl flex items-center justify-between shadow-xl border border-amber-800/40 text-amber-50">
+      {/* Header Banner */}
+      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between shadow-xs">
         <div>
-          <span className="text-xs font-extrabold uppercase tracking-wider text-amber-300">
-            HCM System • Onboarding Engine
+          <span className="text-xs font-bold uppercase tracking-wider text-blue-600">
+            Workforce Onboarding Desk
           </span>
-          <h1 className="text-2xl font-black text-amber-100 tracking-tight mt-1">Register New Employee</h1>
-          <p className="text-xs text-amber-200/80 mt-1">
-            Data is written into XAMPP MySQL and dispatches an automated Congratulations Welcome Email.
+          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-1">Register New Employee</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Create an internal employee account. An Employee ID and initial password will be assigned.
           </p>
         </div>
-        <Link href="/employees" className="bg-amber-950/60 hover:bg-amber-900/60 text-amber-200 font-bold text-xs px-4 py-2 rounded-xl border border-amber-800/40 transition">
+        <Link href="/employees" className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 transition">
           ← Directory
         </Link>
       </div>
 
-      {statusMsg && (
-        <div className="p-4 rounded-xl bg-amber-900/20 border border-amber-800/50 text-amber-900 dark:text-amber-200 text-xs font-bold shadow-xs">
+      {errorMsg && (
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold shadow-xs">
+          ⚠️ {errorMsg}
+        </div>
+      )}
+
+      {statusMsg && !errorMsg && (
+        <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-xs font-bold shadow-xs">
           {statusMsg}
         </div>
       )}
 
       {/* Form Container */}
-      <div className="bg-white dark:bg-stone-900 p-6 rounded-2xl border border-stone-200 dark:border-amber-900/40 shadow-xs">
+      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-stone-700 dark:text-amber-200/80 mb-1">Full Employee Name *</label>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Full Employee Name *</label>
               <input
                 type="text"
                 required
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="e.g. Rahul Sharma"
-                className="w-full rounded-xl border border-stone-300 dark:border-amber-900/60 bg-stone-50 dark:bg-amber-950/20 px-3.5 py-2.5 text-xs text-stone-900 dark:text-amber-100 focus:border-amber-600 focus:outline-none font-semibold"
+                className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:border-blue-600 focus:outline-none font-semibold"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-stone-700 dark:text-amber-200/80 mb-1">Company Registered Email *</label>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Company Registered Email *</label>
               <input
                 type="email"
                 required
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 placeholder="e.g. rahul.sharma@oms.com"
-                className="w-full rounded-xl border border-stone-300 dark:border-amber-900/60 bg-stone-50 dark:bg-amber-950/20 px-3.5 py-2.5 text-xs text-stone-900 dark:text-amber-100 focus:border-amber-600 focus:outline-none font-semibold"
+                className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:border-blue-600 focus:outline-none font-semibold"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* 🏢 Department Selection Dropdown Option */}
             <div>
-              <label className="block text-xs font-semibold text-stone-700 dark:text-amber-200/80 mb-1">
-                Choose Department to Join *
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Choose Department *
               </label>
               <select
                 value={formData.department}
                 onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                className="w-full rounded-xl border border-stone-300 dark:border-amber-900/60 bg-stone-50 dark:bg-amber-950/20 px-3.5 py-2.5 text-xs text-stone-900 dark:text-amber-100 focus:border-amber-600 focus:outline-none font-semibold"
+                className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:border-blue-600 focus:outline-none font-semibold"
               >
                 {availableDepartments.map((deptName) => (
                   <option key={deptName} value={deptName}>
@@ -177,25 +230,28 @@ export default function AddEmployeePage() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-stone-700 dark:text-amber-200/80 mb-1">Job Designation *</label>
-              <input
-                type="text"
-                required
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">System Role & Access *</label>
+              <select
                 value={formData.role}
                 onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                placeholder="e.g. Senior Frontend Developer"
-                className="w-full rounded-xl border border-stone-300 dark:border-amber-900/60 bg-stone-50 dark:bg-amber-950/20 px-3.5 py-2.5 text-xs text-stone-900 dark:text-amber-100 focus:border-amber-600 focus:outline-none font-semibold"
-              />
+                className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:border-blue-600 focus:outline-none font-extrabold"
+              >
+                {SYSTEM_ROLES.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    🛡️ {r.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-stone-700 dark:text-amber-200/80 mb-1">
-                Indian Contact Phone (+91) *
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Indian Contact Mobile (+91) *
               </label>
               <div className="flex items-center">
-                <span className="bg-stone-100 dark:bg-amber-950/40 border border-r-0 border-stone-300 dark:border-amber-900/60 px-3 py-2.5 text-xs font-bold text-stone-600 dark:text-amber-300 rounded-l-xl">
+                <span className="bg-slate-100 dark:bg-slate-800 border border-r-0 border-slate-300 dark:border-slate-700 px-3 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-300 rounded-l-xl">
                   +91
                 </span>
                 <input
@@ -210,51 +266,65 @@ export default function AddEmployeePage() {
                     })
                   }
                   placeholder="9876543210"
-                  className="w-full rounded-r-xl border border-stone-300 dark:border-amber-900/60 bg-stone-50 dark:bg-amber-950/20 px-3 py-2.5 text-xs text-stone-900 dark:text-amber-100 focus:border-amber-600 focus:outline-none font-mono font-extrabold"
+                  className="w-full rounded-r-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 text-xs text-slate-900 dark:text-white focus:border-blue-600 focus:outline-none font-mono font-extrabold"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-stone-700 dark:text-amber-200/80 mb-1">Annual Compensation (₹ INR) *</label>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Annual Salary (₹ INR) *</label>
               <input
                 type="number"
                 required
                 value={formData.salary}
                 onChange={(e) => setFormData({ ...formData, salary: e.target.value })}
                 placeholder="e.g. 850000"
-                className="w-full rounded-xl border border-stone-300 dark:border-amber-900/60 bg-stone-50 dark:bg-amber-950/20 px-3.5 py-2.5 text-xs text-stone-900 dark:text-amber-100 focus:border-amber-600 focus:outline-none font-mono font-bold"
+                className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:border-blue-600 focus:outline-none font-mono font-bold"
               />
             </div>
           </div>
 
           {/* Initial Password */}
-          <div className="p-4 rounded-xl bg-amber-950/10 dark:bg-amber-950/30 border border-amber-900/30 space-y-2">
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
             <div className="flex justify-between items-center text-xs">
-              <span className="font-bold text-amber-950 dark:text-amber-200">Initial Account Password *</span>
+              <span className="font-extrabold text-slate-900 dark:text-white">Set Initial Password *</span>
               <span className={strength.colorClass}>
                 Strength: {strength.label} ({strength.score}/100)
               </span>
             </div>
+
             <input
-              type="text"
+              type="password"
               required
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              className="w-full rounded-xl border border-stone-300 dark:border-amber-900/60 bg-white dark:bg-stone-950 px-3.5 py-2 text-xs font-mono font-bold text-stone-900 dark:text-amber-100 focus:border-amber-600 focus:outline-none"
+              placeholder="Enter strong 6+ character initial password..."
+              className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-xs font-mono font-bold text-slate-900 dark:text-white focus:border-blue-600 focus:outline-none"
             />
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Confirm Initial Password *</label>
+              <input
+                type="password"
+                required
+                value={formData.confirmPassword}
+                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                placeholder="Re-enter initial password..."
+                className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-xs font-mono font-bold text-slate-900 dark:text-white focus:border-blue-600 focus:outline-none"
+              />
+            </div>
           </div>
 
-          <div className="pt-4 flex items-center justify-end gap-3 border-t border-stone-200 dark:border-amber-900/40">
-            <Link href="/employees" className="px-4 py-2 rounded-xl border border-stone-300 dark:border-amber-900/40 text-xs font-semibold text-stone-600 dark:text-amber-200 hover:bg-stone-100 dark:hover:bg-amber-950/40">
+          <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-200 dark:border-slate-800">
+            <Link href="/employees" className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
               Cancel
             </Link>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="bg-amber-900 hover:bg-amber-950 text-amber-50 font-extrabold text-xs px-6 py-2.5 rounded-xl shadow-md border border-amber-700 flex items-center gap-2"
+              className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-6 py-2.5 rounded-xl shadow-md flex items-center gap-2 transition"
             >
-              {isSubmitting ? "Generating Onboarding Email..." : "✓ Register Employee & Dispatch Welcome Email"}
+              {isSubmitting ? "Creating Employee Account..." : "✓ Create Employee Account & Dispatch Welcome Email"}
             </button>
           </div>
         </form>
@@ -262,14 +332,14 @@ export default function AddEmployeePage() {
 
       {/* Welcome Email Modal */}
       {showEmailModal && onboardingEmail && (
-        <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white text-stone-900 rounded-2xl p-8 max-w-2xl w-full shadow-2xl space-y-6 border border-amber-900/30 max-h-[90vh] overflow-y-auto animate-in fade-in">
-            <div className="flex items-center justify-between border-b border-amber-900/20 pb-4">
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white text-slate-900 rounded-2xl p-8 max-w-2xl w-full shadow-2xl space-y-6 border border-slate-300 max-h-[90vh] overflow-y-auto animate-in fade-in">
+            <div className="flex items-center justify-between border-b pb-4">
               <div className="flex items-center gap-3">
                 <span className="text-2xl">🎉</span>
                 <div>
-                  <h3 className="font-extrabold text-lg text-amber-950">Official Onboarding Welcome Email Dispatched</h3>
-                  <p className="text-xs text-amber-800 font-bold">✓ Sent to {onboardingEmail.recipientEmail}</p>
+                  <h3 className="font-extrabold text-lg text-slate-900">Official Onboarding Welcome Email Dispatched</h3>
+                  <p className="text-xs text-blue-600 font-bold">✓ Sent to {onboardingEmail.recipientEmail}</p>
                 </div>
               </div>
               <button
@@ -277,25 +347,25 @@ export default function AddEmployeePage() {
                   setShowEmailModal(false);
                   router.push("/employees");
                 }}
-                className="text-stone-400 hover:text-stone-700 font-bold"
+                className="text-slate-400 hover:text-slate-700 font-bold"
               >
                 ✕
               </button>
             </div>
 
-            <div className="bg-amber-950/10 p-3 rounded-xl border border-amber-900/20 text-xs font-mono font-bold text-amber-950">
+            <div className="bg-slate-100 p-3 rounded-xl border text-xs font-mono font-bold text-slate-900">
               Subject: {onboardingEmail.emailSubject}
             </div>
 
             <div
-              className="border border-stone-200 rounded-xl p-4 bg-white text-xs leading-relaxed"
+              className="border rounded-xl p-4 bg-white text-xs leading-relaxed"
               dangerouslySetInnerHTML={{ __html: onboardingEmail.emailBodyHtml }}
             />
 
-            <div className="flex justify-end gap-3 pt-3 border-t border-amber-900/20">
+            <div className="flex justify-end gap-3 pt-3 border-t">
               <button
                 onClick={() => window.print()}
-                className="bg-amber-950 text-amber-50 font-extrabold text-xs px-5 py-2.5 rounded-xl shadow-md border border-amber-800"
+                className="bg-slate-900 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-md"
               >
                 🖨️ Print Welcome Letter
               </button>
@@ -304,7 +374,7 @@ export default function AddEmployeePage() {
                   setShowEmailModal(false);
                   router.push("/employees");
                 }}
-                className="bg-amber-900 hover:bg-amber-950 text-amber-50 font-extrabold text-xs px-6 py-2.5 rounded-xl shadow-md border border-amber-700"
+                className="bg-blue-600 text-white font-extrabold text-xs px-6 py-2.5 rounded-xl shadow-md"
               >
                 Done • View Employee Directory →
               </button>
