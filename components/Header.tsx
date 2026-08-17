@@ -289,14 +289,16 @@ export default function Header() {
         <div className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800">
           <Link href="/employees/id" className="flex items-center gap-3 group">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-red-600 to-rose-700 text-xs font-extrabold text-white shadow-md group-hover:scale-105 transition">
-              {userContext?.activeMode === "ADMIN_HR" ? "RV" : "AR"}
+              {userContext?.name
+                ? userContext.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
+                : "EMP"}
             </div>
             <div className="hidden text-left md:block">
               <p className="text-xs font-extrabold text-slate-900 dark:text-white leading-none group-hover:text-red-600 transition">
-                {userContext?.name || (userContext?.activeMode === "ADMIN_HR" ? "Roushan Verma" : "Aditya Raj")}
+                {userContext?.name || "Roushan Verma"}
               </p>
               <p className="text-[10px] font-bold text-red-600 dark:text-red-400 mt-0.5 uppercase tracking-wider">
-                {userContext?.role || (userContext?.activeMode === "ADMIN_HR" ? "Administrator / HR" : "Developer (User)")}
+                {userContext?.role || "SUPER_ADMIN"}
               </p>
             </div>
           </Link>

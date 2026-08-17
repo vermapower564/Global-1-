@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     if (authResult.response) return authResult.response;
 
     const body = await request.json();
-    const { name, email, department, role, salary, phone, id, password } = body;
+    const { name, email, department, role, salary, phone, id, password, isActive } = body;
 
     if (!name || !email) {
       return NextResponse.json(
@@ -50,11 +50,11 @@ export async function POST(request: Request) {
 
     const assignedId = id || `EMP-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    let createdRecord;
+    let record;
     try {
       const { prisma } = await import("@/lib/prisma");
       const { hashPassword } = await import("@/lib/authService");
-      
+
       let deptRecord;
       if (department) {
         deptRecord = await prisma.department.findFirst({
@@ -62,30 +62,65 @@ export async function POST(request: Request) {
         });
       }
 
-      const hashedPassword = await hashPassword(password || "password123");
-
-      createdRecord = await prisma.user.create({
-        data: {
-          employeeId: assignedId,
-          name,
-          email,
-          password: hashedPassword,
-          phone: phone || "+91 98765 00000",
-          role: role ? (role.toUpperCase().replace(/\s+/g, "_") as any) : "DEVELOPER",
-          departmentId: deptRecord ? deptRecord.id : null,
-          salary: parseFloat(salary?.toString().replace(/[^0-9.]/g, "") || "85000"),
-          joiningDate: new Date(),
-          isProfileCompleted: true,
-          documentsVerified: true,
-        },
+      // Check if user exists by email or employeeId
+      const existingUser = await prisma.user.findFirst({
+        where: { OR: [{ email: email.toLowerCase().trim() }, { employeeId: assignedId }] },
       });
 
-      // 📜 Security Audit Event Log
-      await logAuditEvent(
-        authResult.user?.id || null,
-        "EMPLOYEE_CREATE",
-        `Created employee profile for ${name} (${assignedId})`
-      );
+      const formattedRole = role
+        ? (role.toUpperCase().replace(/\s+/g, "_") as any)
+        : "DEVELOPER";
+
+      if (existingUser) {
+        const updateData: any = {
+          name,
+          email,
+          role: formattedRole,
+          phone: phone || existingUser.phone,
+          salary: salary ? parseFloat(salary.toString().replace(/[^0-9.]/g, "")) : existingUser.salary,
+        };
+
+        if (deptRecord) updateData.departmentId = deptRecord.id;
+        if (isActive !== undefined) updateData.isActive = Boolean(isActive);
+        if (password && password.trim()) {
+          updateData.password = await hashPassword(password);
+        }
+
+        record = await prisma.user.update({
+          where: { id: existingUser.id },
+          data: updateData,
+        });
+
+        await logAuditEvent(
+          authResult.user?.id || null,
+          "EMPLOYEE_UPDATE",
+          `Updated employee user profile for ${name} (${assignedId})`
+        );
+      } else {
+        const hashedPassword = await hashPassword(password || "password123");
+        record = await prisma.user.create({
+          data: {
+            employeeId: assignedId,
+            name,
+            email: email.toLowerCase().trim(),
+            password: hashedPassword,
+            phone: phone || "+91 98765 00000",
+            role: formattedRole,
+            departmentId: deptRecord ? deptRecord.id : null,
+            salary: parseFloat(salary?.toString().replace(/[^0-9.]/g, "") || "85000"),
+            joiningDate: new Date(),
+            isActive: isActive !== undefined ? Boolean(isActive) : true,
+            isProfileCompleted: true,
+            documentsVerified: true,
+          },
+        });
+
+        await logAuditEvent(
+          authResult.user?.id || null,
+          "EMPLOYEE_CREATE",
+          `Created employee profile for ${name} (${assignedId})`
+        );
+      }
     } catch (dbErr: any) {
       console.warn("Prisma MySQL save fallback:", dbErr.message);
     }
@@ -104,7 +139,7 @@ export async function POST(request: Request) {
     const timestampStr = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
     const isUpdate = !!id;
     const emailSubject = isUpdate
-      ? `✏️ Employee Profile & ID Update Alert (${assignedId})`
+      ? `✏️ Employee Profile & Access Update Alert (${assignedId})`
       : `🎉 Welcome to OMS Enterprise! Your Employee ID is ${assignedId}`;
 
     let smtpResult: any = null;
@@ -115,7 +150,7 @@ export async function POST(request: Request) {
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 650px; border: 2px solid #0f172a; padding: 24px;">
             <h2>Dear ${name},</h2>
-            <p>${isUpdate ? "Your employee user profile was updated by HR/Admin." : "Welcome to the team! Your employee user account has been registered."}</p>
+            <p>${isUpdate ? "Your employee user profile and permissions were updated by Corporate Admin/HR." : "Welcome to the team! Your employee user account has been registered."}</p>
             <div style="background-color: #f8fafc; border-left: 4px solid #dc2626; padding: 16px;">
               <p><strong>Employee Name:</strong> ${name}</p>
               <p><strong>Employee ID:</strong> ${assignedId}</p>
@@ -135,7 +170,7 @@ export async function POST(request: Request) {
       {
         success: true,
         message: `✓ Employee user saved to XAMPP MySQL and Nodemailer SMTP email dispatched to ${email}!`,
-        data: createdRecord || newEmployee,
+        data: record || newEmployee,
         smtpDetails: smtpResult,
       },
       { status: 201 }
@@ -146,6 +181,10 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+export async function PUT(request: Request) {
+  return POST(request);
 }
 
 export async function DELETE(request: Request) {
@@ -187,7 +226,6 @@ export async function DELETE(request: Request) {
       });
       deletedFromDb = true;
 
-      // 📜 Security Audit Event Log
       await logAuditEvent(
         authResult.user?.id || null,
         "EMPLOYEE_DELETE",
@@ -199,7 +237,6 @@ export async function DELETE(request: Request) {
 
     const updatedList = deleteStoredEmployee(id);
 
-    // 📧 Nodemailer SMTP Email Dispatch for Account Deactivation
     let smtpResult: any = null;
     try {
       smtpResult = await sendSmtpEmail({

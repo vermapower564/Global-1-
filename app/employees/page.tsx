@@ -2,10 +2,26 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { getStoredEmployees, addStoredEmployee, deleteStoredEmployee, getDeletedEmployeeIds, Employee } from "@/utils/employeeStore";
 import { setCurrentUserContext } from "@/utils/userContextStore";
 
+const SYSTEM_ROLES = [
+  { value: "SUPER_ADMIN", label: "Super Admin (Full System Access)" },
+  { value: "DIRECTOR", label: "Director (Executive Level)" },
+  { value: "HR", label: "HR Manager" },
+  { value: "FINANCE", label: "Finance / Payroll Manager" },
+  { value: "PROJECT_MANAGER", label: "Project Manager (Team Leader)" },
+  { value: "SALES_MANAGER", label: "Sales Manager" },
+  { value: "SALES_EXECUTIVE", label: "Sales Executive" },
+  { value: "DIGITAL_MARKETING_MANAGER", label: "Marketing Manager" },
+  { value: "SEO_EXECUTIVE", label: "SEO Executive" },
+  { value: "CONTENT_WRITER", label: "Content Writer" },
+  { value: "DEVELOPER", label: "Developer (Employee User)" },
+];
+
 export default function EmployeesPage() {
+  const router = useRouter();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [search, setSearch] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("All");
@@ -33,11 +49,18 @@ export default function EmployeesPage() {
   const [editName, setEditName] = useState("");
   const [editEmpId, setEditEmpId] = useState("");
   const [editEmail, setEditEmail] = useState("");
-  const [editRole, setEditRole] = useState("");
+  const [editRole, setEditRole] = useState("DEVELOPER");
   const [editDepartment, setEditDepartment] = useState("");
   const [editSalary, setEditSalary] = useState("");
   const [editPhone, setEditPhone] = useState("");
+  const [editIsActive, setEditIsActive] = useState(true);
+  const [editNewPassword, setEditNewPassword] = useState("");
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Reset Password Modal State
+  const [resetTarget, setResetTarget] = useState<Employee | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
+  const [isResettingPass, setIsResettingPass] = useState(false);
 
   // Fetch dynamic departments
   useEffect(() => {
@@ -85,7 +108,7 @@ export default function EmployeesPage() {
                   : `₹${Number(item.salary).toLocaleString()}`
                 : "₹8,50,000",
               joiningDate: item.joiningDate ? new Date(item.joiningDate).toISOString().split("T")[0] : "2026-01-01",
-              status: item.isActive === false ? "On Leave" : "Active",
+              status: item.isActive === false ? "Deactivated" : "Active",
               avatar: item.name
                 ? item.name
                     .split(" ")
@@ -93,7 +116,7 @@ export default function EmployeesPage() {
                     .join("")
                     .slice(0, 2)
                     .toUpperCase()
-                : "RV",
+                : "EMP",
               phone: item.phone || "+91 98765 00000",
               reportingManager: "Executive Board",
             }));
@@ -120,16 +143,35 @@ export default function EmployeesPage() {
     loadEmployees();
   }, []);
 
+  // 🔑 Take Employee Access (Switch to Employee Perspective for Admin)
+  const handleTakeEmployeeAccess = (emp: Employee) => {
+    setCurrentUserContext({
+      id: emp.id,
+      name: emp.name,
+      email: emp.email,
+      role: emp.role,
+      activeMode: "EMPLOYEE_USER",
+      assignedProjectTitle: "OMS Enterprise System",
+    });
+
+    setToastMsg(`🔑 Switched to Employee Access View: ${emp.name} (${emp.id})`);
+    setTimeout(() => {
+      router.push("/dashboard");
+    }, 400);
+  };
+
   // ✏️ Open Edit Employee Profile Modal
   const handleOpenEditModal = (emp: Employee) => {
     setEditTarget(emp);
     setEditName(emp.name);
     setEditEmpId(emp.id);
     setEditEmail(emp.email);
-    setEditRole(emp.role);
+    setEditRole(emp.role.toUpperCase().replace(/\s+/g, "_"));
     setEditDepartment(emp.department);
     setEditSalary(emp.salary || "₹85,000");
     setEditPhone(emp.phone || "+91 98765 00000");
+    setEditIsActive(emp.status === "Active");
+    setEditNewPassword("");
   };
 
   // ✏️ Save Edited Employee Profile & ID
@@ -151,6 +193,8 @@ export default function EmployeesPage() {
           department: editDepartment,
           salary: editSalary,
           phone: editPhone,
+          isActive: editIsActive,
+          password: editNewPassword || undefined,
         }),
       });
     } catch (err) {
@@ -171,8 +215,37 @@ export default function EmployeesPage() {
     setIsSavingEdit(false);
     setEditTarget(null);
 
-    setToastMsg(`✓ Employee User Profile & ID (${editEmpId}) updated successfully!`);
+    setToastMsg(`✓ Employee User Profile & Role (${editEmpId}) updated successfully in MySQL!`);
     setTimeout(() => setToastMsg(null), 4000);
+  };
+
+  // 🔑 Reset Employee Password Handler
+  const handlePerformPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetTarget || !resetPassword) return;
+
+    setIsResettingPass(true);
+
+    try {
+      await fetch("/api/employees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: resetTarget.id,
+          name: resetTarget.name,
+          email: resetTarget.email,
+          password: resetPassword,
+        }),
+      });
+      setToastMsg(`✓ Password for ${resetTarget.name} (${resetTarget.id}) reset & Bcrypt hashed in MySQL!`);
+    } catch (err) {
+      setToastMsg("❌ Failed to reset employee password.");
+    } finally {
+      setIsResettingPass(false);
+      setResetTarget(null);
+      setResetPassword("");
+      setTimeout(() => setToastMsg(null), 4000);
+    }
   };
 
   // 🗑️ Handle Permanently Deleting Employee User Account
@@ -223,13 +296,13 @@ export default function EmployeesPage() {
       <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
         <div>
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Workforce Directory
+            Workforce Directory & Access Control
           </span>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight mt-1">
-            Enterprise Directory & Records ({employees.length})
+            Enterprise Employee Management & Access Desk ({employees.length})
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Manage corporate staff profiles, roles, assigned employee IDs, and accounts.
+            Manage corporate employee logins, active roles, passwords, and take employee access view.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -240,7 +313,7 @@ export default function EmployeesPage() {
             {viewMode === "directory" ? "🌳 View Organizational Tree" : "📋 View Directory Table"}
           </button>
           <Link href="/employees/add" className="bg-slate-900 hover:bg-black dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold text-xs px-4 py-2.5 rounded-lg transition shrink-0">
-            + Add Employee
+            + Add New Employee
           </Link>
         </div>
       </div>
@@ -288,7 +361,7 @@ export default function EmployeesPage() {
                   <th>Contact Info</th>
                   <th>Joining Date</th>
                   <th>Status</th>
-                  <th>Actions</th>
+                  <th>Admin Controls & Access</th>
                 </tr>
               </thead>
               <tbody>
@@ -327,35 +400,38 @@ export default function EmployeesPage() {
                       </td>
                       <td className="text-xs text-slate-600 dark:text-slate-400 font-mono">{emp.joiningDate}</td>
                       <td>
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 group-hover:bg-emerald-100 group-hover:text-emerald-800 transition-colors">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold transition-colors ${
+                          emp.status === "Active"
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                            : "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+                        }`}>
                           {emp.status}
                         </span>
                       </td>
                       <td>
-                        <div className="flex items-center gap-2">
-                          <Link
-                            href={`/employees/id`}
-                            onClick={() => {
-                              setCurrentUserContext({
-                                id: emp.id,
-                                name: emp.name,
-                                email: emp.email,
-                                role: emp.role,
-                                activeMode: "EMPLOYEE_USER",
-                                assignedProjectTitle: "OMS Enterprise Applications",
-                              });
-                            }}
-                            className="text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition"
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            onClick={() => handleTakeEmployeeAccess(emp)}
+                            className="text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-600 hover:text-white px-2.5 py-1 rounded-lg transition flex items-center gap-1 shadow-2xs"
+                            title={`Take Access & Login as ${emp.name}`}
                           >
-                            Profile
-                          </Link>
+                            🔑 Take Access
+                          </button>
+
+                          <button
+                            onClick={() => setResetTarget(emp)}
+                            className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-600 hover:text-white px-2.5 py-1 rounded-lg transition flex items-center gap-1 shadow-2xs"
+                            title={`Reset Password for ${emp.name}`}
+                          >
+                            🔒 Password Reset
+                          </button>
 
                           <button
                             onClick={() => handleOpenEditModal(emp)}
                             className="text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition flex items-center gap-1"
                             title={`Edit ${emp.name}`}
                           >
-                            <span className="text-slate-400 hover:text-amber-600 transition-colors">✏️</span> Edit
+                            ✏️ Edit
                           </button>
 
                           <button
@@ -363,7 +439,7 @@ export default function EmployeesPage() {
                             className="text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition flex items-center gap-1"
                             title={`Delete ${emp.name}`}
                           >
-                            <span className="text-slate-400 hover:text-rose-600 transition-colors">🗑️</span> Delete
+                            🗑️ Delete
                           </button>
                         </div>
                       </td>
@@ -376,13 +452,57 @@ export default function EmployeesPage() {
         </>
       )}
 
+      {/* Reset Password Modal */}
+      {resetTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 border border-slate-200 dark:border-slate-800 animate-in fade-in">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div>
+                <h3 className="font-bold text-base text-slate-900 dark:text-white">Admin Reset Employee Password</h3>
+                <p className="text-xs text-slate-500">For {resetTarget.name} ({resetTarget.id})</p>
+              </div>
+              <button onClick={() => setResetTarget(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white font-bold">
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handlePerformPasswordReset} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">New Employee Password *</label>
+                <input
+                  type="password"
+                  required
+                  value={resetPassword}
+                  onChange={(e) => setResetPassword(e.target.value)}
+                  placeholder="Enter new secure password..."
+                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2.5 text-xs font-mono focus:border-red-600 focus:outline-none transition shadow-inner"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button type="button" onClick={() => setResetTarget(null)} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-100">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isResettingPass}
+                  className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-5 py-2 rounded-lg transition shadow-md"
+                >
+                  {isResettingPass ? "Saving Hash..." : "🔒 Save New Bcrypt Password"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Edit Employee Modal */}
       {editTarget && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white rounded-2xl p-6 max-w-lg w-full shadow-xl space-y-4 border border-slate-200 dark:border-slate-800 animate-in fade-in">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
               <div>
-                <h3 className="font-bold text-base text-slate-900 dark:text-white">Update Employee Profile</h3>
+                <h3 className="font-bold text-base text-slate-900 dark:text-white">Admin Employee Access & Role Management</h3>
                 <p className="text-xs text-slate-500">Edit details for {editTarget.name}</p>
               </div>
               <button onClick={() => setEditTarget(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white font-bold">
@@ -438,7 +558,6 @@ export default function EmployeesPage() {
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                {/* 🏢 Dynamic Department Dropdown Select */}
                 <div>
                   <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">Choose Department *</label>
                   <select
@@ -455,26 +574,44 @@ export default function EmployeesPage() {
                 </div>
 
                 <div>
-                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">Designation / Role *</label>
-                  <input
-                    type="text"
-                    required
+                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">System Access Role *</label>
+                  <select
                     value={editRole}
                     onChange={(e) => setEditRole(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-medium text-slate-900 dark:text-white"
-                  />
+                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-bold text-slate-900 dark:text-white"
+                  >
+                    {SYSTEM_ROLES.map((r) => (
+                      <option key={r.value} value={r.value}>
+                        🛡️ {r.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
-              <div>
-                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">Annual Salary (₹) *</label>
-                <input
-                  type="text"
-                  required
-                  value={editSalary}
-                  onChange={(e) => setEditSalary(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono font-bold text-slate-900 dark:text-white"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">Annual Salary (₹) *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editSalary}
+                    onChange={(e) => setEditSalary(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono font-bold text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">Account Login Status</label>
+                  <select
+                    value={editIsActive ? "active" : "deactivated"}
+                    onChange={(e) => setEditIsActive(e.target.value === "active")}
+                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-bold text-slate-900 dark:text-white"
+                  >
+                    <option value="active">🟢 Active (Login Allowed)</option>
+                    <option value="deactivated">🔴 Deactivated (Login Revoked)</option>
+                  </select>
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
@@ -486,7 +623,7 @@ export default function EmployeesPage() {
                   disabled={isSavingEdit}
                   className="bg-slate-900 hover:bg-black dark:bg-white dark:text-slate-900 text-white font-bold text-xs px-5 py-2 rounded-lg transition"
                 >
-                  {isSavingEdit ? "Saving..." : "Save Changes"}
+                  {isSavingEdit ? "Saving..." : "Save Profile & Role Changes"}
                 </button>
               </div>
             </form>
