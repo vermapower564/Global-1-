@@ -5,8 +5,22 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 function createClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL || "mysql://root:@localhost:3306/oms";
-  const adapter = new PrismaMariaDb(connectionString);
-  return new PrismaClient({ adapter });
+  
+  try {
+    const adapter = new PrismaMariaDb({
+      host: "127.0.0.1",
+      port: 3306,
+      user: "root",
+      password: "",
+      database: "oms",
+      connectionLimit: 25,
+      connectTimeout: 5000,
+    });
+    return new PrismaClient({ adapter });
+  } catch (err) {
+    const adapter = new PrismaMariaDb(connectionString);
+    return new PrismaClient({ adapter });
+  }
 }
 
 export function getPrismaClient(): PrismaClient {

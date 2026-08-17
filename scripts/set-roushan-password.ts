@@ -1,10 +1,5 @@
-import { PrismaClient } from "@prisma/client";
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import { prisma } from "../lib/prisma";
 import bcrypt from "bcryptjs";
-
-const connectionString = process.env.DATABASE_URL || "mysql://root:@localhost:3306/oms";
-const adapter = new PrismaMariaDb(connectionString);
-const prisma = new PrismaClient({ adapter });
 
 async function main() {
   console.log("🔍 Setting verified Bcrypt password hash for Roushan Verma (EMP-8595)...");

@@ -1,10 +1,5 @@
-import { PrismaClient } from "@prisma/client";
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import { prisma } from "../lib/prisma";
 import bcrypt from "bcryptjs";
-
-const connectionString = process.env.DATABASE_URL || "mysql://root:@localhost:3306/oms";
-const adapter = new PrismaMariaDb(connectionString);
-const prisma = new PrismaClient({ adapter });
 
 async function safeDepartmentSeed(name: string, code: string, budget: number, headName: string) {
   let existing = await prisma.department.findFirst({
