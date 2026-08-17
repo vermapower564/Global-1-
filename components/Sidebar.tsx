@@ -37,29 +37,31 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     setIsAdmin(adminCheck);
   }, [pathname]);
 
-  // Admin Navigation Menu items
+  // Admin Multi-Dashboard Navigation Links
   const adminNavItems = [
-    { name: "Dashboard", href: "/dashboard", icon: IconDashboard },
-    { name: "Employees", href: "/employees", icon: IconUsers },
-    { name: "Departments", href: "/departments", icon: IconBuilding },
-    { name: "Attendance", href: "/attendance", icon: IconCalendar },
-    { name: "Projects", href: "/projects", icon: IconFolder },
-    { name: "Leave Requests", href: "/hr", icon: IconUserCheck },
-    { name: "Work Updates", href: "/daily-work/approvals", icon: IconClipboardList },
-    { name: "Reports", href: "/reports", icon: IconFileText },
-    { name: "Audit Logs", href: "/audit-logs", icon: IconHistory },
-    { name: "Settings", href: "/settings", icon: IconSettings },
+    { name: "Command Dashboard", href: "/admin/dashboard", icon: IconDashboard },
+    { name: "Workforce Directory", href: "/admin/employees", icon: IconUsers },
+    { name: "Organization Tasks", href: "/admin/tasks", icon: IconClipboardList },
+    { name: "Project Health", href: "/admin/projects", icon: IconFolder },
+    { name: "Blocker Resolution", href: "/admin/blockers", icon: IconUserCheck },
+    { name: "Attendance Ledger", href: "/admin/attendance", icon: IconCalendar },
+    { name: "Daily Work Review", href: "/admin/work", icon: IconFileEdit },
+    { name: "Departments", href: "/admin/departments", icon: IconBuilding },
+    { name: "Executive Reports", href: "/admin/reports", icon: IconFileText },
+    { name: "Security Audit Logs", href: "/admin/audit-logs", icon: IconHistory },
+    { name: "Corporate Settings", href: "/admin/settings", icon: IconSettings },
   ];
 
-  // Employee Navigation Menu items
+  // Employee Multi-Dashboard Navigation Links
   const employeeNavItems = [
-    { name: "Dashboard", href: "/dashboard", icon: IconDashboard },
-    { name: "My Attendance", href: "/attendance", icon: IconCalendar },
-    { name: "My Projects", href: "/projects", icon: IconFolder },
-    { name: "Daily Work Update", href: "/daily-work", icon: IconClipboardList },
-    { name: "Leave Requests", href: "/leave/apply", icon: IconFileEdit },
-    { name: "Profile", href: "/employees/id", icon: IconUsers },
-    { name: "Settings", href: "/settings", icon: IconSettings },
+    { name: "My Work Dashboard", href: "/employee/dashboard", icon: IconDashboard },
+    { name: "My Tasks & Kanban", href: "/employee/tasks", icon: IconClipboardList },
+    { name: "My Assigned Projects", href: "/employee/projects", icon: IconFolder },
+    { name: "Shift Punch Clock", href: "/employee/attendance", icon: IconCalendar },
+    { name: "Daily Work EOD", href: "/employee/work", icon: IconFileEdit },
+    { name: "Project Teammates", href: "/employee/team", icon: IconUsers },
+    { name: "My Performance", href: "/employee/reports", icon: IconFileText },
+    { name: "My Profile & Security", href: "/employee/profile", icon: IconSettings },
   ];
 
   const currentNavItems = isAdmin ? adminNavItems : employeeNavItems;
@@ -80,7 +82,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     <aside className="w-64 min-h-screen bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col border-r border-slate-200 dark:border-slate-800 shrink-0 shadow-sm fixed lg:static inset-y-0 left-0 z-50 transition-all duration-300">
       {/* Enterprise Brand Logo Header */}
       <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <Link href="/dashboard" className="flex items-center gap-3">
+        <Link href={isAdmin ? "/admin/dashboard" : "/employee/dashboard"} className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white font-black text-lg shadow-md">
             O
           </div>
@@ -89,7 +91,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
               OMS Enterprise
             </h1>
             <span className="text-[10px] text-blue-600 font-extrabold uppercase tracking-widest mt-1 block">
-              {isAdmin ? "Admin Console" : "Employee Workspace"}
+              {isAdmin ? "Admin Control Center" : "Employee Workspace"}
             </span>
           </div>
         </Link>
@@ -106,13 +108,11 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       {/* Enterprise Navigation Links */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-3 block mb-2">
-          {isAdmin ? "Admin Navigation" : "Employee Workspace"}
+          {isAdmin ? "Admin Navigation" : "Employee Navigation"}
         </div>
 
         {currentNavItems.map((item) => {
-          const isActive =
-            pathname === item.href ||
-            (item.href !== "/" && item.href !== "/dashboard" && pathname?.startsWith(item.href));
+          const isActive = pathname === item.href || (item.href !== "/admin/dashboard" && item.href !== "/employee/dashboard" && pathname?.startsWith(item.href));
           const IconComponent = item.icon;
 
           return (

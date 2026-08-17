@@ -22,8 +22,8 @@ export default function ProfileAlertBanner() {
   const isCompleted = currentUser?.isProfileCompleted ?? false;
   if (isCompleted) return null;
 
-  const userName = currentUser?.name || userContext?.name || "Aditya Raj";
-  const userEmpId = currentUser?.id || userContext?.id || "EMP014";
+  const userName = currentUser?.name || userContext?.name || "Employee";
+  const userEmpId = currentUser?.id || userContext?.employeeId || userContext?.id || "EMP";
 
   return (
     <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-rose-600 text-white p-4 rounded-2xl shadow-xl border border-amber-400/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">

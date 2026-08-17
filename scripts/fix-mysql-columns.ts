@@ -27,6 +27,20 @@ async function fixMysqlColumns() {
       }
     }
 
+    // 2. Add clientId to project if missing
+    try {
+      await conn.query(`
+        ALTER TABLE project ADD COLUMN clientId VARCHAR(191) NULL;
+      `);
+      console.log("✓ Added missing `clientId` column to `project` table!");
+    } catch (e: any) {
+      if (e.message.includes("Duplicate column name")) {
+        console.log("✓ `project.clientId` column already exists.");
+      } else {
+        console.warn("project column check:", e.message);
+      }
+    }
+
     conn.release();
     await pool.end();
   } catch (err: any) {

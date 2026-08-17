@@ -2,10 +2,13 @@ export type UserRole = "ADMIN_HR" | "EMPLOYEE_USER";
 
 export interface CurrentUser {
   id: string;
+  employeeId?: string;
   name: string;
   email: string;
   role: string;
+  department?: string;
   activeMode: UserRole;
+  avatarUrl?: string | null;
   assignedProjectTitle: string;
 }
 

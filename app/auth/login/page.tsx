@@ -45,15 +45,21 @@ export default function LoginPage() {
         
         setCurrentUserContext({
           id: serverUser.id,
+          employeeId: serverUser.employeeId || serverUser.id,
           name: serverUser.name,
           email: serverUser.email,
           role: serverUser.role,
           activeMode: isAdmin ? "ADMIN_HR" : "EMPLOYEE_USER",
+          avatarUrl: serverUser.avatarUrl || null,
           assignedProjectTitle: "OMS Enterprise System",
         });
 
         setTimeout(() => {
-          router.push("/dashboard");
+          if (isAdmin) {
+            router.push("/admin/dashboard");
+          } else {
+            router.push("/employee/dashboard");
+          }
         }, 400);
       } else {
         setErrorMessage(data.error || "Invalid credentials.");

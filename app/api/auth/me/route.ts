@@ -60,11 +60,12 @@ export async function GET(req: NextRequest) {
       success: true,
       user: {
         id: dbUser.id,
-        employeeId: dbUser.employeeId,
+        employeeId: dbUser.employeeId || dbUser.id,
         name: dbUser.name,
         email: dbUser.email,
         role: userRole,
         department: dbUser.department?.name || "Operations",
+        avatarUrl: dbUser.avatarUrl || null,
         permissions,
       },
     });

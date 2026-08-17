@@ -388,6 +388,8 @@ model user {
   assignedTasks      task[]             @relation("AssignedTasks")
   createdTasks       task[]             @relation("CreatedTasks")
   taskhistory        taskhistory[]
+  taskcomment        taskcomment[]
+  notification       notification[]
   department         department?        @relation(fields: [departmentId], references: [id], map: "User_departmentId_fkey")
   manager            user?              @relation("ManagerEmployees", fields: [managerId], references: [id], map: "User_managerId_fkey")
   employees          user[]             @relation("ManagerEmployees")
@@ -419,6 +421,7 @@ model task {
   createdBy        user?         @relation("CreatedTasks", fields: [createdById], references: [id], map: "Task_createdById_fkey")
   project          project?      @relation(fields: [projectId], references: [id], map: "Task_projectId_fkey")
   taskhistory      taskhistory[]
+  taskcomment      taskcomment[]
 
   @@index([assignedToUserId], map: "Task_assignedToUserId_fkey")
   @@index([createdById], map: "Task_createdById_fkey")
@@ -439,6 +442,33 @@ model taskhistory {
 
   @@index([taskId], map: "TaskHistory_taskId_fkey")
   @@index([userId], map: "TaskHistory_userId_fkey")
+}
+
+model taskcomment {
+  id          String   @id @default(cuid())
+  taskId      String
+  userId      String
+  commentText String   @db.Text
+  createdAt   DateTime @default(now())
+  task        task     @relation(fields: [taskId], references: [id], onDelete: Cascade, map: "TaskComment_taskId_fkey")
+  user        user     @relation(fields: [userId], references: [id], onDelete: Cascade, map: "TaskComment_userId_fkey")
+
+  @@index([taskId], map: "TaskComment_taskId_fkey")
+  @@index([userId], map: "TaskComment_userId_fkey")
+}
+
+model notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String   @db.Text
+  type      String   @default("INFO")
+  isRead    Boolean  @default(false)
+  linkUrl   String?
+  createdAt DateTime @default(now())
+  user      user     @relation(fields: [userId], references: [id], onDelete: Cascade, map: "Notification_userId_fkey")
+
+  @@index([userId], map: "Notification_userId_fkey")
 }
 
 model videoproductionitem {
