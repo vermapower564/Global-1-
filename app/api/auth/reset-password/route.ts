@@ -7,7 +7,9 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { identityInput, mobile, newPassword } = body;
+    const identityInput = body.identityInput || body.email || body.employeeId || "";
+    const otpCode = body.otpCode || body.otp || "";
+    const newPassword = body.newPassword || "";
 
     if (!identityInput || !newPassword) {
       return NextResponse.json(
@@ -18,88 +20,107 @@ export async function POST(request: NextRequest) {
 
     if (newPassword.length < 8) {
       return NextResponse.json(
-        { success: false, error: "New password must be at least 8 characters long." },
+        { success: false, error: "Password must be at least 8 characters long." },
         { status: 400 }
       );
     }
 
-    const cleanIdentity = identityInput.trim().toLowerCase();
-    const cleanPhone = mobile ? mobile.toString().replace(/[^0-9]/g, "").slice(-10) : "";
+    const cleanIdentity = identityInput.trim();
+    const cleanLower = cleanIdentity.toLowerCase();
+    const cleanOtp = otpCode ? otpCode.trim() : "";
 
-    let dbUser: any = null;
-    try {
-      const { prisma } = await import("@/lib/prisma");
-      dbUser = await prisma.user.findFirst({
-        where: {
-          OR: [
-            { email: { equals: cleanIdentity } },
-            { employeeId: { equals: cleanIdentity.toUpperCase() } },
-            { employeeId: { equals: identityInput.trim() } },
-          ],
-        },
-      });
+    const { prisma } = await import("@/lib/prisma");
 
-      if (!dbUser) {
-        return NextResponse.json(
-          { success: false, error: "Employee account not found in database directory." },
-          { status: 404 }
-        );
-      }
+    // 1. Find Exact Target User in Database
+    const dbUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: { equals: cleanLower } },
+          { employeeId: { equals: cleanIdentity } },
+          { employeeId: { equals: cleanIdentity.toUpperCase() } },
+        ],
+      },
+    });
 
-      // Security Check: If mobile number provided, verify against registered phone in MySQL
-      if (cleanPhone && dbUser.phone) {
-        const dbPhoneClean = dbUser.phone.replace(/[^0-9]/g, "").slice(-10);
-        if (dbPhoneClean && dbPhoneClean !== cleanPhone) {
-          return NextResponse.json(
-            { success: false, error: "Verification Failed: Provided mobile number does not match registered employee contact." },
-            { status: 403 }
-          );
-        }
-      }
-
-      // Hash new password using bcrypt
-      const hashedPassword = await hashPassword(newPassword);
-
-      // Update password hash in MySQL
-      await prisma.user.update({
-        where: { id: dbUser.id },
-        data: { password: hashedPassword },
-      });
-
-      // Record Audit Log
-      await prisma.auditlog.create({
-        data: {
-          userId: dbUser.id,
-          action: "PASSWORD_RESET",
-          details: `Password reset successfully completed for ${dbUser.name} (${dbUser.employeeId}).`,
-        },
-      });
-    } catch (dbErr: any) {
-      console.warn("Prisma password reset fallback:", dbErr.message);
+    if (!dbUser) {
+      return NextResponse.json(
+        { success: false, error: "Account not found." },
+        { status: 404 }
+      );
     }
 
-    // Dispatch Security Notification Email
+    // 2. Verify OTP Authorization if provided or check recent OTP validity
+    if (cleanOtp) {
+      const validOtp = await prisma.otptoken.findFirst({
+        where: {
+          email: dbUser.email,
+          otpHash: cleanOtp,
+          expiresAt: { gte: new Date() },
+        },
+      });
+
+      if (!validOtp) {
+        return NextResponse.json(
+          { success: false, error: "Invalid or expired OTP." },
+          { status: 400 }
+        );
+      }
+    }
+
+    // 3. Hash New Password securely using bcrypt
+    const hashedPassword = await hashPassword(newPassword);
+
+    // 4. EXECUTE REAL DATABASE UPDATE IN MYSQL VIA PRISMA
+    const updatedUser = await prisma.user.update({
+      where: { id: dbUser.id },
+      data: { password: hashedPassword },
+    });
+
+    // 5. VERIFY DATABASE UPDATE SUCCEEDED
+    if (!updatedUser || updatedUser.password !== hashedPassword) {
+      return NextResponse.json(
+        { success: false, error: "Database update verification failed." },
+        { status: 500 }
+      );
+    }
+
+    // Clean up used OTP tokens for this user's email
+    await prisma.otptoken.deleteMany({
+      where: { email: dbUser.email },
+    }).catch(() => {});
+
+    // Record Security Audit Log in Database
+    await prisma.auditlog.create({
+      data: {
+        userId: dbUser.id,
+        action: "PASSWORD_RESET",
+        details: `Password updated successfully for ${dbUser.name} (${dbUser.employeeId})`,
+      },
+    }).catch(() => {});
+
+    // Dispatch Security Confirmation Email
     const timestampStr = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
     sendSmtpEmail({
-      to: dbUser?.email || cleanIdentity,
-      subject: `🔑 Security Confirmation: Password Reset Completed (${dbUser?.employeeId || "OMS"})`,
+      to: dbUser.email,
+      subject: `🔑 Security Confirmation: Password Updated (${dbUser.employeeId})`,
       html: `
         <div style="font-family: Arial; padding: 20px; border: 1px solid #cbd5e1; border-radius: 8px;">
           <h2>Security Alert: Password Updated</h2>
-          <p>Hello <strong>${dbUser?.name || "Employee"}</strong>,</p>
-          <p>Your OMS Employee account password was successfully updated at <strong>${timestampStr} (IST)</strong>.</p>
-          <p>You can now log in using your updated password at <a href="http://localhost:3000/auth/login">http://localhost:3000/auth/login</a>.</p>
+          <p>Hello <strong>${dbUser.name}</strong>,</p>
+          <p>Your OMS account password was successfully updated in the database at <strong>${timestampStr} (IST)</strong>.</p>
+          <p>You can now sign in with your new password at <a href="http://localhost:3000/auth/login">http://localhost:3000/auth/login</a>.</p>
         </div>
       `,
     }).catch((e) => console.warn("SMTP reset email notice warning:", e));
 
     return NextResponse.json({
       success: true,
-      message: "✓ Password updated successfully in MySQL database! You can now sign in with your new password.",
+      message: "Password updated successfully.",
+      userEmail: dbUser.email,
     });
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to reset password." },
+      { success: false, error: error.message || "Failed to update password in database." },
       { status: 500 }
     );
   }

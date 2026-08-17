@@ -1,17 +1,26 @@
 "use client";
 
 import React, { useState } from "react";
+import { usePathname } from "next/navigation";
 import Navbar from "@/components/navbar";
 import Sidebar from "@/components/Sidebar";
 import Footer from "@/components/footer";
 import AICopilot from "@/components/AICopilot";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   const toggleSidebar = () => {
     setIsSidebarOpen((prev) => !prev);
   };
+
+  // Hide OMS Navbar & Sidebar on standalone Auth pages (/auth/* & /login)
+  const isAuthPage = pathname?.startsWith("/auth") || pathname === "/login";
+
+  if (isAuthPage) {
+    return <div className="bg-slate-100 text-slate-900 font-sans min-h-screen antialiased">{children}</div>;
+  }
 
   return (
     <div className="bg-slate-50 text-slate-900 font-sans min-h-screen flex antialiased relative overflow-x-hidden">

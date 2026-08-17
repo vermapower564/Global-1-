@@ -67,6 +67,8 @@ export async function GET(req: NextRequest) {
         email: dbUser.email,
         role: userRole,
         department: dbUser.department?.name || "Operations",
+        phone: dbUser.phone || null,
+        joiningDate: dbUser.joiningDate ? new Date(dbUser.joiningDate).toISOString() : null,
         avatarUrl,
         permissions,
       },

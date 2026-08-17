@@ -4,6 +4,8 @@ import { sendSmtpEmail } from "@/lib/smtpTransporter";
 
 export const dynamic = "force-dynamic";
 
+const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"];
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -12,7 +14,7 @@ export async function POST(request: NextRequest) {
 
     if (!identityInput || !inputPassword) {
       return NextResponse.json(
-        { success: false, error: "Invalid credentials." },
+        { success: false, error: "Invalid ID/email or password." },
         { status: 400 }
       );
     }
@@ -20,7 +22,7 @@ export async function POST(request: NextRequest) {
     const cleanIdentity = identityInput.trim();
     const cleanLower = cleanIdentity.toLowerCase();
 
-    // 1. Query MySQL User Table via Prisma (Strict DB Identity Lookup)
+    // 1. Query MySQL User Table via Prisma (Find Account by Email or Employee ID)
     const { prisma } = await import("@/lib/prisma");
     const dbUser = await prisma.user.findFirst({
       where: {
@@ -35,7 +37,7 @@ export async function POST(request: NextRequest) {
 
     if (!dbUser) {
       return NextResponse.json(
-        { success: false, error: "Invalid credentials." },
+        { success: false, error: "Invalid ID/email or password." },
         { status: 401 }
       );
     }
@@ -44,7 +46,7 @@ export async function POST(request: NextRequest) {
     const passwordMatches = await comparePassword(inputPassword, dbUser.password);
     if (!passwordMatches) {
       return NextResponse.json(
-        { success: false, error: "Invalid credentials." },
+        { success: false, error: "Invalid ID/email or password." },
         { status: 401 }
       );
     }
@@ -57,7 +59,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4. Construct Authenticated User Payload from Database Record
+    // 4. Automatic Server-Side Role Detection from Database Record
+    const userRoleUpper = (dbUser.role || "").toUpperCase();
+    const isAdmin = ADMIN_ROLES.includes(userRoleUpper);
+
+    // 5. Construct Authenticated User Payload
     const authenticatedUser = {
       id: dbUser.id,
       employeeId: dbUser.employeeId,
@@ -67,19 +73,20 @@ export async function POST(request: NextRequest) {
       department: dbUser.department?.name || "Operations",
     };
 
-    // 5. Generate JWT Session Token
+    // 6. Generate JWT Session Token
     const token = generateToken({
       id: authenticatedUser.id,
       email: authenticatedUser.email,
       role: authenticatedUser.role,
     });
 
-    // 6. Set Secure HTTP-Only Session Cookie
+    // 7. Set Secure HTTP-Only Session Cookie
     const response = NextResponse.json({
       success: true,
-      message: `✓ Welcome ${authenticatedUser.name}! Login verified successfully.`,
+      message: `✓ Welcome back, ${authenticatedUser.name}!`,
       token,
       user: authenticatedUser,
+      isAdmin,
     });
 
     response.cookies.set("oms_session", token, {
@@ -107,7 +114,7 @@ export async function POST(request: NextRequest) {
         <div style="font-family: Arial; padding: 20px; border: 1px solid #cbd5e1; border-radius: 8px;">
           <h2>Security Alert: New Sign-In Detected</h2>
           <p>Hello <strong>${authenticatedUser.name}</strong>,</p>
-          <p>Your OMS Employee account was successfully signed into at <strong>${timestampStr} (IST)</strong>.</p>
+          <p>Your OMS account was successfully signed into at <strong>${timestampStr} (IST)</strong>.</p>
         </div>
       `,
     }).catch((e) => console.warn("SMTP email dispatch warning:", e));
@@ -115,7 +122,7 @@ export async function POST(request: NextRequest) {
     return response;
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: "Invalid credentials." },
+      { success: false, error: "Invalid ID/email or password." },
       { status: 500 }
     );
   }

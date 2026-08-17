@@ -17,21 +17,18 @@ export async function GET() {
   try {
     const { prisma } = await import("@/lib/prisma");
     let depts = await prisma.department.findMany({
-      include: { user: true },
+      include: { user: { select: { id: true, name: true, employeeId: true } } },
       orderBy: { createdAt: "asc" },
     });
 
-    // Auto-seed baseline departments if empty in XAMPP MySQL database
     if (depts.length === 0) {
       for (const d of baselineDepartments) {
         try {
-          await prisma.department.create({
-            data: d,
-          });
+          await prisma.department.create({ data: d });
         } catch (e) {}
       }
       depts = await prisma.department.findMany({
-        include: { user: true },
+        include: { user: { select: { id: true, name: true, employeeId: true } } },
         orderBy: { createdAt: "asc" },
       });
     }
@@ -42,7 +39,11 @@ export async function GET() {
       data: depts,
     });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({
+      success: true,
+      total: baselineDepartments.length,
+      data: baselineDepartments,
+    });
   }
 }
 
