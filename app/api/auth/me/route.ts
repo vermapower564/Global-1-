@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/authService";
 import { getRolePermissions, Role } from "@/lib/rbac";
+import { getEmployeeAvatarUrl } from "@/lib/avatarHelper";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +56,7 @@ export async function GET(req: NextRequest) {
 
     const userRole = (dbUser.role || decoded.role || "DEVELOPER") as Role;
     const permissions = getRolePermissions(userRole);
+    const avatarUrl = getEmployeeAvatarUrl(dbUser);
 
     return NextResponse.json({
       success: true,
@@ -65,7 +67,7 @@ export async function GET(req: NextRequest) {
         email: dbUser.email,
         role: userRole,
         department: dbUser.department?.name || "Operations",
-        avatarUrl: dbUser.avatarUrl || null,
+        avatarUrl,
         permissions,
       },
     });

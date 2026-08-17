@@ -40,9 +40,12 @@ export async function GET(request: Request) {
         else workloadLevel = "OVERLOADED";
 
         const currentProjectTitle = u.project && u.project.length > 0 ? u.project[0].projectTitle : "OMS Enterprise";
+        const { getEmployeeAvatarUrl } = require("@/lib/avatarHelper");
+        const avatarUrl = getEmployeeAvatarUrl(u);
 
         return {
           ...u,
+          avatarUrl,
           currentProjectTitle,
           metrics: {
             totalTasks,
