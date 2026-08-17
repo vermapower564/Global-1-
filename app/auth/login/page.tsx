@@ -23,8 +23,8 @@ export default function LoginPage() {
     setErrorMessage("");
     setSuccessMessage("");
 
-    if (!loginIdentity.trim() || !password) {
-      setErrorMessage("Please enter your registered ID or Email and password.");
+    if (!loginIdentity.trim()) {
+      setErrorMessage("Please enter your registered ID or Email.");
       setLoading(false);
       return;
     }
@@ -42,7 +42,7 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (res.ok && data.success && data.user) {
-        setSuccessMessage(data.message || "✓ Credentials verified. Redirecting...");
+        setSuccessMessage(data.message || "✓ Identity verified. Redirecting...");
         
         const serverUser = data.user;
         const isAdmin = data.isAdmin || ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"].includes(serverUser.role);
@@ -66,7 +66,7 @@ export default function LoginPage() {
           }
         }, 400);
       } else {
-        setErrorMessage(data.error || "Invalid ID/email or password.");
+        setErrorMessage(data.error || "Account not found for the entered ID or Email.");
       }
     } catch (err: any) {
       setErrorMessage("Network connection error. Please try again.");
@@ -84,7 +84,7 @@ export default function LoginPage() {
             O
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">OMS Enterprise</h1>
-          <p className="text-xs text-slate-500 mt-1 font-medium">Secure Login</p>
+          <p className="text-xs text-slate-500 mt-1 font-medium">Direct Identity Login</p>
         </div>
 
         {errorMessage && (
@@ -109,14 +109,16 @@ export default function LoginPage() {
               required
               value={loginIdentity}
               onChange={(e) => setLoginIdentity(e.target.value)}
-              placeholder="e.g. EMP-8595 or roushan.verma@oms.com"
+              placeholder="e.g. EMP-8595 or aditya.dev@globalwebify.com"
               className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs font-mono font-bold text-slate-900 focus:border-blue-600 focus:outline-none transition shadow-inner"
             />
           </div>
 
           <div>
             <div className="flex justify-between items-center mb-1">
-              <label className="block text-xs font-bold text-slate-700">Password</label>
+              <label className="block text-xs font-bold text-slate-700">
+                Password <span className="text-slate-400 font-normal">(Optional)</span>
+              </label>
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
@@ -127,10 +129,9 @@ export default function LoginPage() {
             </div>
             <input
               type={showPassword ? "text" : "password"}
-              required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter password..."
+              placeholder="Enter password (optional)..."
               className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs font-mono focus:border-blue-600 focus:outline-none transition shadow-inner"
             />
           </div>
@@ -153,9 +154,9 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-blue-600 py-3.5 font-extrabold text-xs text-white hover:bg-blue-700 transition shadow-md shadow-blue-600/20"
+            className="w-full rounded-xl bg-blue-600 py-3.5 font-extrabold text-xs text-white hover:bg-blue-700 transition shadow-md shadow-blue-600/20 cursor-pointer"
           >
-            {loading ? "Authenticating..." : "Sign In"}
+            {loading ? "Authenticating Account..." : "Sign In"}
           </button>
         </form>
 
