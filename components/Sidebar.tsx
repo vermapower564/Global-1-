@@ -127,8 +127,9 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     } catch (e) {}
     if (typeof window !== "undefined") {
       localStorage.removeItem("oms_current_user_context_v1");
+      sessionStorage.clear();
+      window.location.href = "/auth/login";
     }
-    router.push(ROUTES.LOGIN);
   };
 
   const displayName = user?.name || "Employee";

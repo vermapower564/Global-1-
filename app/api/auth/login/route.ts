@@ -19,6 +19,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!inputPassword || !inputPassword.trim()) {
+      return NextResponse.json(
+        { success: false, error: "Please enter your account password." },
+        { status: 400 }
+      );
+    }
+
     const cleanIdentity = identityInput.trim();
     const cleanLower = cleanIdentity.toLowerCase();
 
@@ -62,12 +69,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. Password Check: If password is provided, verify it. If correct OR omitted, proceed cleanly.
-    if (inputPassword) {
-      const passwordMatches = await comparePassword(inputPassword, dbUser.password);
-      if (!passwordMatches) {
-        console.warn(`Password mismatch for ${dbUser.email}, proceeding with direct ID login.`);
-      }
+    // 2. Strict Password Verification using Bcrypt
+    const passwordMatches = await comparePassword(inputPassword, dbUser.password);
+    if (!passwordMatches) {
+      return NextResponse.json(
+        { success: false, error: "Invalid credentials: Incorrect password entered." },
+        { status: 401 }
+      );
     }
 
     // 3. Verify Account Active Status
@@ -82,7 +90,7 @@ export async function POST(request: NextRequest) {
     const userRoleUpper = (dbUser.role || "").toUpperCase();
     const isAdmin = ADMIN_ROLES.includes(userRoleUpper);
 
-    // 5. Construct Authenticated User Payload
+    // 5. Construct Authenticated User Payload (Never expose password or password hash)
     const authenticatedUser = {
       id: dbUser.id,
       employeeId: dbUser.employeeId,
@@ -116,17 +124,19 @@ export async function POST(request: NextRequest) {
       maxAge: 7 * 24 * 60 * 60, // 7 Days
     });
 
-    // Security Audit Log & Email Notification
+    // Security Audit Log
     prisma.auditlog.create({
       data: {
         userId: dbUser.id,
         action: "EMPLOYEE_LOGIN",
-        details: `Successful login for ${dbUser.name} (${dbUser.email})`,
+        details: `Successful authenticated login for ${dbUser.name} (${dbUser.email})`,
+        ipAddress: "127.0.0.1",
       },
     }).catch((err: any) => console.warn("Audit log error:", err));
 
     return response;
   } catch (error: any) {
+    console.error("Login API error:", error);
     return NextResponse.json(
       { success: false, error: "Failed to authenticate account ID or email." },
       { status: 500 }

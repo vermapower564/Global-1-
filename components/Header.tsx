@@ -122,8 +122,9 @@ export default function Header() {
     } catch (e) {}
     if (typeof window !== "undefined") {
       localStorage.removeItem("oms_current_user_context_v1");
+      sessionStorage.clear();
+      window.location.href = "/auth/login";
     }
-    router.push("/auth/login");
   };
 
   const name = userContext?.name || "User";

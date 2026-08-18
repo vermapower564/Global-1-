@@ -1,14 +1,16 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { setCurrentUserContext } from "@/utils/userContextStore";
 import { ROUTES } from "@/lib/routes";
 import { validateAndNormalizeGmail } from "@/lib/emailValidator";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTarget = searchParams.get("redirect") || "";
 
   // Form States
   const [loginIdentity, setLoginIdentity] = useState("");
@@ -27,6 +29,12 @@ export default function LoginPage() {
 
     if (!loginIdentity.trim()) {
       setErrorMessage("Please enter your registered Employee ID or Gmail address.");
+      setLoading(false);
+      return;
+    }
+
+    if (!password.trim()) {
+      setErrorMessage("Please enter your account password.");
       setLoading(false);
       return;
     }
@@ -57,10 +65,12 @@ export default function LoginPage() {
 
       if (res.ok && data.success && data.user) {
         setSuccessMessage(data.message || "✓ Identity verified. Redirecting...");
-        
+
         const serverUser = data.user;
-        const isAdmin = data.isAdmin || ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"].includes(serverUser.role);
-        
+        const isAdmin =
+          data.isAdmin ||
+          ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"].includes(serverUser.role);
+
         setCurrentUserContext({
           id: serverUser.id,
           employeeId: serverUser.employeeId || serverUser.id,
@@ -73,14 +83,21 @@ export default function LoginPage() {
         });
 
         setTimeout(() => {
-          if (isAdmin) {
+          if (redirectTarget && redirectTarget.startsWith("/")) {
+            // Check if non-admin is trying to access admin route
+            if (redirectTarget.startsWith("/admin") && !isAdmin) {
+              router.push(ROUTES.EMPLOYEE_HOME);
+            } else {
+              router.push(redirectTarget);
+            }
+          } else if (isAdmin) {
             router.push(ROUTES.ADMIN_HOME);
           } else {
             router.push(ROUTES.EMPLOYEE_HOME);
           }
         }, 400);
       } else {
-        setErrorMessage(data.error || "Account not found for the entered ID or Gmail address.");
+        setErrorMessage(data.error || "Invalid credentials: Account not found or incorrect password.");
       }
     } catch (err: any) {
       setErrorMessage("Network connection error. Please try again.");
@@ -90,15 +107,15 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 p-4 font-sans">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl border border-slate-200 space-y-6">
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 font-sans text-black">
+      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-xl border border-gray-200 space-y-6">
         {/* Header Branding & Title */}
         <div className="text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white font-black text-2xl shadow-md mb-3 border-2 border-white">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white font-black text-2xl shadow-md mb-3 border-2 border-white">
             O
           </div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">OMS Enterprise</h1>
-          <p className="text-xs text-slate-500 mt-1 font-medium font-sans">Direct Identity Sign In</p>
+          <h1 className="text-2xl font-black text-black tracking-tight">OMS / Zyvoro</h1>
+          <p className="text-xs text-gray-500 mt-1 font-medium font-sans">Enterprise Portal Sign In</p>
         </div>
 
         {errorMessage && (
@@ -115,48 +132,47 @@ export default function LoginPage() {
 
         <form onSubmit={handleIdentitySubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              ID or Gmail Address (@gmail.com)
+            <label className="block text-xs font-bold text-black mb-1">
+              ID / Gmail Address (@gmail.com)
             </label>
             <input
               type="text"
               required
               value={loginIdentity}
               onChange={(e) => setLoginIdentity(e.target.value)}
-              placeholder="e.g. EMP-8595 or aditya.dev@gmail.com"
-              className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs font-mono font-bold text-slate-900 focus:border-blue-600 focus:outline-none transition shadow-inner"
+              placeholder="e.g. EMP-8595 or roushan.verma@gmail.com"
+              className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-xs font-mono font-bold text-black focus:border-blue-600 focus:outline-none transition shadow-2xs"
             />
           </div>
 
           <div>
             <div className="flex justify-between items-center mb-1">
-              <label className="block text-xs font-bold text-slate-700">
-                Password <span className="text-slate-400 font-normal">(Optional)</span>
-              </label>
+              <label className="block text-xs font-bold text-black">Password</label>
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer"
               >
-                {showPassword ? "👁️ Hide" : "👁️ Show"}
+                {showPassword ? "Hide" : "Show"}
               </button>
             </div>
             <input
               type={showPassword ? "text" : "password"}
+              required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter password (optional)..."
-              className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs font-mono focus:border-blue-600 focus:outline-none transition shadow-inner"
+              placeholder="Enter your account password..."
+              className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-xs font-mono font-bold text-black focus:border-blue-600 focus:outline-none transition shadow-2xs"
             />
           </div>
 
           <div className="flex items-center justify-between text-xs pt-1">
-            <label className="flex items-center gap-2 text-slate-600 font-medium cursor-pointer">
+            <label className="flex items-center gap-2 text-gray-700 font-medium cursor-pointer">
               <input
                 type="checkbox"
                 checked={rememberSession}
                 onChange={(e) => setRememberSession(e.target.checked)}
-                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span>Remember Session</span>
             </label>
@@ -168,16 +184,33 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-blue-600 py-3.5 font-extrabold text-xs text-white hover:bg-blue-700 transition shadow-md shadow-blue-600/20 cursor-pointer"
+            className="w-full rounded-xl bg-blue-600 hover:bg-blue-700 py-3.5 font-extrabold text-xs text-white transition shadow-md cursor-pointer"
           >
-            {loading ? "Authenticating Account..." : "Sign In"}
+            {loading ? "Authenticating..." : "Sign In"}
           </button>
         </form>
 
-        <div className="pt-3 border-t border-slate-100 text-center text-[11px] text-slate-400 font-medium">
-          Strict @gmail.com Domain Security Enforced
+        <div className="pt-3 border-t border-gray-100 text-center text-[11px] text-gray-500 font-medium">
+          Protected by Server-Side JWT Authentication & Bcrypt
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+          <div className="p-8 rounded-3xl bg-white border border-gray-200 shadow-xl space-y-3">
+            <div className="h-10 w-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="text-xs font-bold text-gray-700">Loading Login Portal...</p>
+          </div>
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }
