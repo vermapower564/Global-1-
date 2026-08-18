@@ -5,18 +5,14 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { setCurrentUserContext } from "@/utils/userContextStore";
 import { ROUTES } from "@/lib/routes";
-import { validateAndNormalizeGmail } from "@/lib/emailValidator";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTarget = searchParams.get("redirect") || "";
 
-  // Role Tab Selection: "ADMIN" | "EMPLOYEE"
-  const [selectedRoleType, setSelectedRoleType] = useState<"ADMIN" | "EMPLOYEE">("ADMIN");
-
   // Form States
-  const [loginIdentity, setLoginIdentity] = useState("");
+  const [identity, setIdentity] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberSession, setRememberSession] = useState(true);
@@ -24,46 +20,22 @@ function LoginForm() {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  const handleRoleTypeChange = (type: "ADMIN" | "EMPLOYEE") => {
-    setSelectedRoleType(type);
-    setErrorMessage("");
-    if (type === "ADMIN") {
-      setLoginIdentity("roushan.verma@gmail.com");
-      setPassword("Roushan@123");
-    } else {
-      setLoginIdentity("aditya.raj@gmail.com");
-      setPassword("password123");
-    }
-  };
-
-  const handleIdentitySubmit = async (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setErrorMessage("");
     setSuccessMessage("");
 
-    if (!loginIdentity.trim()) {
-      setErrorMessage("Please enter your registered Employee ID or Gmail address.");
+    if (!identity.trim()) {
+      setErrorMessage("Please enter your Email or Employee ID.");
       setLoading(false);
       return;
     }
 
     if (!password.trim()) {
-      setErrorMessage("Please enter your account password.");
+      setErrorMessage("Please enter your password.");
       setLoading(false);
       return;
-    }
-
-    const inputVal = loginIdentity.trim();
-
-    // Frontend strict check if user entered an email address
-    if (inputVal.includes("@")) {
-      const emailCheck = validateAndNormalizeGmail(inputVal);
-      if (!emailCheck.isValid) {
-        setErrorMessage(emailCheck.error || "Only Gmail addresses ending with @gmail.com are allowed.");
-        setLoading(false);
-        return;
-      }
     }
 
     try {
@@ -71,21 +43,20 @@ function LoginForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: inputVal,
-          password,
+          identity: identity.trim(),
+          password: password,
         }),
       });
 
       const data = await res.json();
 
       if (res.ok && data.success && data.user) {
-        setSuccessMessage(data.message || "✓ Identity verified. Redirecting...");
+        setSuccessMessage(data.message || "✓ Login successful. Redirecting...");
 
         const serverUser = data.user;
-        const isAdmin =
-          data.isAdmin ||
-          ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"].includes(serverUser.role);
+        const isAdmin = !!data.isAdmin;
 
+        // Update Client Context Store
         setCurrentUserContext({
           id: serverUser.id,
           employeeId: serverUser.employeeId || serverUser.id,
@@ -97,24 +68,22 @@ function LoginForm() {
           assignedProjectTitle: "OMS Enterprise System",
         });
 
+        // Determine destination dashboard
+        const destination =
+          redirectTarget && redirectTarget.startsWith("/")
+            ? redirectTarget.startsWith("/admin") && !isAdmin
+              ? "/employee"
+              : redirectTarget
+            : data.redirectTo || (isAdmin ? "/admin" : "/employee");
+
         setTimeout(() => {
-          if (redirectTarget && redirectTarget.startsWith("/")) {
-            if (redirectTarget.startsWith("/admin") && !isAdmin) {
-              router.push(ROUTES.EMPLOYEE_HOME);
-            } else {
-              router.push(redirectTarget);
-            }
-          } else if (isAdmin) {
-            router.push(ROUTES.ADMIN_HOME);
-          } else {
-            router.push(ROUTES.EMPLOYEE_HOME);
-          }
-        }, 400);
+          router.push(destination);
+        }, 300);
       } else {
-        setErrorMessage(data.error || "Invalid credentials: Account not found or incorrect password.");
+        setErrorMessage(data.error || "Invalid email/employee ID or password");
       }
     } catch (err: any) {
-      setErrorMessage("Network connection error. Please try again.");
+      setErrorMessage("Unable to connect to the authentication service. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -132,65 +101,35 @@ function LoginForm() {
           <p className="text-xs text-gray-500 mt-1 font-medium">Enterprise Operations Portal Login</p>
         </div>
 
-        {/* Role Type Selector Tabs */}
-        <div className="flex rounded-2xl bg-gray-100 p-1 border border-gray-200">
-          <button
-            type="button"
-            onClick={() => handleRoleTypeChange("ADMIN")}
-            className={`flex-1 py-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
-              selectedRoleType === "ADMIN"
-                ? "bg-white text-blue-600 shadow-xs border border-gray-200"
-                : "text-gray-600 hover:text-black"
-            }`}
-          >
-            🛡️ Admin / Management
-          </button>
-          <button
-            type="button"
-            onClick={() => handleRoleTypeChange("EMPLOYEE")}
-            className={`flex-1 py-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
-              selectedRoleType === "EMPLOYEE"
-                ? "bg-white text-blue-600 shadow-xs border border-gray-200"
-                : "text-gray-600 hover:text-black"
-            }`}
-          >
-            👤 Employee / Staff
-          </button>
-        </div>
-
         {errorMessage && (
-          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold animate-in fade-in">
+          <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold animate-in fade-in">
             ⚠️ {errorMessage}
           </div>
         )}
 
         {successMessage && (
-          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold animate-in fade-in">
+          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold animate-in fade-in">
             {successMessage}
           </div>
         )}
 
-        <form onSubmit={handleIdentitySubmit} className="space-y-4">
+        <form onSubmit={handleLoginSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-black mb-1">
-              {selectedRoleType === "ADMIN" ? "Admin ID / Gmail (@gmail.com)" : "Employee ID / Gmail (@gmail.com)"}
+            <label className="block text-xs font-bold text-black mb-1.5">
+              Email / Employee ID
             </label>
             <input
               type="text"
               required
-              value={loginIdentity}
-              onChange={(e) => setLoginIdentity(e.target.value)}
-              placeholder={
-                selectedRoleType === "ADMIN"
-                  ? "e.g. EMP-8595 or roushan.verma@gmail.com"
-                  : "e.g. EMP014 or aditya.raj@gmail.com"
-              }
+              value={identity}
+              onChange={(e) => setIdentity(e.target.value)}
+              placeholder="e.g. admin@gmail.com or EMP001"
               className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-xs font-mono font-bold text-black focus:border-blue-600 focus:outline-none transition shadow-2xs"
             />
           </div>
 
           <div>
-            <div className="flex justify-between items-center mb-1">
+            <div className="flex justify-between items-center mb-1.5">
               <label className="block text-xs font-bold text-black">Password</label>
               <button
                 type="button"
@@ -205,7 +144,7 @@ function LoginForm() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your account password..."
+              placeholder="Enter your password..."
               className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-xs font-mono font-bold text-black focus:border-blue-600 focus:outline-none transition shadow-2xs"
             />
           </div>
@@ -228,14 +167,14 @@ function LoginForm() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-blue-600 hover:bg-blue-700 py-3.5 font-extrabold text-xs text-white transition shadow-md cursor-pointer"
+            className="w-full rounded-xl bg-blue-600 hover:bg-blue-700 py-3.5 font-extrabold text-xs text-white transition shadow-md cursor-pointer disabled:opacity-50"
           >
-            {loading ? "Authenticating Account..." : `Sign In as ${selectedRoleType === "ADMIN" ? "Admin" : "Employee"}`}
+            {loading ? "Authenticating..." : "Login"}
           </button>
         </form>
 
         <div className="pt-3 border-t border-gray-100 text-center text-[11px] text-gray-500 font-medium">
-          Strict Role-Based Access Control • Server-Side Verification Enforced
+          Protected by Server-Side JWT Authentication & Role-Based Access
         </div>
       </div>
     </div>

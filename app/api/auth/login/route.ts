@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { comparePassword, generateToken } from "@/lib/authService";
-import { validateAndNormalizeGmail } from "@/lib/emailValidator";
 
 export const dynamic = "force-dynamic";
 
@@ -9,76 +9,70 @@ const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGE
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const identityInput = body.email || body.employeeId || body.loginIdentity || body.username || "";
+    const identityInput =
+      body.identity || body.email || body.employeeId || body.loginIdentity || body.username || "";
     const inputPassword = body.password || "";
 
-    if (!identityInput || !identityInput.trim()) {
+    // 1. Validate required inputs
+    if (!identityInput || !identityInput.toString().trim()) {
       return NextResponse.json(
-        { success: false, error: "Please enter your registered Employee ID or Gmail address." },
+        { success: false, error: "Please enter your Email or Employee ID." },
         { status: 400 }
       );
     }
 
-    if (!inputPassword || !inputPassword.trim()) {
+    if (!inputPassword || !inputPassword.toString().trim()) {
       return NextResponse.json(
-        { success: false, error: "Please enter your account password." },
+        { success: false, error: "Please enter your password." },
         { status: 400 }
       );
     }
 
-    const cleanIdentity = identityInput.trim();
+    // 2. Normalize inputs
+    const cleanIdentity = identityInput.toString().trim();
     const cleanLower = cleanIdentity.toLowerCase();
+    const cleanUpper = cleanIdentity.toUpperCase();
 
-    // Strict Email Domain Check if an email was entered
-    if (cleanIdentity.includes("@")) {
-      const emailValidation = validateAndNormalizeGmail(cleanIdentity);
-      if (!emailValidation.isValid) {
-        return NextResponse.json(
-          { success: false, error: emailValidation.error || "Only Gmail addresses ending with @gmail.com are allowed." },
-          { status: 400 }
-        );
-      }
+    // 3. Query Prisma MySQL User Model (Search by Email OR Employee ID)
+    let dbUser = null;
+    try {
+      dbUser = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email: { equals: cleanLower } },
+            { employeeId: { equals: cleanIdentity } },
+            { employeeId: { equals: cleanUpper } },
+            { employeeId: { equals: cleanLower } },
+          ],
+        },
+        include: { department: true },
+      });
+    } catch (dbError: any) {
+      console.error("Database connection error during login:", dbError?.message || dbError);
+      return NextResponse.json(
+        { success: false, error: "Unable to connect to the authentication service. Please try again." },
+        { status: 500 }
+      );
     }
 
-    // 1. Query MySQL User Table via Prisma (Find Account by Email or Employee ID)
-    const { prisma } = await import("@/lib/prisma");
-    const dbUser = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { email: { equals: cleanLower } },
-          { employeeId: { equals: cleanIdentity } },
-          { employeeId: { equals: cleanIdentity.toUpperCase() } },
-        ],
-      },
-      include: { department: true },
-    });
-
+    // 4. Verify Account Existence (Generic error to prevent user enumeration)
     if (!dbUser) {
       return NextResponse.json(
-        { success: false, error: "Account not found for the entered ID or Gmail address." },
+        { success: false, error: "Invalid email/employee ID or password" },
         { status: 401 }
       );
     }
 
-    // Double check DB email ends with @gmail.com
-    const dbEmailCheck = validateAndNormalizeGmail(dbUser.email);
-    if (!dbEmailCheck.isValid) {
-      return NextResponse.json(
-        { success: false, error: "Account email address must end with @gmail.com. Please contact administrator." },
-        { status: 400 }
-      );
-    }
-
-    // 2. Strict Password Verification using Bcrypt
+    // 5. Verify Password Hash using Bcrypt
     const passwordMatches = await comparePassword(inputPassword, dbUser.password);
     if (!passwordMatches) {
       return NextResponse.json(
-        { success: false, error: "Invalid credentials: Incorrect password entered." },
+        { success: false, error: "Invalid email/employee ID or password" },
         { status: 401 }
       );
     }
 
-    // 3. Verify Account Active Status
+    // 6. Verify Active Account Status
     if (!dbUser.isActive) {
       return NextResponse.json(
         { success: false, error: "Account deactivated: Please contact HR administrator." },
@@ -86,11 +80,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4. Automatic Server-Side Role Detection from Database Record
-    const userRoleUpper = (dbUser.role || "").toUpperCase();
-    const isAdmin = ADMIN_ROLES.includes(userRoleUpper);
+    // 7. Automatic Server-Side Role Detection
+    const userRole = (dbUser.role || "").toUpperCase();
+    const isAdmin = ADMIN_ROLES.includes(userRole);
+    const redirectTo = isAdmin ? "/admin" : "/employee";
 
-    // 5. Construct Authenticated User Payload (Never expose password or password hash)
+    // 8. Construct Safe Authenticated User Object (Never expose password hash)
     const authenticatedUser = {
       id: dbUser.id,
       employeeId: dbUser.employeeId,
@@ -100,19 +95,20 @@ export async function POST(request: NextRequest) {
       department: dbUser.department?.name || "Operations",
     };
 
-    // 6. Generate JWT Session Token
+    // 9. Generate JWT Session Token
     const token = generateToken({
       id: authenticatedUser.id,
       email: authenticatedUser.email,
       role: authenticatedUser.role,
     });
 
-    // 7. Set Secure HTTP-Only Session Cookie
+    // 10. Construct Response & Set HTTP-Only Cookie
     const response = NextResponse.json({
       success: true,
       message: `✓ Welcome back, ${authenticatedUser.name}!`,
       token,
       user: authenticatedUser,
+      redirectTo,
       isAdmin,
     });
 
@@ -124,21 +120,23 @@ export async function POST(request: NextRequest) {
       maxAge: 7 * 24 * 60 * 60, // 7 Days
     });
 
-    // Security Audit Log
-    prisma.auditlog.create({
-      data: {
-        userId: dbUser.id,
-        action: "EMPLOYEE_LOGIN",
-        details: `Successful authenticated login for ${dbUser.name} (${dbUser.email})`,
-        ipAddress: "127.0.0.1",
-      },
-    }).catch((err: any) => console.warn("Audit log error:", err));
+    // Async Audit Logging (non-blocking)
+    prisma.auditlog
+      .create({
+        data: {
+          userId: dbUser.id,
+          action: "USER_LOGIN",
+          details: `User ${dbUser.name} (${dbUser.email} / ${dbUser.employeeId}) logged in successfully as ${dbUser.role}`,
+          ipAddress: request.headers.get("x-forwarded-for") || "127.0.0.1",
+        },
+      })
+      .catch(() => {});
 
     return response;
   } catch (error: any) {
-    console.error("Login API error:", error);
+    console.error("Login processing error:", error?.message || error);
     return NextResponse.json(
-      { success: false, error: "Failed to authenticate account ID or email." },
+      { success: false, error: "Unable to connect to the authentication service. Please try again." },
       { status: 500 }
     );
   }

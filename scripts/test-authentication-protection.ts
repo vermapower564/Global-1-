@@ -27,43 +27,43 @@ async function testAuthenticationProtection() {
       assert("Unauthenticated /api/auth/me rejected with 401", false, e.message);
     }
 
-    // TEST 2: Wrong password login attempt
+    // TEST 2: Wrong password login attempt (Test C)
     try {
       const res = await axios.post(
         `${BASE_URL}/api/auth/login`,
-        { email: "roushan.verma@gmail.com", password: "WrongPassword999!" },
+        { identity: "roushan.verma@gmail.com", password: "WrongPassword999!" },
         { validateStatus: () => true }
       );
       assert(
-        "Wrong password login rejected with 401",
-        res.status === 401 && res.data.success === false,
+        "Test C: Wrong password login rejected with 401 & safe error message",
+        res.status === 401 && res.data.success === false && res.data.error === "Invalid email/employee ID or password",
         `Status: ${res.status}, Error: ${res.data.error}`
       );
     } catch (e: any) {
-      assert("Wrong password login rejected with 401", false, e.message);
+      assert("Test C: Wrong password login rejected with 401", false, e.message);
     }
 
-    // TEST 3: Non-existent account login attempt
+    // TEST 3: Non-existent account login attempt (Test D)
     try {
       const res = await axios.post(
         `${BASE_URL}/api/auth/login`,
-        { email: "ghost.user99999@gmail.com", password: "Password@123" },
+        { identity: "EMP999999", password: "Password@123" },
         { validateStatus: () => true }
       );
       assert(
-        "Non-existent account login rejected with 401",
-        res.status === 401 && res.data.success === false,
+        "Test D: Unknown ID rejected with 401 & safe error message",
+        res.status === 401 && res.data.success === false && res.data.error === "Invalid email/employee ID or password",
         `Status: ${res.status}`
       );
     } catch (e: any) {
-      assert("Non-existent account login rejected with 401", false, e.message);
+      assert("Test D: Unknown ID rejected with 401", false, e.message);
     }
 
     // TEST 4: Missing password login attempt
     try {
       const res = await axios.post(
         `${BASE_URL}/api/auth/login`,
-        { email: "roushan.verma@gmail.com", password: "" },
+        { identity: "roushan.verma@gmail.com", password: "" },
         { validateStatus: () => true }
       );
       assert(
@@ -75,12 +75,12 @@ async function testAuthenticationProtection() {
       assert("Missing password login rejected with 400", false, e.message);
     }
 
-    // TEST 5: Valid Admin Login (Roushan Verma - SUPER_ADMIN)
+    // TEST 5: Test A — Admin Login by Email (Roushan Verma - SUPER_ADMIN)
     let adminCookie = "";
     try {
       const res = await axios.post(
         `${BASE_URL}/api/auth/login`,
-        { email: "roushan.verma@gmail.com", password: "Roushan@123" },
+        { identity: "roushan.verma@gmail.com", password: "Roushan@123" },
         { validateStatus: () => true }
       );
 
@@ -90,20 +90,20 @@ async function testAuthenticationProtection() {
       }
 
       assert(
-        "Valid Admin login returns 200 + token + isAdmin=true",
-        res.status === 200 && res.data.success === true && res.data.isAdmin === true,
-        `Status: ${res.status}`
+        "Test A: Valid Admin email login returns 200 + redirectTo: '/admin'",
+        res.status === 200 && res.data.success === true && res.data.redirectTo === "/admin" && res.data.isAdmin === true,
+        `Status: ${res.status}, redirectTo: ${res.data.redirectTo}`
       );
     } catch (e: any) {
-      assert("Valid Admin login returns 200", false, e.message);
+      assert("Test A: Valid Admin email login", false, e.message);
     }
 
-    // TEST 6: Valid Employee Login (Aditya Raj - DEVELOPER)
+    // TEST 6: Test B — Employee Login by Employee ID (EMP014 - Aditya Raj)
     let empCookie = "";
     try {
       const res = await axios.post(
         `${BASE_URL}/api/auth/login`,
-        { email: "aditya.raj@gmail.com", password: "password123" },
+        { identity: "EMP014", password: "password123" },
         { validateStatus: () => true }
       );
 
@@ -113,12 +113,12 @@ async function testAuthenticationProtection() {
       }
 
       assert(
-        "Valid Employee login returns 200 + token + isAdmin=false",
-        res.status === 200 && res.data.success === true && res.data.isAdmin === false,
-        `Status: ${res.status}`
+        "Test B: Valid Employee ID login returns 200 + redirectTo: '/employee'",
+        res.status === 200 && res.data.success === true && res.data.redirectTo === "/employee" && res.data.isAdmin === false,
+        `Status: ${res.status}, redirectTo: ${res.data.redirectTo}`
       );
     } catch (e: any) {
-      assert("Valid Employee login returns 200", false, e.message);
+      assert("Test B: Valid Employee ID login", false, e.message);
     }
 
     // TEST 7: Authenticated /api/auth/me with Admin Session Cookie
@@ -170,47 +170,7 @@ async function testAuthenticationProtection() {
       assert("Logout endpoint invalidates oms_session cookie", false, e.message);
     }
 
-    // TEST 10: Server Route Protection - Unauthenticated request to /admin redirects to login
-    try {
-      const res = await axios.get(`${BASE_URL}/admin`, {
-        maxRedirects: 0,
-        validateStatus: (s) => s >= 200 && s < 400,
-      });
-      const location = res.headers["location"] || "";
-      assert(
-        "Unauthenticated /admin redirects to login page",
-        res.status === 307 || res.status === 308 || res.status === 302 || location.includes("login"),
-        `Status: ${res.status}, Location: ${location}`
-      );
-    } catch (e: any) {
-      if (e.response && (e.response.status === 307 || e.response.status === 308 || e.response.status === 302)) {
-        assert("Unauthenticated /admin redirects to login page", true);
-      } else {
-        assert("Unauthenticated /admin redirects to login page", false, e.message);
-      }
-    }
-
-    // TEST 11: Server Route Protection - Unauthenticated request to /employee redirects to login
-    try {
-      const res = await axios.get(`${BASE_URL}/employee`, {
-        maxRedirects: 0,
-        validateStatus: (s) => s >= 200 && s < 400,
-      });
-      const location = res.headers["location"] || "";
-      assert(
-        "Unauthenticated /employee redirects to login page",
-        res.status === 307 || res.status === 308 || res.status === 302 || location.includes("login"),
-        `Status: ${res.status}, Location: ${location}`
-      );
-    } catch (e: any) {
-      if (e.response && (e.response.status === 307 || e.response.status === 308 || e.response.status === 302)) {
-        assert("Unauthenticated /employee redirects to login page", true);
-      } else {
-        assert("Unauthenticated /employee redirects to login page", false, e.message);
-      }
-    }
-
-    // TEST 12: Server Route Protection - Unauthenticated request to root / redirects to login
+    // TEST 10: Test E — Fresh browser / redirects to /login
     try {
       const res = await axios.get(`${BASE_URL}/`, {
         maxRedirects: 0,
@@ -218,15 +178,55 @@ async function testAuthenticationProtection() {
       });
       const location = res.headers["location"] || "";
       assert(
-        "Unauthenticated root / redirects to login page",
+        "Test E: Unauthenticated root / redirects to /login",
         res.status === 307 || res.status === 308 || res.status === 302 || location.includes("login"),
         `Status: ${res.status}, Location: ${location}`
       );
     } catch (e: any) {
       if (e.response && (e.response.status === 307 || e.response.status === 308 || e.response.status === 302)) {
-        assert("Unauthenticated root / redirects to login page", true);
+        assert("Test E: Unauthenticated root / redirects to /login", true);
       } else {
-        assert("Unauthenticated root / redirects to login page", false, e.message);
+        assert("Test E: Unauthenticated root / redirects to /login", false, e.message);
+      }
+    }
+
+    // TEST 11: Test F — Direct Admin URL /admin redirects to /login
+    try {
+      const res = await axios.get(`${BASE_URL}/admin`, {
+        maxRedirects: 0,
+        validateStatus: (s) => s >= 200 && s < 400,
+      });
+      const location = res.headers["location"] || "";
+      assert(
+        "Test F: Unauthenticated direct /admin redirects to /login",
+        res.status === 307 || res.status === 308 || res.status === 302 || location.includes("login"),
+        `Status: ${res.status}, Location: ${location}`
+      );
+    } catch (e: any) {
+      if (e.response && (e.response.status === 307 || e.response.status === 308 || e.response.status === 302)) {
+        assert("Test F: Unauthenticated direct /admin redirects to /login", true);
+      } else {
+        assert("Test F: Unauthenticated direct /admin redirects to /login", false, e.message);
+      }
+    }
+
+    // TEST 12: Direct Employee URL /employee redirects to /login
+    try {
+      const res = await axios.get(`${BASE_URL}/employee`, {
+        maxRedirects: 0,
+        validateStatus: (s) => s >= 200 && s < 400,
+      });
+      const location = res.headers["location"] || "";
+      assert(
+        "Unauthenticated direct /employee redirects to /login",
+        res.status === 307 || res.status === 308 || res.status === 302 || location.includes("login"),
+        `Status: ${res.status}, Location: ${location}`
+      );
+    } catch (e: any) {
+      if (e.response && (e.response.status === 307 || e.response.status === 308 || e.response.status === 302)) {
+        assert("Unauthenticated direct /employee redirects to /login", true);
+      } else {
+        assert("Unauthenticated direct /employee redirects to /login", false, e.message);
       }
     }
 
