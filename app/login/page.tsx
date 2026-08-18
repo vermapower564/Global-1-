@@ -97,8 +97,8 @@ function LoginForm() {
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white font-black text-2xl shadow-md mb-3 border-2 border-white">
             O
           </div>
-          <h1 className="text-2xl font-black text-black tracking-tight">OMS Enterprise</h1>
-          <p className="text-xs text-gray-500 mt-1 font-medium">Enterprise Operations Portal Login</p>
+          <h1 className="text-2xl font-black text-black tracking-tight">OMS</h1>
+          <p className="text-xs text-gray-500 mt-1 font-medium">Enterprise Portal Login</p>
         </div>
 
         {errorMessage && (
@@ -123,7 +123,7 @@ function LoginForm() {
               required
               value={identity}
               onChange={(e) => setIdentity(e.target.value)}
-              placeholder="e.g. admin@gmail.com or EMP001"
+              placeholder="Enter email or employee ID"
               className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-xs font-mono font-bold text-black focus:border-blue-600 focus:outline-none transition shadow-2xs"
             />
           </div>
@@ -167,14 +167,14 @@ function LoginForm() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-blue-600 hover:bg-blue-700 py-3.5 font-extrabold text-xs text-white transition shadow-md cursor-pointer disabled:opacity-50"
+            className="w-full rounded-xl bg-blue-600 hover:bg-blue-700 py-3.5 font-extrabold text-xs text-white transition shadow-md cursor-pointer disabled:opacity-50 tracking-wider uppercase"
           >
-            {loading ? "Authenticating..." : "Login"}
+            {loading ? "Authenticating..." : "LOGIN"}
           </button>
         </form>
 
         <div className="pt-3 border-t border-gray-100 text-center text-[11px] text-gray-500 font-medium">
-          Protected by Server-Side JWT Authentication & Role-Based Access
+          Secure Role-Based Authentication
         </div>
       </div>
     </div>
