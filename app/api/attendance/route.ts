@@ -48,12 +48,11 @@ export async function GET(request: Request) {
   }
 }
 
-// POST: Employee Check-In (Creates Attendance Record in MySQL)
+// POST: Employee Check-In (Creates Attendance Record in MySQL - Enforces 1 Punch Per Day Rule)
 export async function POST(req: Request) {
   try {
     const authResult = await authenticateRequest(req);
     if (authResult.response && !authResult.user) {
-      // Return authentication error if request is unauthenticated
       return authResult.response;
     }
 
@@ -69,7 +68,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Check if user already checked in today without checking out
+    // Check if user already checked in today (Enforcing 1 Punch Per Day Rule)
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
@@ -83,15 +82,26 @@ export async function POST(req: Request) {
       },
     });
 
-    if (existingTodayRecord && !existingTodayRecord.checkOutTime) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "⚠️ Check-In Failed: You are already checked in for today's active work session.",
-          data: existingTodayRecord,
-        },
-        { status: 400 }
-      );
+    if (existingTodayRecord) {
+      if (existingTodayRecord.checkOutTime) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "⚠️ 1 Punch Per Day Limit: You have already completed your daily punch shift for today. Only 1 punch session is allowed per day. Please punch again tomorrow.",
+            data: existingTodayRecord,
+          },
+          { status: 400 }
+        );
+      } else {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "⚠️ Active Punch Session: You are currently checked in for today's active work shift. Please check out when your shift ends.",
+            data: existingTodayRecord,
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const now = new Date();
@@ -111,7 +121,7 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         success: true,
-        message: `✓ Check-In successful! Attendance recorded in MySQL database at ${now.toLocaleTimeString("en-IN")}.`,
+        message: `✓ Check-In successful! Daily punch recorded in MySQL database at ${now.toLocaleTimeString("en-IN")}. (1 Punch Shift Active)`,
         data: createdRecord,
       },
       { status: 201 }
@@ -125,7 +135,7 @@ export async function POST(req: Request) {
   }
 }
 
-// PUT: Employee Check-Out (Calculates Working Hours & Updates MySQL)
+// PUT: Employee Check-Out (Calculates Working Hours & Finalizes Today's 1 Punch Shift)
 export async function PUT(req: Request) {
   try {
     const authResult = await authenticateRequest(req);
@@ -161,7 +171,7 @@ export async function PUT(req: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: "⚠️ Check-Out Failed: No active check-in record found for today. Please check in first.",
+          error: "⚠️ Check-Out Failed: No active check-in session found for today or daily punch shift is already completed.",
         },
         { status: 400 }
       );
@@ -187,7 +197,7 @@ export async function PUT(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: `✓ Check-Out successful! Shift duration calculated: ${hoursWorked} hrs. Record updated in MySQL.`,
+      message: `✓ Check-Out successful! Shift duration calculated: ${hoursWorked} hrs. Daily punch completed (1 Punch Per Day limit reached).`,
       data: updatedRecord,
     });
   } catch (err: any) {

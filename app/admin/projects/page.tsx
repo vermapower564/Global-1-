@@ -37,7 +37,9 @@ export default function AdminProjectsPage() {
           const completedTasks = tasks.filter((t: any) => t.status === "COMPLETED").length;
           const inProgressTasks = tasks.filter((t: any) => t.status === "IN_PROGRESS").length;
           const blockedTasks = tasks.filter((t: any) => t.status === "BLOCKED").length;
-          const overdueTasks = tasks.filter((t: any) => t.dueDate && new Date(t.dueDate).getTime() < Date.now() && t.status !== "COMPLETED").length;
+          const overdueTasks = tasks.filter(
+            (t: any) => t.dueDate && new Date(t.dueDate).getTime() < Date.now() && t.status !== "COMPLETED"
+          ).length;
 
           const progressRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
@@ -78,89 +80,97 @@ export default function AdminProjectsPage() {
   }, []);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-16">
+    <div className="space-y-6 max-w-7xl mx-auto pb-16 font-sans bg-white text-black">
       {/* Header */}
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
+      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
         <div>
           <span className="text-xs font-bold uppercase tracking-wider text-blue-600">Admin Control Desk</span>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
+          <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight mt-1">
             Project Health & Risk Intelligence
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          <p className="text-xs text-gray-500 mt-1">
             Evaluate corporate project completion ratios, active milestones, blocked tasks, and automated risk scoring.
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Link href="/admin/tasks" className="bg-blue-600 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md">
+          <Link
+            href="/admin/tasks"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition"
+          >
             Organization Task Center →
           </Link>
         </div>
       </div>
 
       {loading ? (
-        <div className="p-8 text-center text-slate-500 font-bold text-xs">Loading project health engine...</div>
+        <div className="p-8 text-center text-gray-500 font-bold text-xs">Loading project health data...</div>
+      ) : projects.length === 0 ? (
+        <div className="bg-white p-12 rounded-3xl border border-gray-200 text-center space-y-2 shadow-xs">
+          <p className="text-gray-400 italic text-xs">No active projects found in database.</p>
+        </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {projects.map((p) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {projects.map((proj) => (
             <div
-              key={p.id}
-              className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4 flex flex-col justify-between"
+              key={proj.id}
+              className="bg-white p-6 rounded-3xl border border-gray-200 shadow-xs space-y-4 hover:border-blue-500 transition"
             >
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-md ${
-                    p.health === "HEALTHY" ? "bg-emerald-100 text-emerald-800" :
-                    p.health === "BLOCKED" ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800"
-                  }`}>
-                    {p.health.replace("_", " ")}
-                  </span>
-                  <span className="text-xs font-mono text-slate-400 font-bold">
-                    Budget: ₹{p.budget ? p.budget.toLocaleString() : "N/A"}
-                  </span>
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-lg font-black text-black">{proj.name}</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">{proj.description || "Enterprise client contract deliverables."}</p>
                 </div>
+                <span
+                  className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                    proj.health === "HEALTHY"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : proj.health === "AT_RISK"
+                      ? "bg-amber-100 text-amber-800"
+                      : "bg-rose-100 text-rose-800"
+                  }`}
+                >
+                  ● {proj.health}
+                </span>
+              </div>
 
-                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">{p.name}</h3>
-                {p.description && <p className="text-xs text-slate-500 line-clamp-2">{p.description}</p>}
-
-                {/* Progress Bar */}
-                <div className="space-y-1 pt-1">
-                  <div className="flex justify-between text-xs font-bold text-slate-600 dark:text-slate-300">
-                    <span>Overall Completion Rate</span>
-                    <span className="text-blue-600 font-black">{p.progressRate}%</span>
-                  </div>
-                  <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-600 transition-all duration-300" style={{ width: `${p.progressRate}%` }}></div>
-                  </div>
+              {/* Progress Bar */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs font-bold text-gray-700">
+                  <span>Overall Milestone Progress</span>
+                  <span className="font-mono text-blue-600">{proj.progressRate}%</span>
                 </div>
-
-                {/* Risk Explanation */}
-                <div className={`p-3 rounded-xl border text-xs font-semibold ${
-                  p.health === "HEALTHY" ? "bg-emerald-50 text-emerald-800 border-emerald-200" :
-                  p.health === "BLOCKED" ? "bg-rose-50 text-rose-800 border-rose-200" : "bg-amber-50 text-amber-800 border-amber-200"
-                }`}>
-                  💡 <strong className="font-bold">Health Analysis:</strong> {p.riskExplanation}
+                <div className="h-2.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-600 rounded-full transition-all duration-500"
+                    style={{ width: `${proj.progressRate}%` }}
+                  ></div>
                 </div>
               </div>
 
-              {/* Task Counters Footer */}
-              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-4 gap-2 text-center text-xs">
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400">Total</p>
-                  <p className="font-extrabold text-slate-900 dark:text-white text-sm">{p.totalTasks}</p>
+              {/* Task Metrics Grid */}
+              <div className="grid grid-cols-4 gap-2 text-center text-xs pt-2 border-t border-gray-100">
+                <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-200">
+                  <span className="text-[10px] text-gray-500 font-bold uppercase block">Total</span>
+                  <span className="font-black text-black text-sm">{proj.totalTasks}</span>
                 </div>
-                <div>
-                  <p className="text-[10px] font-bold text-emerald-600">Done</p>
-                  <p className="font-extrabold text-emerald-600 text-sm">{p.completedTasks}</p>
+                <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200">
+                  <span className="text-[10px] text-blue-700 font-bold uppercase block">Active</span>
+                  <span className="font-black text-blue-700 text-sm">{proj.inProgressTasks}</span>
                 </div>
-                <div>
-                  <p className="text-[10px] font-bold text-rose-600">Blocked</p>
-                  <p className="font-extrabold text-rose-600 text-sm">{p.blockedTasks}</p>
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                  <span className="text-[10px] text-emerald-700 font-bold uppercase block">Done</span>
+                  <span className="font-black text-emerald-700 text-sm">{proj.completedTasks}</span>
                 </div>
-                <div>
-                  <p className="text-[10px] font-bold text-amber-600">Overdue</p>
-                  <p className="font-extrabold text-amber-600 text-sm">{p.overdueTasks}</p>
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200">
+                  <span className="text-[10px] text-rose-700 font-bold uppercase block">Blocked</span>
+                  <span className="font-black text-rose-700 text-sm">{proj.blockedTasks}</span>
                 </div>
               </div>
+
+              {/* Risk Assessment Note */}
+              <p className="text-xs text-gray-600 bg-gray-50 p-3 rounded-xl border border-gray-200 font-medium">
+                <strong>Status Note:</strong> {proj.riskExplanation}
+              </p>
             </div>
           ))}
         </div>

@@ -2,6 +2,7 @@
 
 import React, { useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 export interface ProfileUser {
   id: string;
@@ -30,6 +31,7 @@ function getInitials(name: string): string {
 
 export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProps) {
   const [imgError, setImgError] = React.useState(false);
+  const pathname = usePathname();
 
   // Close modal on Escape key press
   useEffect(() => {
@@ -46,7 +48,8 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
 
   if (!isOpen || !user) return null;
 
-  const isAdminRole = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"].includes(user.role);
+  const isEmployeePath = pathname?.startsWith("/employee");
+  const isAdminRole = !isEmployeePath && ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"].includes(user.role);
   const displayName = user.name;
   const displayId = user.employeeId || user.id;
   const initials = getInitials(user.name);
@@ -61,7 +64,7 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
     : null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200 font-sans">
       {/* Backdrop overlay click handler */}
       <div className="absolute inset-0" onClick={onClose} />
 
@@ -152,7 +155,7 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
             Close
           </button>
           <Link
-            href={isAdminRole ? "/admin/employees" : "/employee/profile"}
+            href={isEmployeePath ? "/employee/profile" : (isAdminRole ? "/admin/employees" : "/employee/profile")}
             onClick={onClose}
             className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs transition shadow-md shadow-blue-600/20 text-center"
           >

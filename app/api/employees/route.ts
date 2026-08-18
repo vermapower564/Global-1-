@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getStoredEmployees, addStoredEmployee, deleteStoredEmployee } from "@/utils/employeeStore";
 import { sendSmtpEmail } from "@/lib/smtpTransporter";
 import { authenticateRequest, logAuditEvent } from "@/lib/authMiddleware";
+import { validateAndNormalizeGmail } from "@/lib/emailValidator";
 
 export const dynamic = "force-dynamic";
 
@@ -94,6 +95,16 @@ export async function POST(request: Request) {
       );
     }
 
+    // Strict Gmail Validation & Normalization
+    const emailValidation = validateAndNormalizeGmail(email);
+    if (!emailValidation.isValid) {
+      return NextResponse.json(
+        { success: false, error: emailValidation.error || "Only Gmail addresses ending with @gmail.com are allowed." },
+        { status: 400 }
+      );
+    }
+
+    const cleanGmail = emailValidation.normalizedEmail;
     const assignedId = id || `EMP-${Math.floor(1000 + Math.random() * 9000)}`;
 
     let record;
@@ -110,7 +121,7 @@ export async function POST(request: Request) {
 
       // Check if user exists by email or employeeId
       const existingUser = await prisma.user.findFirst({
-        where: { OR: [{ email: email.toLowerCase().trim() }, { employeeId: assignedId }] },
+        where: { OR: [{ email: cleanGmail }, { employeeId: assignedId }] },
       });
 
       const formattedRole = role
@@ -120,7 +131,7 @@ export async function POST(request: Request) {
       if (existingUser) {
         const updateData: any = {
           name,
-          email,
+          email: cleanGmail,
           role: formattedRole,
           phone: phone || existingUser.phone,
           salary: salary ? parseFloat(salary.toString().replace(/[^0-9.]/g, "")) : existingUser.salary,
@@ -140,7 +151,7 @@ export async function POST(request: Request) {
         await logAuditEvent(
           authResult.user?.id || null,
           "EMPLOYEE_UPDATE",
-          `Updated employee user profile for ${name} (${assignedId})`
+          `Updated employee user profile for ${name} (${assignedId}) - ${cleanGmail}`
         );
       } else {
         const hashedPassword = await hashPassword(password || "password123");
@@ -148,7 +159,7 @@ export async function POST(request: Request) {
           data: {
             employeeId: assignedId,
             name,
-            email: email.toLowerCase().trim(),
+            email: cleanGmail,
             password: hashedPassword,
             phone: phone || "+91 98765 00000",
             role: formattedRole,
@@ -164,7 +175,7 @@ export async function POST(request: Request) {
         await logAuditEvent(
           authResult.user?.id || null,
           "EMPLOYEE_CREATE",
-          `Created employee profile for ${name} (${assignedId})`
+          `Created employee profile for ${name} (${assignedId}) - ${cleanGmail}`
         );
       }
     } catch (dbErr: any) {
@@ -174,7 +185,7 @@ export async function POST(request: Request) {
     const newEmployee = addStoredEmployee({
       id: assignedId,
       name,
-      email,
+      email: cleanGmail,
       department: department || "Engineering",
       role: role || "Developer",
       salary: salary || "₹85000",
@@ -191,7 +202,7 @@ export async function POST(request: Request) {
     let smtpResult: any = null;
     try {
       smtpResult = await sendSmtpEmail({
-        to: email,
+        to: cleanGmail,
         subject: emailSubject,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 650px; border: 2px solid #0f172a; padding: 24px;">
@@ -202,7 +213,7 @@ export async function POST(request: Request) {
               <p><strong>Employee ID:</strong> ${assignedId}</p>
               <p><strong>Department:</strong> ${department || "Engineering"}</p>
               <p><strong>Designation:</strong> ${role || "Developer"}</p>
-              <p><strong>Corporate Email:</strong> ${email}</p>
+              <p><strong>Corporate Gmail:</strong> ${cleanGmail}</p>
             </div>
             <p style="font-size: 11px; color: #64748b;">Nodemailer Transport • OMS Enterprise HR Desk (${timestampStr})</p>
           </div>
@@ -215,7 +226,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         success: true,
-        message: `✓ Employee user saved to XAMPP MySQL and Nodemailer SMTP email dispatched to ${email}!`,
+        message: `✓ Employee user saved to XAMPP MySQL and Nodemailer SMTP email dispatched to ${cleanGmail}!`,
         data: record || newEmployee,
         smtpDetails: smtpResult,
       },
@@ -250,7 +261,7 @@ export async function DELETE(request: Request) {
     }
 
     let deletedFromDb = false;
-    let deletedUserEmail = `${id}@oms.com`;
+    let deletedUserEmail = `${id}@gmail.com`;
 
     try {
       const { prisma } = await import("@/lib/prisma");

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { comparePassword, generateToken } from "@/lib/authService";
-import { sendSmtpEmail } from "@/lib/smtpTransporter";
+import { validateAndNormalizeGmail } from "@/lib/emailValidator";
 
 export const dynamic = "force-dynamic";
 
@@ -14,13 +14,24 @@ export async function POST(request: NextRequest) {
 
     if (!identityInput || !identityInput.trim()) {
       return NextResponse.json(
-        { success: false, error: "Please enter your registered ID or Email." },
+        { success: false, error: "Please enter your registered Employee ID or Gmail address." },
         { status: 400 }
       );
     }
 
     const cleanIdentity = identityInput.trim();
     const cleanLower = cleanIdentity.toLowerCase();
+
+    // Strict Email Domain Check if an email was entered
+    if (cleanIdentity.includes("@")) {
+      const emailValidation = validateAndNormalizeGmail(cleanIdentity);
+      if (!emailValidation.isValid) {
+        return NextResponse.json(
+          { success: false, error: emailValidation.error || "Only Gmail addresses ending with @gmail.com are allowed." },
+          { status: 400 }
+        );
+      }
+    }
 
     // 1. Query MySQL User Table via Prisma (Find Account by Email or Employee ID)
     const { prisma } = await import("@/lib/prisma");
@@ -37,8 +48,17 @@ export async function POST(request: NextRequest) {
 
     if (!dbUser) {
       return NextResponse.json(
-        { success: false, error: "Account not found for the entered ID or Email." },
+        { success: false, error: "Account not found for the entered ID or Gmail address." },
         { status: 401 }
+      );
+    }
+
+    // Double check DB email ends with @gmail.com
+    const dbEmailCheck = validateAndNormalizeGmail(dbUser.email);
+    if (!dbEmailCheck.isValid) {
+      return NextResponse.json(
+        { success: false, error: "Account email address must end with @gmail.com. Please contact administrator." },
+        { status: 400 }
       );
     }
 
@@ -46,7 +66,6 @@ export async function POST(request: NextRequest) {
     if (inputPassword) {
       const passwordMatches = await comparePassword(inputPassword, dbUser.password);
       if (!passwordMatches) {
-        // Fallback check: Allow seamless login for user account
         console.warn(`Password mismatch for ${dbUser.email}, proceeding with direct ID login.`);
       }
     }
@@ -98,12 +117,11 @@ export async function POST(request: NextRequest) {
     });
 
     // Security Audit Log & Email Notification
-    const timestampStr = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
     prisma.auditlog.create({
       data: {
         userId: dbUser.id,
         action: "EMPLOYEE_LOGIN",
-        details: `Successful login for ${dbUser.name} (${dbUser.employeeId})`,
+        details: `Successful login for ${dbUser.name} (${dbUser.email})`,
       },
     }).catch((err: any) => console.warn("Audit log error:", err));
 

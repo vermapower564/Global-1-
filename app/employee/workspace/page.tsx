@@ -263,7 +263,7 @@ export default function EmployeeSelfWorkspacePage() {
                 >
                   <option value="IN_PROGRESS">IN_PROGRESS (Working)</option>
                   <option value="BLOCKED">BLOCKED (Stuck)</option>
-                  <option value="IN_REVIEW">IN_REVIEW (Ready for Admin Review)</option>
+                  <option value="IN_REVIEW">IN_REVIEW (Ready for Review)</option>
                   <option value="COMPLETED">COMPLETED (Done)</option>
                 </select>
               </div>

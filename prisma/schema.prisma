@@ -22,15 +22,15 @@ model adcampaign {
 }
 
 model attendance {
-  id           String            @id @default(cuid())
+  id           String    @id @default(cuid())
   userId       String
-  date         DateTime          @default(now())
+  date         DateTime  @default(now())
   checkInTime  DateTime
   checkOutTime DateTime?
-  hoursWorked  Float             @default(0)
-  status       attendance_status @default(PRESENT)
-  createdAt    DateTime          @default(now())
-  user         user              @relation(fields: [userId], references: [id], map: "Attendance_userId_fkey")
+  hoursWorked  Float     @default(0)
+  status       String    @default("PRESENT")
+  createdAt    DateTime  @default(now())
+  user         user      @relation(fields: [userId], references: [id], map: "Attendance_userId_fkey")
 
   @@index([userId], map: "Attendance_userId_fkey")
 }
@@ -225,17 +225,17 @@ model itasset {
 }
 
 model leaverequest {
-  id        String       @id @default(cuid())
+  id        String   @id @default(cuid())
   userId    String
   leaveType String
   startDate DateTime
   endDate   DateTime
   totalDays Int
-  reason    String       @db.Text
-  status    leave_status @default(PENDING)
-  hrRemarks String?      @db.Text
-  appliedAt DateTime     @default(now())
-  user      user         @relation(fields: [userId], references: [id], map: "LeaveRequest_userId_fkey")
+  reason    String   @db.Text
+  status    String   @default("PENDING")
+  hrRemarks String?  @db.Text
+  appliedAt DateTime @default(now())
+  user      user     @relation(fields: [userId], references: [id], map: "LeaveRequest_userId_fkey")
 
   @@index([userId], map: "LeaveRequest_userId_fkey")
 }
@@ -255,6 +255,37 @@ model payrollapproval {
   user         user           @relation(fields: [userId], references: [id], map: "PayrollApproval_userId_fkey")
 
   @@index([userId], map: "PayrollApproval_userId_fkey")
+}
+
+model salaryslip {
+  id                   String    @id @default(cuid())
+  userId               String
+  employeeId           String
+  employeeName         String
+  salaryMonth          String
+  monthKey             String
+  basicSalary          Float     @default(0)
+  hra                  Float     @default(0)
+  allowances           Float     @default(0)
+  bonus                Float     @default(0)
+  overtime             Float     @default(0)
+  grossSalary          Float     @default(0)
+  pfDeduction          Float     @default(0)
+  taxDeduction         Float     @default(0)
+  otherDeductions      Float     @default(0)
+  totalDeductions      Float     @default(0)
+  netSalary            Float     @default(0)
+  paymentDate          DateTime?
+  paymentStatus        String    @default("PAID")
+  paymentMethod        String    @default("Bank Transfer")
+  transactionReference String?
+  notes                String?   @db.Text
+  generatedAt          DateTime  @default(now())
+  updatedAt            DateTime  @default(now()) @updatedAt
+  user                 user      @relation(fields: [userId], references: [id], map: "SalarySlip_userId_fkey")
+
+  @@unique([userId, monthKey], map: "SalarySlip_userId_monthKey_key")
+  @@index([userId], map: "SalarySlip_userId_fkey")
 }
 
 model pdfdocument {
@@ -284,7 +315,7 @@ model project {
   startDate               DateTime
   endDate                 DateTime
   contractValue           Float
-  status                  project_status           @default(IN_PROGRESS)
+  status                  String                   @default("IN_PROGRESS")
   createdAt               DateTime                 @default(now())
   client                  client?                  @relation(fields: [clientId], references: [id], map: "Project_clientId_fkey")
   completedprojecthistory completedprojecthistory?
@@ -296,27 +327,28 @@ model project {
 }
 
 model resignation {
-  id               String             @id @default(cuid())
-  resignationId    String             @unique(map: "Resignation_resignationId_key")
-  userId           String?
-  employeeId       String
-  employeeName     String
-  email            String
-  department       String
-  role             String
-  resignationDate  DateTime           @default(now())
-  noticePeriodDays Int                @default(15)
-  lastWorkingDay   DateTime
-  reason           String             @db.Text
-  status           resignation_status @default(SUBMITTED)
-  managerRemarks   String?            @db.Text
-  hrRemarks        String?            @db.Text
-  approvedAt       DateTime?
-  rejectedAt       DateTime?
-  submittedAt      DateTime           @default(now())
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @default(now()) @updatedAt
-  user             user?              @relation(fields: [userId], references: [id], map: "Resignation_userId_fkey")
+  id                      String             @id @default(cuid())
+  resignationId           String             @unique(map: "Resignation_resignationId_key")
+  userId                  String?
+  employeeId              String
+  employeeName            String
+  email                   String
+  department              String
+  role                    String
+  resignationDate         DateTime           @default(now())
+  noticePeriodDays        Int                @default(15)
+  lastWorkingDay          DateTime
+  lastWorkingDayFormatted String?
+  reason                  String             @db.Text
+  status                  resignation_status @default(SUBMITTED)
+  managerRemarks          String?            @db.Text
+  hrRemarks               String?            @db.Text
+  approvedAt              DateTime?
+  rejectedAt              DateTime?
+  submittedAt             DateTime           @default(now())
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @default(now()) @updatedAt
+  user                    user?              @relation(fields: [userId], references: [id], map: "Resignation_userId_fkey")
 
   @@index([userId], map: "Resignation_userId_fkey")
 }
@@ -368,6 +400,7 @@ model user {
   isActive           Boolean            @default(true)
   isResigned         Boolean            @default(false)
   noticePeriodDays   Int                @default(15)
+  paymentScheduleDay Int                @default(1)
   lastLoginAt        DateTime?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
@@ -384,6 +417,7 @@ model user {
   leaverequest       leaverequest[]
   pdfdocument        pdfdocument[]
   payrollapproval    payrollapproval[]
+  salaryslips        salaryslip[]
   resignation        resignation[]
   assignedTasks      task[]             @relation("AssignedTasks")
   createdTasks       task[]             @relation("CreatedTasks")
@@ -525,32 +559,9 @@ enum resignation_status {
   COMPLETED
 }
 
-enum leave_status {
-  PENDING
-  APPROVED
-  REJECTED
-  CANCELLED
-}
-
-enum attendance_status {
-  PRESENT
-  ABSENT
-  HALF_DAY
-  ON_LEAVE
-  LATE
-}
-
 enum payroll_status {
   PENDING_APPROVAL
   APPROVED
   DISBURSED
   REJECTED
-}
-
-enum project_status {
-  NOT_STARTED
-  IN_PROGRESS
-  ON_HOLD
-  COMPLETED
-  CANCELLED
 }

@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { validateAndNormalizeGmail } from "@/lib/emailValidator";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
@@ -30,29 +31,41 @@ export default function ForgotPasswordPage() {
     setSuccessMessage("");
 
     if (!identityInput.trim()) {
-      setErrorMessage("Please enter your registered ID or Email.");
+      setErrorMessage("Please enter your registered Employee ID or Gmail address.");
       setLoading(false);
       return;
+    }
+
+    const inputVal = identityInput.trim();
+
+    // Frontend strict check if email format entered
+    if (inputVal.includes("@")) {
+      const emailCheck = validateAndNormalizeGmail(inputVal);
+      if (!emailCheck.isValid) {
+        setErrorMessage(emailCheck.error || "Only Gmail addresses ending with @gmail.com are allowed.");
+        setLoading(false);
+        return;
+      }
     }
 
     try {
       const res = await fetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identityInput: identityInput.trim() }),
+        body: JSON.stringify({ identityInput: inputVal }),
       });
 
       const data = await res.json();
 
       if (res.ok && data.success) {
         setMaskedEmail(data.maskedEmail || data.email);
-        setSuccessMessage("OTP sent successfully to your registered email address.");
+        setSuccessMessage("OTP sent successfully to your registered Gmail address.");
         if (data.demoOtp) {
           console.log(`[DEBUG] OTP for testing: ${data.demoOtp}`);
         }
         setStep(2);
       } else {
-        setErrorMessage(data.error || "Account not found.");
+        setErrorMessage(data.error || "Account not found for the entered ID or Gmail address.");
       }
     } catch (err: any) {
       setErrorMessage("Network error. Please try again.");
@@ -69,7 +82,7 @@ export default function ForgotPasswordPage() {
     setSuccessMessage("");
 
     if (!otpCode.trim()) {
-      setErrorMessage("Please enter the 6-digit OTP code sent to your email.");
+      setErrorMessage("Please enter the 6-digit OTP code sent to your Gmail.");
       setLoading(false);
       return;
     }
@@ -162,8 +175,8 @@ export default function ForgotPasswordPage() {
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Forgot Password</h1>
           <p className="text-xs text-slate-500 mt-1 font-medium">
-            {step === 1 && "Enter your ID or Email to receive a verification OTP"}
-            {step === 2 && `Enter the 6-digit OTP code sent to ${maskedEmail || "your email"}`}
+            {step === 1 && "Enter your Employee ID or Gmail address (@gmail.com) to receive OTP"}
+            {step === 2 && `Enter the 6-digit OTP code sent to ${maskedEmail || "your Gmail"}`}
             {step === 3 && "Set your new password for OMS Enterprise"}
           </p>
         </div>
@@ -185,14 +198,14 @@ export default function ForgotPasswordPage() {
           <form onSubmit={handleRequestOtp} className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Registered ID or Email
+                Registered ID or Gmail (@gmail.com)
               </label>
               <input
                 type="text"
                 required
                 value={identityInput}
                 onChange={(e) => setIdentityInput(e.target.value)}
-                placeholder="e.g. EMP-8595 or roushan.verma@oms.com"
+                placeholder="e.g. EMP-8595 or roushan.verma@gmail.com"
                 className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs font-mono font-bold text-slate-900 focus:border-blue-600 focus:outline-none transition shadow-inner"
               />
             </div>

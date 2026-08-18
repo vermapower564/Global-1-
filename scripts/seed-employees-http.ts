@@ -4,7 +4,7 @@ async function seedAllEmployeesToMySQL() {
   const employeeRoster = [
     {
       name: "Roushan Verma",
-      email: "roushan.verma@oms.com",
+      email: "roushan.verma123@gmail.com",
       role: "SUPER_ADMIN",
       department: "Executive Management",
       salary: 1850000,
@@ -12,7 +12,7 @@ async function seedAllEmployeesToMySQL() {
     },
     {
       name: "Rajesh Verma",
-      email: "rajesh.verma@oms.com",
+      email: "rajesh.verma123@gmail.com",
       role: "DIRECTOR",
       department: "Executive Management",
       salary: 1650000,
@@ -20,7 +20,7 @@ async function seedAllEmployeesToMySQL() {
     },
     {
       name: "Priya Sharma",
-      email: "priya.sharma@oms.com",
+      email: "priya.sharma123@gmail.com",
       role: "HR",
       department: "Human Resources",
       salary: 1050000,
@@ -28,7 +28,7 @@ async function seedAllEmployeesToMySQL() {
     },
     {
       name: "Amit Patel",
-      email: "amit.patel@oms.com",
+      email: "amit.patel123@gmail.com",
       role: "FINANCE",
       department: "Accounts & Finance",
       salary: 1150000,
@@ -36,7 +36,7 @@ async function seedAllEmployeesToMySQL() {
     },
     {
       name: "Vikram Malhotra",
-      email: "vikram.malhotra@oms.com",
+      email: "vikram.malhotra123@gmail.com",
       role: "SALES_MANAGER",
       department: "Sales & CRM",
       salary: 1250000,
@@ -44,7 +44,7 @@ async function seedAllEmployeesToMySQL() {
     },
     {
       name: "Karan Gupta",
-      email: "karan.gupta@oms.com",
+      email: "karan.gupta123@gmail.com",
       role: "SALES_EXECUTIVE",
       department: "Sales & CRM",
       salary: 750000,
@@ -52,7 +52,7 @@ async function seedAllEmployeesToMySQL() {
     },
     {
       name: "Sneha Reddy",
-      email: "sneha.reddy@oms.com",
+      email: "sneha.reddy123@gmail.com",
       role: "DIGITAL_MARKETING_MANAGER",
       department: "Digital Marketing",
       salary: 980000,
@@ -60,7 +60,7 @@ async function seedAllEmployeesToMySQL() {
     },
     {
       name: "Deepak Kumar",
-      email: "deepak.kumar@oms.com",
+      email: "deepak.kumar123@gmail.com",
       role: "SEO_EXECUTIVE",
       department: "Digital Marketing",
       salary: 650000,
@@ -68,7 +68,7 @@ async function seedAllEmployeesToMySQL() {
     },
     {
       name: "Aanya Sen",
-      email: "aanya.sen@oms.com",
+      email: "aanya.sen123@gmail.com",
       role: "CONTENT_WRITER",
       department: "Digital Marketing",
       salary: 580000,
@@ -76,7 +76,7 @@ async function seedAllEmployeesToMySQL() {
     },
     {
       name: "Ananya Roy",
-      email: "ananya.roy@oms.com",
+      email: "ananya.roy123@gmail.com",
       role: "GRAPHIC_DESIGNER",
       department: "Creative & Media",
       salary: 820000,
@@ -84,7 +84,7 @@ async function seedAllEmployeesToMySQL() {
     },
     {
       name: "Rahul Sharma",
-      email: "rahul.sharma@oms.com",
+      email: "rahul.sharma123@gmail.com",
       role: "VIDEO_EDITOR",
       department: "Creative & Media",
       salary: 780000,
@@ -92,7 +92,7 @@ async function seedAllEmployeesToMySQL() {
     },
     {
       name: "Mohit Sen",
-      email: "mohit.sen@oms.com",
+      email: "mohit.sen123@gmail.com",
       role: "CAMERA_TEAM",
       department: "Creative & Media",
       salary: 720000,
@@ -100,7 +100,7 @@ async function seedAllEmployeesToMySQL() {
     },
     {
       name: "Aarav Sharma",
-      email: "aarav.sharma@oms.com",
+      email: "aarav.sharma123@gmail.com",
       role: "PROJECT_MANAGER",
       department: "Development & Engineering",
       salary: 1450000,
@@ -108,7 +108,7 @@ async function seedAllEmployeesToMySQL() {
     },
     {
       name: "Aditya Raj",
-      email: "aditya.raj@oms.com",
+      email: "aditya.raj123@gmail.com",
       role: "DEVELOPER",
       department: "Development & Engineering",
       salary: 950000,

@@ -31,6 +31,26 @@ async function testBackendApis() {
     }
   }
 
+  // Test Non-Gmail Login Rejection
+  try {
+    const yahooRes = await fetch("http://127.0.0.1:3000/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "test@yahoo.com", password: "password123" }),
+    });
+    const yahooJson = await yahooRes.json();
+    if (yahooRes.status === 400 && yahooJson.error?.includes("@gmail.com")) {
+      console.log(`✅ [400] Strict Gmail Validation Test Passed (Rejected test@yahoo.com)`);
+      passed++;
+    } else {
+      console.error(`❌ [${yahooRes.status}] Failed Gmail Validation Test for test@yahoo.com`);
+      failed++;
+    }
+  } catch (err: any) {
+    console.error(`❌ Non-Gmail Login Test Error: ${err.message}`);
+    failed++;
+  }
+
   console.log(`\n📊 Backend API Test Result: ${passed} Passed, ${failed} Failed`);
   process.exit(failed > 0 ? 1 : 0);
 }

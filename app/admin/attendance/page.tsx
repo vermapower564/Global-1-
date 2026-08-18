@@ -20,48 +20,89 @@ export default function AdminAttendancePage() {
   }, []);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-16">
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 flex justify-between items-center shadow-xs">
+    <div className="space-y-6 max-w-7xl mx-auto pb-16 font-sans bg-white text-black">
+      {/* Header Banner */}
+      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
         <div>
-          <span className="text-xs font-bold uppercase text-blue-600">Admin Control Desk</span>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">Workforce Attendance Ledger & Shift Clock</h1>
-          <p className="text-xs text-slate-500">Monitor employee shift punch times, hours worked, and attendance correlation in real-time.</p>
+          <span className="text-xs font-bold uppercase tracking-wider text-blue-600">Admin Control Desk</span>
+          <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight mt-1">
+            Workforce Attendance Ledger & Shift Clock
+          </h1>
+          <p className="text-xs text-gray-500 mt-1">
+            Monitor employee shift punch times, hours worked, and attendance records in real-time.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/admin/employees"
+            className="bg-white hover:bg-gray-50 text-black font-extrabold text-xs px-4 py-2.5 rounded-xl border border-gray-300 transition"
+          >
+            ← Employee Directory
+          </Link>
         </div>
       </div>
 
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs space-y-4">
-        <h3 className="font-extrabold text-slate-900 dark:text-white text-base">Master Workforce Attendance Punch Logs</h3>
+      {/* Attendance Table Card */}
+      <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-xs space-y-4">
+        <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+          <h3 className="font-extrabold text-black text-base">
+            Master Workforce Attendance Punch Logs ({records.length})
+          </h3>
+        </div>
 
         {loading ? (
-          <div className="p-8 text-center text-slate-500 font-bold text-xs">Loading attendance ledger...</div>
+          <div className="p-8 text-center text-gray-500 font-bold text-xs">Loading attendance ledger...</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+          <div className="overflow-x-auto rounded-2xl border border-gray-200">
+            <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 font-extrabold uppercase">
-                  <th className="pb-3">Employee</th>
-                  <th className="pb-3">Date</th>
-                  <th className="pb-3">Check-In</th>
-                  <th className="pb-3">Check-Out</th>
-                  <th className="pb-3">Shift Hours</th>
-                  <th className="pb-3">Status</th>
+                <tr className="border-b border-gray-200 bg-gray-50 text-black font-bold uppercase text-[10px]">
+                  <th className="py-3 px-4">Employee</th>
+                  <th className="py-3 px-4">Date</th>
+                  <th className="py-3 px-4">Check-In</th>
+                  <th className="py-3 px-4">Check-Out</th>
+                  <th className="py-3 px-4">Shift Hours</th>
+                  <th className="py-3 px-4">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              <tbody className="divide-y divide-gray-100">
                 {records.map((r) => (
-                  <tr key={r.id} className="font-semibold text-slate-700 dark:text-slate-300">
-                    <td className="py-3 font-bold text-slate-900 dark:text-white">{r.user?.name || "Employee"} ({r.user?.employeeId || "EMP"})</td>
-                    <td className="py-3 font-mono">{r.date ? new Date(r.date).toLocaleDateString() : "-"}</td>
-                    <td className="py-3 font-mono text-emerald-600">{r.checkInTime ? new Date(r.checkInTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "-"}</td>
-                    <td className="py-3 font-mono text-rose-600">{r.checkOutTime ? new Date(r.checkOutTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Active Shift"}</td>
-                    <td className="py-3 font-bold">{r.hoursWorked ? `${r.hoursWorked} hrs` : "-"}</td>
-                    <td className="py-3">
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-emerald-100 text-emerald-800">
+                  <tr key={r.id} className="hover:bg-gray-50 transition text-black">
+                    <td className="py-3 px-4 font-bold text-black">
+                      <Link
+                        href={`/admin/employees/${r.user?.employeeId || r.userId}`}
+                        className="hover:text-blue-600 transition"
+                      >
+                        {r.user?.name || "Employee"} <span className="font-mono text-gray-500 font-normal">({r.user?.employeeId || "EMP"})</span>
+                      </Link>
+                    </td>
+                    <td className="py-3 px-4 font-mono text-gray-700">
+                      {r.date ? new Date(r.date).toLocaleDateString("en-IN") : "-"}
+                    </td>
+                    <td className="py-3 px-4 font-mono font-bold text-emerald-700">
+                      {r.checkInTime ? new Date(r.checkInTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "-"}
+                    </td>
+                    <td className="py-3 px-4 font-mono font-bold text-rose-700">
+                      {r.checkOutTime ? new Date(r.checkOutTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "Active Shift"}
+                    </td>
+                    <td className="py-3 px-4 font-bold text-black font-mono">
+                      {r.hoursWorked ? `${r.hoursWorked} hrs` : "-"}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800">
                         {r.status || "PRESENT"}
                       </span>
                     </td>
                   </tr>
                 ))}
+
+                {records.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="text-center py-8 text-gray-400 italic text-xs">
+                      No attendance punch records found.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

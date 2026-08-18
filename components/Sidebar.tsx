@@ -17,6 +17,7 @@ import {
   IconUserCheck,
 } from "./Icons";
 import { getCurrentUserContext } from "@/utils/userContextStore";
+import { ROUTES } from "@/lib/routes";
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -25,46 +26,98 @@ interface SidebarProps {
 
 const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
 
+function getInitials(name: string): string {
+  if (!name || !name.trim()) return "U";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [isAdmin, setIsAdmin] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
-    const user = getCurrentUserContext();
-    const roleUpper = (user.role || "").toUpperCase();
-    const adminCheck = ADMIN_ROLES.includes(roleUpper) || user.activeMode === "ADMIN_HR";
+    // 1. Initial User Context Load
+    const u = getCurrentUserContext();
+    setUser(u);
+    const roleUpper = (u.role || "").toUpperCase();
+    const adminCheck = ADMIN_ROLES.includes(roleUpper) || u.activeMode === "ADMIN_HR";
     setIsAdmin(adminCheck);
+
+    // 2. Server-side Session Verification
+    fetch("/api/auth/me")
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.success && json.user) {
+          setUser(json.user);
+          const serverRoleUpper = (json.user.role || "").toUpperCase();
+          setIsAdmin(ADMIN_ROLES.includes(serverRoleUpper));
+        }
+      })
+      .catch(() => {});
   }, [pathname]);
 
-  // Admin Multi-Dashboard Navigation Links
-  const adminNavItems = [
-    { name: "Command Dashboard", href: "/admin/dashboard", icon: IconDashboard },
-    { name: "Workforce Directory", href: "/admin/employees", icon: IconUsers },
-    { name: "Organization Tasks", href: "/admin/tasks", icon: IconClipboardList },
-    { name: "Project Health", href: "/admin/projects", icon: IconFolder },
-    { name: "Blocker Resolution", href: "/admin/blockers", icon: IconUserCheck },
-    { name: "Attendance Ledger", href: "/admin/attendance", icon: IconCalendar },
-    { name: "Daily Work Review", href: "/admin/work", icon: IconFileEdit },
-    { name: "Departments", href: "/admin/departments", icon: IconBuilding },
-    { name: "Executive Reports", href: "/admin/reports", icon: IconFileText },
-    { name: "Security Audit Logs", href: "/admin/audit-logs", icon: IconHistory },
-    { name: "Corporate Settings", href: "/admin/settings", icon: IconSettings },
+  // Admin Multi-Dashboard Navigation Sections
+  const adminSections = [
+    {
+      title: "ADMIN COMMAND",
+      items: [
+        { name: "Command Dashboard", href: ROUTES.ADMIN_DASHBOARD, icon: IconDashboard },
+        { name: "Workforce Directory", href: ROUTES.ADMIN_EMPLOYEES, icon: IconUsers },
+        { name: "Organization Tasks", href: ROUTES.ADMIN_TASKS, icon: IconClipboardList },
+        { name: "Project Health", href: ROUTES.ADMIN_PROJECTS, icon: IconFolder },
+        { name: "Blocker Resolution", href: ROUTES.ADMIN_BLOCKERS, icon: IconUserCheck },
+      ],
+    },
+    {
+      title: "OPERATIONS & RECORDS",
+      items: [
+        { name: "Salary Slips Folder", href: "/admin/salary-slips", icon: IconFolder },
+        { name: "Attendance Ledger", href: ROUTES.ADMIN_ATTENDANCE, icon: IconCalendar },
+        { name: "Daily Work Review", href: ROUTES.ADMIN_WORK, icon: IconFileEdit },
+        { name: "Executive Reports", href: ROUTES.ADMIN_REPORTS, icon: IconFileText },
+        { name: "Security Audit Logs", href: ROUTES.ADMIN_AUDIT_LOGS, icon: IconHistory },
+      ],
+    },
   ];
 
-  // Employee Multi-Dashboard Navigation Links
-  const employeeNavItems = [
-    { name: "My Work Dashboard", href: "/employee/dashboard", icon: IconDashboard },
-    { name: "My Tasks & Kanban", href: "/employee/tasks", icon: IconClipboardList },
-    { name: "My Assigned Projects", href: "/employee/projects", icon: IconFolder },
-    { name: "Shift Punch Clock", href: "/employee/attendance", icon: IconCalendar },
-    { name: "Daily Work EOD", href: "/employee/work", icon: IconFileEdit },
-    { name: "Project Teammates", href: "/employee/team", icon: IconUsers },
-    { name: "My Performance", href: "/employee/reports", icon: IconFileText },
-    { name: "My Profile & Security", href: "/employee/profile", icon: IconSettings },
+  // Employee Multi-Dashboard Navigation Sections
+  const employeeSections = [
+    {
+      title: "WORKSPACE",
+      items: [
+        { name: "Dashboard", href: ROUTES.EMPLOYEE_DASHBOARD, icon: IconDashboard },
+        { name: "My Tasks", href: ROUTES.EMPLOYEE_TASKS, icon: IconClipboardList },
+        { name: "My Projects", href: ROUTES.EMPLOYEE_PROJECTS, icon: IconFolder },
+      ],
+    },
+    {
+      title: "TIME & WORK",
+      items: [
+        { name: "Punch Clock", href: ROUTES.EMPLOYEE_ATTENDANCE, icon: IconCalendar },
+        { name: "Daily EOD", href: ROUTES.EMPLOYEE_WORK, icon: IconFileEdit },
+      ],
+    },
+    {
+      title: "TEAM & INSIGHTS",
+      items: [
+        { name: "Project Teammates", href: "/employee/team", icon: IconUsers },
+        { name: "My Performance", href: "/employee/reports", icon: IconFileText },
+      ],
+    },
+    {
+      title: "ACCOUNT",
+      items: [
+        { name: "Profile & Security", href: ROUTES.EMPLOYEE_PROFILE, icon: IconSettings },
+      ],
+    },
   ];
 
-  const currentNavItems = isAdmin ? adminNavItems : employeeNavItems;
+  const currentSections = isAdmin ? adminSections : employeeSections;
 
   if (!isOpen) return null;
 
@@ -75,22 +128,28 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     if (typeof window !== "undefined") {
       localStorage.removeItem("oms_current_user_context_v1");
     }
-    router.push("/auth/login");
+    router.push(ROUTES.LOGIN);
   };
 
+  const displayName = user?.name || "Employee";
+  const displayId = user?.employeeId || user?.id || "EMP";
+  const displayRole = (user?.role || "EMPLOYEE").replace(/_/g, " ");
+  const initials = getInitials(displayName);
+  const avatarUrl = user?.avatarUrl;
+
   return (
-    <aside className="w-64 min-h-screen bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col border-r border-slate-200 dark:border-slate-800 shrink-0 shadow-sm fixed lg:static inset-y-0 left-0 z-50 transition-all duration-300">
+    <aside className="w-64 min-h-screen bg-slate-950 text-slate-100 flex flex-col border-r border-slate-800 shrink-0 shadow-2xl fixed lg:static inset-y-0 left-0 z-50 transition-all duration-300 font-sans">
       {/* Enterprise Brand Logo Header */}
-      <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <Link href={isAdmin ? "/admin/dashboard" : "/employee/dashboard"} className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white font-black text-lg shadow-md">
+      <div className="flex items-center justify-between px-6 py-5 border-b border-slate-800/80 bg-slate-950">
+        <Link href={isAdmin ? ROUTES.ADMIN_HOME : ROUTES.EMPLOYEE_HOME} className="flex items-center gap-3 group">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-600 text-white font-black text-xl shadow-lg shadow-blue-600/30 group-hover:scale-105 transition-transform">
             O
           </div>
           <div>
-            <h1 className="font-extrabold text-slate-900 dark:text-white tracking-tight text-sm leading-none">
+            <h1 className="font-black text-white tracking-tight text-base leading-none">
               OMS Enterprise
             </h1>
-            <span className="text-[10px] text-blue-600 font-extrabold uppercase tracking-widest mt-1 block">
+            <span className="text-[10px] text-blue-400 font-extrabold uppercase tracking-widest mt-1 block">
               {isAdmin ? "Admin Control Center" : "Employee Workspace"}
             </span>
           </div>
@@ -98,62 +157,93 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
         {onClose && (
           <button
             onClick={onClose}
-            className="lg:hidden text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition text-xs font-bold"
+            className="lg:hidden text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition text-xs font-bold"
           >
             ✕
           </button>
         )}
       </div>
 
-      {/* Enterprise Navigation Links */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-3 block mb-2">
-          {isAdmin ? "Admin Navigation" : "Employee Navigation"}
-        </div>
+      {/* Enterprise Categorized Navigation Links */}
+      <nav className="flex-1 px-3 py-4 space-y-6 overflow-y-auto custom-scrollbar">
+        {currentSections.map((sec) => (
+          <div key={sec.title} className="space-y-1">
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-3 block mb-2">
+              {sec.title}
+            </span>
 
-        {currentNavItems.map((item) => {
-          const isActive = pathname === item.href || (item.href !== "/admin/dashboard" && item.href !== "/employee/dashboard" && pathname?.startsWith(item.href));
-          const IconComponent = item.icon;
+            {sec.items.map((item) => {
+              const isActive =
+                pathname === item.href ||
+                (item.href !== ROUTES.ADMIN_DASHBOARD &&
+                  item.href !== ROUTES.EMPLOYEE_DASHBOARD &&
+                  pathname?.startsWith(item.href));
+              const IconComponent = item.icon;
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => {
-                if (window.innerWidth < 1024 && onClose) onClose();
-              }}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all duration-150 border ${
-                isActive
-                  ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800 shadow-2xs"
-                  : "text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 border-transparent"
-              }`}
-            >
-              <div
-                className={`flex h-6 w-6 items-center justify-center rounded-lg transition-all ${
-                  isActive ? "text-blue-600 dark:text-blue-400" : "text-slate-500 dark:text-slate-400"
-                }`}
-              >
-                <IconComponent className="h-4 w-4" />
-              </div>
-              <span className={isActive ? "text-blue-600 dark:text-blue-400 font-extrabold" : "text-slate-900 dark:text-slate-200 font-semibold"}>
-                {item.name}
-              </span>
-            </Link>
-          );
-        })}
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => {
+                    if (window.innerWidth < 1024 && onClose) onClose();
+                  }}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all duration-150 border ${
+                    isActive
+                      ? "bg-blue-600/20 text-blue-400 border-blue-500/40 shadow-inner font-extrabold"
+                      : "text-slate-300 hover:bg-slate-900/80 hover:text-white border-transparent"
+                  }`}
+                >
+                  <div
+                    className={`flex h-6 w-6 items-center justify-center rounded-lg transition-all ${
+                      isActive ? "text-blue-400" : "text-slate-400"
+                    }`}
+                  >
+                    <IconComponent className="h-4 w-4" />
+                  </div>
+                  <span className="truncate">{item.name}</span>
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
-      {/* Logout Footer */}
-      <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 space-y-2">
+      {/* User Profile Mini-Card & Sign Out Footer */}
+      <div className="p-4 border-t border-slate-800/80 bg-slate-900/50 space-y-3">
+        {/* User Mini-Card */}
+        <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+          <div className="relative shrink-0">
+            {avatarUrl && !imgError ? (
+              <img
+                src={avatarUrl}
+                alt={displayName}
+                onError={() => setImgError(true)}
+                className="h-9 w-9 rounded-full object-cover border border-slate-700 shadow-sm"
+              />
+            ) : (
+              <div className="h-9 w-9 rounded-full bg-blue-600 text-white font-black text-xs flex items-center justify-center border border-slate-700 shadow-sm">
+                {initials}
+              </div>
+            )}
+            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-slate-900" title="Online & Active"></span>
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-extrabold text-white truncate">{displayName}</p>
+            <p className="text-[10px] font-mono text-blue-400 font-bold truncate">{displayId} • {displayRole}</p>
+          </div>
+        </div>
+
+        {/* Sign Out Button */}
         <button
           onClick={handleLogout}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/60 text-xs font-extrabold text-rose-600 dark:text-rose-400 hover:bg-rose-600 hover:text-white transition shadow-2xs"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-rose-900/60 bg-rose-950/40 text-xs font-extrabold text-rose-400 hover:bg-rose-600 hover:text-white transition shadow-sm cursor-pointer"
         >
-          <span>Sign Out Session</span>
+          <span>🚪 Sign Out Session</span>
         </button>
 
-        <div className="text-[10px] text-slate-400 text-center font-medium">
-          Enterprise ERP • MySQL Backend
+        <div className="text-[10px] text-slate-500 text-center font-medium">
+          OMS Enterprise • Modern ERP 2.0
         </div>
       </div>
     </aside>

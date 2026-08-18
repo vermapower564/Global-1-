@@ -3,22 +3,8 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getStoredEmployees, addStoredEmployee, deleteStoredEmployee, getDeletedEmployeeIds, Employee } from "@/utils/employeeStore";
 import { setCurrentUserContext } from "@/utils/userContextStore";
-
-const SYSTEM_ROLES = [
-  { value: "SUPER_ADMIN", label: "Super Admin (Full System Access)" },
-  { value: "DIRECTOR", label: "Director (Executive Level)" },
-  { value: "HR", label: "HR Manager" },
-  { value: "FINANCE", label: "Finance / Payroll Manager" },
-  { value: "PROJECT_MANAGER", label: "Project Manager (Team Leader)" },
-  { value: "SALES_MANAGER", label: "Sales Manager" },
-  { value: "SALES_EXECUTIVE", label: "Sales Executive" },
-  { value: "DIGITAL_MARKETING_MANAGER", label: "Marketing Manager" },
-  { value: "SEO_EXECUTIVE", label: "SEO Executive" },
-  { value: "CONTENT_WRITER", label: "Content Writer" },
-  { value: "DEVELOPER", label: "Developer (Employee User)" },
-];
+import EmployeePreviewDrawer from "@/components/EmployeePreviewDrawer";
 
 export default function EmployeesPage() {
   const router = useRouter();
@@ -26,8 +12,12 @@ export default function EmployeesPage() {
   const [search, setSearch] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("All");
   const [workloadFilter, setWorkloadFilter] = useState("All");
+  const [statusFilter, setStatusFilter] = useState("All");
   const [loading, setLoading] = useState(true);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  // Dynamic Selected Employee State for Interactive Selection
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
 
   const [availableDepartments, setAvailableDepartments] = useState<string[]>([
     "Development & Engineering",
@@ -40,17 +30,8 @@ export default function EmployeesPage() {
     "Executive Management",
   ]);
 
-  // Edit / Update User Modal State
-  const [editTarget, setEditTarget] = useState<any | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editEmpId, setEditEmpId] = useState("");
-  const [editEmail, setEditEmail] = useState("");
-  const [editRole, setEditRole] = useState("DEVELOPER");
-  const [editDepartment, setEditDepartment] = useState("");
-  const [editSalary, setEditSalary] = useState("");
-  const [editPhone, setEditPhone] = useState("");
-  const [editIsActive, setEditIsActive] = useState(true);
-  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  // Quick Preview Drawer Target
+  const [previewTarget, setPreviewTarget] = useState<any | null>(null);
 
   // Reset Password Modal State
   const [resetTarget, setResetTarget] = useState<any | null>(null);
@@ -90,50 +71,6 @@ export default function EmployeesPage() {
     }, 400);
   };
 
-  const handleOpenEditModal = (emp: any) => {
-    setEditTarget(emp);
-    setEditName(emp.name);
-    setEditEmpId(emp.employeeId || emp.id);
-    setEditEmail(emp.email);
-    setEditRole((emp.role || "DEVELOPER").toString().toUpperCase().replace(/\s+/g, "_"));
-    setEditDepartment(emp.department?.name || emp.department || "");
-    setEditSalary(emp.salary?.toString() || "850000");
-    setEditPhone(emp.phone || "+91 98765 00000");
-    setEditIsActive(emp.isActive !== false);
-  };
-
-  const handleSaveEmployeeEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editTarget) return;
-
-    setIsSavingEdit(true);
-
-    try {
-      await fetch("/api/employees", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: editEmpId,
-          name: editName,
-          email: editEmail,
-          role: editRole,
-          department: editDepartment,
-          salary: editSalary,
-          phone: editPhone,
-          isActive: editIsActive,
-        }),
-      });
-    } catch (err) {
-      console.warn("API update fallback");
-    }
-
-    loadEmployees();
-    setIsSavingEdit(false);
-    setEditTarget(null);
-    setToastMsg(`✓ Employee User Profile & Role (${editEmpId}) updated in MySQL!`);
-    setTimeout(() => setToastMsg(null), 4000);
-  };
-
   const handlePerformPasswordReset = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetTarget || !resetPassword) return;
@@ -151,7 +88,7 @@ export default function EmployeesPage() {
           password: resetPassword,
         }),
       });
-      setToastMsg(`✓ Password for ${resetTarget.name} reset & Bcrypt hashed in MySQL!`);
+      setToastMsg(`✓ Password for ${resetTarget.name} reset & Bcrypt hashed in database!`);
     } catch (err) {
       setToastMsg("❌ Failed to reset employee password.");
     } finally {
@@ -165,60 +102,86 @@ export default function EmployeesPage() {
   const filtered = employees.filter((emp) => {
     const empName = (emp.name || "").toLowerCase();
     const empId = (emp.employeeId || emp.id || "").toLowerCase();
+    const empEmail = (emp.email || "").toLowerCase();
     const empRole = (emp.role || "").toLowerCase();
-    const matchesSearch = empName.includes(search.toLowerCase()) || empId.includes(search.toLowerCase()) || empRole.includes(search.toLowerCase());
+    const matchesSearch =
+      empName.includes(search.toLowerCase()) ||
+      empId.includes(search.toLowerCase()) ||
+      empEmail.includes(search.toLowerCase()) ||
+      empRole.includes(search.toLowerCase());
+
     const matchesDept = departmentFilter === "All" || (emp.department?.name || emp.department || "").includes(departmentFilter);
     const matchesWorkload = workloadFilter === "All" || emp.metrics?.workloadLevel === workloadFilter;
-    return matchesSearch && matchesDept && matchesWorkload;
+    const matchesStatus =
+      statusFilter === "All" ||
+      (statusFilter === "ACTIVE" && emp.isActive !== false) ||
+      (statusFilter === "INACTIVE" && emp.isActive === false);
+
+    return matchesSearch && matchesDept && matchesWorkload && matchesStatus;
   });
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-16">
+    <div className="space-y-6 max-w-7xl mx-auto pb-16 font-sans bg-white text-black">
       {/* Toast Notification */}
       {toastMsg && (
-        <div className="bg-slate-900 text-white font-semibold text-xs p-4 rounded-xl shadow-md border border-slate-800 flex items-center justify-between animate-in fade-in">
+        <div className="bg-slate-900 text-white font-bold text-xs p-4 rounded-xl shadow-md border border-slate-800 flex items-center justify-between animate-in fade-in">
           <span>{toastMsg}</span>
-          <button onClick={() => setToastMsg(null)} className="text-slate-400 hover:text-white font-bold">✕</button>
+          <button onClick={() => setToastMsg(null)} className="text-slate-400 hover:text-white font-bold">
+            ✕
+          </button>
         </div>
       )}
 
       {/* Header Banner */}
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
+      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
         <div>
           <span className="text-xs font-bold uppercase tracking-wider text-blue-600">
             Workforce + Task Intelligence Center
           </span>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
+          <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight mt-1">
             Enterprise Employee Workforce Center ({employees.length})
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Real-time MySQL workforce intelligence tracking active tasks, completion rates, blocked items, and workload overload levels.
+          <p className="text-xs text-gray-500 mt-1">
+            Click any Employee Name or ID to select and highlight their record.
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Link href="/employees/add" className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition shrink-0">
+          <Link
+            href="/employees/add"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition shrink-0"
+          >
             + Register New Employee
           </Link>
         </div>
       </div>
 
       {/* Filters Bar */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white p-4 rounded-2xl border border-gray-200 shadow-xs">
         <div className="w-full sm:w-80">
           <input
             type="text"
-            placeholder="Search by name, role or ID..."
+            placeholder="Search by name, ID, Gmail or role..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-4 py-2 text-xs text-slate-900 dark:text-white focus:border-blue-600 focus:outline-none font-medium"
+            className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2 text-xs text-black focus:border-blue-600 focus:outline-none font-medium"
           />
         </div>
 
         <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto">
           <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="rounded-xl border border-gray-300 bg-white px-3 py-1.5 text-xs text-black font-extrabold focus:outline-none"
+          >
+            <option value="All">All Statuses</option>
+            <option value="ACTIVE">ACTIVE</option>
+            <option value="INACTIVE">INACTIVE</option>
+          </select>
+
+          <select
             value={workloadFilter}
             onChange={(e) => setWorkloadFilter(e.target.value)}
-            className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-white font-extrabold"
+            className="rounded-xl border border-gray-300 bg-white px-3 py-1.5 text-xs text-black font-extrabold focus:outline-none"
           >
             <option value="All">All Workloads</option>
             <option value="LOW">LOW</option>
@@ -227,14 +190,14 @@ export default function EmployeesPage() {
             <option value="OVERLOADED">OVERLOADED</option>
           </select>
 
-          {["All", ...availableDepartments.slice(0, 5)].map((dept) => (
+          {["All", ...availableDepartments.slice(0, 4)].map((dept) => (
             <button
               key={dept}
               onClick={() => setDepartmentFilter(dept)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${
                 departmentFilter === dept
                   ? "bg-blue-600 text-white shadow-2xs"
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
+                  : "bg-gray-100 text-black hover:bg-gray-200"
               }`}
             >
               {dept}
@@ -244,188 +207,228 @@ export default function EmployeesPage() {
       </div>
 
       {/* Directory Table */}
-      <div className="pro-table-container">
-        <table className="pro-table">
-          <thead>
-            <tr>
-              <th>Employee ID & Name</th>
-              <th>Dept & Role</th>
-              <th>Current Project</th>
-              <th>Active Tasks</th>
-              <th>Completed</th>
-              <th>Pending / Blocked</th>
-              <th>Overdue</th>
-              <th>Progress %</th>
-              <th>Workload</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
-              <tr>
-                <td colSpan={11} className="text-center py-8 text-slate-400 text-xs font-medium">
-                  {loading ? "Loading workforce task metrics..." : "No employee records found matching your filters."}
-                </td>
+      <div className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-xs">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50 text-black font-bold uppercase text-[11px]">
+                <th className="py-3.5 px-4 text-black">Employee Name</th>
+                <th className="py-3.5 px-4 text-black">Employee ID</th>
+                <th className="py-3.5 px-4 text-black">Email</th>
+                <th className="py-3.5 px-4 text-black">Department</th>
+                <th className="py-3.5 px-4 text-black">Role / Designation</th>
+                <th className="py-3.5 px-4 text-black">Current Project</th>
+                <th className="py-3.5 px-4 text-black">Active Tasks</th>
+                <th className="py-3.5 px-4 text-black">Completed</th>
+                <th className="py-3.5 px-4 text-black">Workload</th>
+                <th className="py-3.5 px-4 text-black">Status</th>
+                <th className="py-3.5 px-4 text-black">Actions</th>
               </tr>
-            ) : (
-              filtered.map((emp) => {
-                const m = emp.metrics || {
-                  totalTasks: 0,
-                  activeTasks: 0,
-                  completedTasks: 0,
-                  pendingTasks: 0,
-                  blockedTasks: 0,
-                  overdueTasks: 0,
-                  progressRate: 100,
-                  workloadLevel: "NORMAL",
-                };
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={11} className="text-center py-8 text-gray-500 text-xs font-medium">
+                    {loading ? "Loading workforce records..." : "No employee records found matching your filters."}
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((emp) => {
+                  const empIdStr = emp.employeeId || emp.id;
+                  const isSelected = selectedEmployeeId === emp.id || selectedEmployeeId === emp.employeeId;
 
-                return (
-                  <tr key={emp.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                    <td>
-                      <Link href={`/admin/employees/${emp.id}`} className="flex items-center gap-3 group">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white font-extrabold text-xs shadow-2xs">
-                          {emp.name ? emp.name.charAt(0).toUpperCase() : "E"}
-                        </div>
-                        <div>
-                          <p className="font-extrabold text-slate-900 dark:text-white text-xs group-hover:text-blue-600 transition-colors">
+                  const m = emp.metrics || {
+                    totalTasks: 0,
+                    activeTasks: 0,
+                    completedTasks: 0,
+                    pendingTasks: 0,
+                    blockedTasks: 0,
+                    overdueTasks: 0,
+                    progressRate: 100,
+                    workloadLevel: "NORMAL",
+                  };
+
+                  return (
+                    <tr
+                      key={emp.id}
+                      className={`transition ${
+                        isSelected ? "bg-blue-50/70" : "hover:bg-gray-50"
+                      }`}
+                    >
+                      {/* DYNAMIC CLICKABLE EMPLOYEE NAME (DEFAULT BLACK -> HOVER BLUE -> CLICK BLUE) */}
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white font-black text-xs shadow-md shrink-0">
+                            {emp.name ? emp.name.charAt(0).toUpperCase() : "E"}
+                          </div>
+                          <span
+                            onClick={() => setSelectedEmployeeId(isSelected ? null : emp.id)}
+                            className={
+                              isSelected
+                                ? "text-blue-600 font-semibold cursor-pointer text-xs"
+                                : "text-black hover:text-blue-600 cursor-pointer font-medium text-xs transition-colors"
+                            }
+                          >
                             {emp.name}
-                          </p>
-                          <p className="text-[10px] font-mono text-slate-500 font-bold">{emp.employeeId || emp.id}</p>
-                        </div>
-                      </Link>
-                    </td>
-
-                    <td>
-                      <p className="font-bold text-slate-800 dark:text-slate-200 text-xs">{emp.role}</p>
-                      <p className="text-[11px] text-slate-500 font-medium">{emp.department?.name || emp.department || "Operations"}</p>
-                    </td>
-
-                    <td className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      {emp.currentProjectTitle || "OMS Enterprise"}
-                    </td>
-
-                    <td className="font-extrabold text-blue-600 text-xs">{m.activeTasks} Active</td>
-                    <td className="font-extrabold text-emerald-600 text-xs">{m.completedTasks} Done</td>
-
-                    <td>
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <span className="font-bold text-slate-600">{m.pendingTasks} P</span>
-                        {m.blockedTasks > 0 && (
-                          <span className="font-black text-rose-600 px-1.5 py-0.5 rounded-md bg-rose-50 border border-rose-200 text-[10px]">
-                            {m.blockedTasks} B
                           </span>
-                        )}
-                      </div>
-                    </td>
-
-                    <td>
-                      {m.overdueTasks > 0 ? (
-                        <span className="font-black text-amber-700 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-[10px]">
-                          {m.overdueTasks} Overdue
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 text-xs">0</span>
-                      )}
-                    </td>
-
-                    <td>
-                      <div className="w-16">
-                        <div className="flex justify-between text-[10px] font-bold text-slate-700 mb-0.5">
-                          <span>{m.progressRate}%</span>
                         </div>
-                        <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-blue-600" style={{ width: `${m.progressRate}%` }}></div>
-                        </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    <td>
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
-                        m.workloadLevel === "OVERLOADED" ? "bg-rose-100 text-rose-700" :
-                        m.workloadLevel === "HIGH" ? "bg-amber-100 text-amber-700" :
-                        "bg-blue-100 text-blue-700"
-                      }`}>
+                      {/* DYNAMIC CLICKABLE EMPLOYEE ID (DEFAULT BLACK -> HOVER BLUE -> CLICK BLUE) */}
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            onClick={() => setSelectedEmployeeId(isSelected ? null : emp.id)}
+                            className={
+                              isSelected
+                                ? "text-blue-600 font-semibold cursor-pointer font-mono text-xs"
+                                : "text-black hover:text-blue-600 cursor-pointer font-mono text-xs transition-colors"
+                            }
+                          >
+                            {empIdStr}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(empIdStr);
+                              setToastMsg(`✓ Employee ID "${empIdStr}" copied to clipboard.`);
+                              setTimeout(() => setToastMsg(null), 3000);
+                            }}
+                            className="text-[11px] text-gray-500 hover:text-black font-sans p-1 rounded hover:bg-gray-100 transition cursor-pointer"
+                            title="Copy Employee ID"
+                          >
+                            📋
+                          </button>
+                        </div>
+                      </td>
+
+                      {/* EMAIL (READABLE BLACK TEXT) */}
+                      <td className="py-3.5 px-4 text-black font-mono text-xs">
+                        {emp.email}
+                      </td>
+
+                      {/* DEPARTMENT (READABLE BLACK TEXT) */}
+                      <td className="py-3.5 px-4 text-black font-medium text-xs">
+                        {emp.department?.name || emp.department || "Development"}
+                      </td>
+
+                      {/* ROLE / DESIGNATION (READABLE BLACK TEXT) */}
+                      <td className="py-3.5 px-4 text-black font-bold text-xs">
+                        {emp.role}
+                      </td>
+
+                      {/* CURRENT PROJECT (READABLE BLACK TEXT) */}
+                      <td className="py-3.5 px-4 text-black font-medium text-xs">
+                        {emp.currentProjectTitle || "OMS Enterprise"}
+                      </td>
+
+                      {/* ACTIVE TASKS (READABLE BLACK TEXT) */}
+                      <td className="py-3.5 px-4 text-black font-semibold text-xs">
+                        {m.activeTasks} Active
+                      </td>
+
+                      {/* COMPLETED (READABLE BLACK TEXT) */}
+                      <td className="py-3.5 px-4 text-black font-semibold text-xs">
+                        {m.completedTasks} Done
+                      </td>
+
+                      {/* WORKLOAD (READABLE BLACK TEXT) */}
+                      <td className="py-3.5 px-4 text-black font-bold text-xs">
                         {m.workloadLevel}
-                      </span>
-                    </td>
+                      </td>
 
-                    <td>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                        emp.isActive !== false ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
-                      }`}>
-                        {emp.isActive !== false ? "Active" : "Deactivated"}
-                      </span>
-                    </td>
+                      {/* STATUS (READABLE BLACK TEXT) */}
+                      <td className="py-3.5 px-4 text-black font-bold text-xs">
+                        {emp.isActive !== false ? "Active" : "Inactive"}
+                      </td>
 
-                    <td>
-                      <div className="flex items-center gap-2">
-                        <Link
-                          href={`/admin/employees/${emp.id}`}
-                          className="text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-600 hover:text-white px-2.5 py-1 rounded-lg transition"
-                        >
-                          Workspace
-                        </Link>
-                        <button
-                          onClick={() => handleTakeEmployeeAccess(emp)}
-                          className="text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-800 hover:text-white px-2 py-1 rounded-lg transition"
-                          title="Take Access"
-                        >
-                          🔑 Access
-                        </button>
-                        <button
-                          onClick={() => setResetTarget(emp)}
-                          className="text-[11px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-600 hover:text-white px-2 py-1 rounded-lg transition"
-                          title="Reset Password"
-                        >
-                          🔒 Reset
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+                      {/* ACTIONS */}
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setPreviewTarget(emp)}
+                            className="text-[11px] font-bold text-black bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded-lg transition cursor-pointer"
+                            title="Quick Side Preview Drawer"
+                          >
+                            👁️ Preview
+                          </button>
+                          <Link
+                            href={`/admin/employees/${empIdStr}`}
+                            className="text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-600 hover:text-white px-2 py-1 rounded-lg transition"
+                          >
+                            360° Profile
+                          </Link>
+                          <button
+                            onClick={() => handleTakeEmployeeAccess(emp)}
+                            className="text-[11px] font-bold text-black bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded-lg transition cursor-pointer"
+                            title="Take Access"
+                          >
+                            🔑 Access
+                          </button>
+                          <button
+                            onClick={() => setResetTarget(emp)}
+                            className="text-[11px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-600 hover:text-white px-2 py-1 rounded-lg transition cursor-pointer"
+                            title="Reset Password"
+                          >
+                            🔒 Reset
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {/* Quick Preview Drawer */}
+      <EmployeePreviewDrawer
+        isOpen={!!previewTarget}
+        onClose={() => setPreviewTarget(null)}
+        employee={previewTarget}
+      />
 
       {/* Reset Password Modal */}
       {resetTarget && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 border border-slate-200 dark:border-slate-800 animate-in fade-in">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+          <div className="bg-white text-black rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-4 border border-gray-200 animate-in fade-in">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <div>
-                <h3 className="font-bold text-base text-slate-900 dark:text-white">Admin Reset Employee Password</h3>
-                <p className="text-xs text-slate-500">For {resetTarget.name} ({resetTarget.employeeId || resetTarget.id})</p>
+                <h3 className="font-black text-base text-black">Reset Employee Password</h3>
+                <p className="text-xs text-gray-500">For {resetTarget.name} ({resetTarget.employeeId || resetTarget.id})</p>
               </div>
-              <button onClick={() => setResetTarget(null)} className="text-slate-400 hover:text-slate-700 font-bold">
+              <button onClick={() => setResetTarget(null)} className="text-gray-400 hover:text-black font-bold">
                 ✕
               </button>
             </div>
 
             <form onSubmit={handlePerformPasswordReset} className="space-y-4 text-xs">
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">New Employee Password *</label>
+                <label className="block font-bold text-black mb-1">New Employee Password *</label>
                 <input
                   type="password"
                   required
                   value={resetPassword}
                   onChange={(e) => setResetPassword(e.target.value)}
                   placeholder="Enter new secure password..."
-                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2.5 text-xs font-mono focus:border-blue-600 focus:outline-none transition shadow-inner"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-xs font-mono focus:border-blue-600 focus:outline-none transition text-black"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-                <button type="button" onClick={() => setResetTarget(null)} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-100">
+              <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setResetTarget(null)}
+                  className="px-4 py-2 rounded-xl border border-gray-300 text-xs font-bold text-gray-700 hover:bg-gray-50"
+                >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isResettingPass}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-5 py-2 rounded-lg transition shadow-md"
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-5 py-2 rounded-xl transition shadow-md"
                 >
                   {isResettingPass ? "Saving Hash..." : "🔒 Save New Bcrypt Password"}
                 </button>

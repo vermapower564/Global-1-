@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import NotificationPopover from "./NotificationPopover";
 import ProfileModal, { ProfileUser } from "./ProfileModal";
+import GlobalSearchModal from "./GlobalSearchModal";
+import { ROUTES } from "@/lib/routes";
 
 interface NavbarProps {
   onToggleSidebar?: () => void;
@@ -21,16 +23,14 @@ function getInitials(name: string): string {
 export default function Navbar({ onToggleSidebar }: NavbarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  
+
   const [user, setUser] = useState<ProfileUser | null>(null);
   const [imgError, setImgError] = useState(false);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Fetch authenticated user identity from MySQL server API (/api/auth/me)
     fetch("/api/auth/me")
       .then((res) => res.json())
       .then((json) => {
@@ -50,33 +50,20 @@ export default function Navbar({ onToggleSidebar }: NavbarProps) {
       })
       .catch((err) => {
         console.warn("Auth session check error in Navbar:", err);
-      })
-      .finally(() => {
-        setLoading(false);
       });
-  }, []);
+  }, [pathname]);
 
-  // Handle click outside profile dropdown
+  // Keyboard shortcut Ctrl + K trigger for Global Search Modal
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsMenuOpen(false);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsSearchModalOpen((prev) => !prev);
       }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
-
-  const handleLogout = async () => {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-    } catch (e) {}
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("oms_current_user_context_v1");
-    }
-    setUser(null);
-    router.push("/auth/login");
-  };
 
   const getPageTitle = (path: string | null) => {
     if (!path || path === "/") return "Overview";
@@ -84,154 +71,135 @@ export default function Navbar({ onToggleSidebar }: NavbarProps) {
     return segment.charAt(0).toUpperCase() + segment.slice(1).replace("-", " ");
   };
 
-  const isAdminRole = user?.role ? ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"].includes(user.role) : false;
-  const displayName = user?.name || "Loading...";
-  const displayIdOrRole = isAdminRole ? (user?.role === "SUPER_ADMIN" ? "Administrator" : user?.role || "Admin") : (user?.employeeId || user?.id || "EMP");
-  const initials = user ? getInitials(user.name) : "..";
+  const isEmployeePath = pathname?.startsWith("/employee");
+  const isAdminRole = !isEmployeePath && (user?.role ? ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"].includes(user.role) : false);
+  const displayName = user?.name || "Employee";
+  
+  // Format role/designation cleanly: NEVER display Administrator when on Employee Workspace pages
+  const displayRoleOrDesignation = isEmployeePath
+    ? (user?.role ? user.role.replace(/_/g, " ") : "Employee User")
+    : (isAdminRole ? (user?.role === "SUPER_ADMIN" ? "Administrator" : user?.role?.replace(/_/g, " ")) : (user?.role?.replace(/_/g, " ") || "Employee User"));
+
+  const initials = getInitials(displayName);
   const avatarUrl = user?.avatarUrl;
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs transition-colors">
+      <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-xs transition-colors font-sans">
         <div className="flex items-center justify-between h-16 px-4 sm:px-6">
-          {/* Hamburger Toggle & Page Title */}
+          {/* Left: Sidebar Toggle, Navigation Back/Forward & Page Title */}
           <div className="flex items-center gap-3">
             <button
               onClick={onToggleSidebar}
               title="Toggle OMS Enterprise Menu"
-              className="flex items-center justify-center h-9 w-9 rounded-lg border border-slate-200 bg-slate-100 hover:bg-slate-200 text-slate-800 transition shadow-xs cursor-pointer"
+              className="flex items-center justify-center h-9 w-9 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-white transition shadow-2xs cursor-pointer"
             >
               <span className="text-lg font-bold">☰</span>
             </button>
 
+            {/* Back & Forward History Controls */}
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+              <button
+                onClick={() => router.back()}
+                title="Go Back to Previous Page"
+                className="px-2 py-1 rounded-lg hover:bg-white dark:hover:bg-slate-900 text-slate-700 dark:text-slate-200 hover:text-blue-600 font-extrabold text-xs transition shadow-2xs cursor-pointer flex items-center gap-1"
+              >
+                <span>←</span>
+                <span className="hidden md:inline">Back</span>
+              </button>
+              <button
+                onClick={() => router.forward()}
+                title="Go Forward to Next Page"
+                className="px-2 py-1 rounded-lg hover:bg-white dark:hover:bg-slate-900 text-slate-700 dark:text-slate-200 hover:text-blue-600 font-extrabold text-xs transition shadow-2xs cursor-pointer flex items-center gap-1"
+              >
+                <span className="hidden md:inline">Ahead</span>
+                <span>→</span>
+              </button>
+            </div>
+
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 hidden sm:inline">
               OMS /
             </span>
-            <h2 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">
+            <h2 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white tracking-tight">
               {getPageTitle(pathname)}
             </h2>
 
             {/* Live System Health Indicator */}
-            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900 text-[10px] font-bold">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
               System Health 99.9%
             </div>
           </div>
 
           {/* Header Right Actions */}
-          <div className="flex items-center gap-4">
-            <div className="relative hidden md:block">
-              <input
-                type="text"
-                placeholder="Search records, staff, tasks..."
-                className="w-64 rounded-lg border border-slate-300 bg-slate-50 py-1.5 pl-9 pr-4 text-xs focus:border-blue-600 focus:bg-white focus:outline-none transition shadow-xs"
-              />
-              <span className="absolute left-3 top-2 text-slate-400 text-xs">🔍</span>
-            </div>
+          <div className="flex items-center gap-3">
+            {/* Global Search Button with Ctrl K hint */}
+            <button
+              onClick={() => setIsSearchModalOpen(true)}
+              className="hidden md:flex items-center justify-between w-64 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 py-1.5 px-3 text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-900 hover:border-blue-600 transition shadow-2xs cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <span>🔍</span>
+                <span>Search records, tasks...</span>
+              </span>
+              <kbd className="px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px] font-mono font-bold text-slate-600 dark:text-slate-300 shadow-2xs">
+                Ctrl K
+              </kbd>
+            </button>
 
             <NotificationPopover />
 
-            <div className="h-5 w-px bg-slate-200"></div>
+            <div className="h-5 w-px bg-slate-200 dark:bg-slate-800"></div>
 
-            {/* DYNAMIC AUTHENTICATED USER IDENTITY PROFILE */}
+            {/* DYNAMIC AUTHENTICATED USER IDENTITY PROFILE MENU */}
             <div ref={menuRef} className="relative">
               <button
                 onClick={() => setIsProfileModalOpen(true)}
-                title="Click to view large profile photo & details"
-                className="flex items-center gap-3 p-1 rounded-xl hover:bg-slate-100 transition cursor-pointer group"
+                title="Click to view profile photo & details"
+                className="flex items-center gap-3 p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer group"
               >
-                {/* Profile Avatar: Photo if available and valid, else Dynamic Initials */}
-                {avatarUrl && !imgError ? (
-                  <img
-                    src={avatarUrl}
-                    alt={displayName}
-                    onError={() => setImgError(true)}
-                    className="h-8 w-8 rounded-full object-cover border border-slate-300 shadow-xs group-hover:scale-105 transition-transform"
-                  />
-                ) : (
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white font-bold text-xs shadow-xs border border-slate-700 group-hover:scale-105 transition-transform">
-                    {initials}
-                  </div>
-                )}
+                {/* Dynamic Avatar */}
+                <div className="relative">
+                  {avatarUrl && !imgError ? (
+                    <img
+                      src={avatarUrl}
+                      alt={displayName}
+                      onError={() => setImgError(true)}
+                      className="h-8 w-8 rounded-full object-cover border border-slate-300 dark:border-slate-700 shadow-2xs group-hover:scale-105 transition-transform"
+                    />
+                  ) : (
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-white font-black text-xs shadow-2xs border border-blue-500 group-hover:scale-105 transition-transform">
+                      {initials}
+                    </div>
+                  )}
+                  <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900" title="Online"></span>
+                </div>
 
+                {/* Dynamic Name & Role */}
                 <div className="hidden sm:block text-left">
-                  <p className="text-xs font-bold text-slate-900 leading-tight">
+                  <p className="text-xs font-black text-slate-900 dark:text-white leading-tight">
                     {displayName}
                   </p>
-                  <p className="text-[10px] font-medium text-slate-500 leading-tight font-mono">
-                    {displayIdOrRole}
+                  <p className="text-[10px] font-extrabold text-blue-600 dark:text-blue-400 leading-tight font-mono">
+                    {displayRoleOrDesignation}
                   </p>
                 </div>
               </button>
-
-              {/* Profile Dropdown Menu */}
-              {isMenuOpen && user && (
-                <div className="absolute right-0 top-12 z-50 w-64 rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl space-y-3 animate-in fade-in">
-                  <div
-                    onClick={() => {
-                      setIsMenuOpen(false);
-                      setIsProfileModalOpen(true);
-                    }}
-                    className="flex items-center gap-3 pb-3 border-b border-slate-100 cursor-pointer hover:opacity-80 transition"
-                  >
-                    {avatarUrl && !imgError ? (
-                      <img
-                        src={avatarUrl}
-                        alt={user.name}
-                        onError={() => setImgError(true)}
-                        className="h-10 w-10 rounded-full object-cover border border-slate-300"
-                      />
-                    ) : (
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-white font-black text-xs shrink-0">
-                        {initials}
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-extrabold text-slate-900 truncate">{user.name}</p>
-                      <p className="text-[10px] font-mono text-blue-600 font-bold">{user.employeeId || user.id}</p>
-                      <p className="text-[10px] text-slate-400 truncate">{user.email}</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1 text-xs font-bold">
-                    <button
-                      onClick={() => {
-                        setIsMenuOpen(false);
-                        setIsProfileModalOpen(true);
-                      }}
-                      className="w-full text-left p-2 rounded-xl hover:bg-slate-50 text-slate-900 transition"
-                    >
-                      👤 View Profile Photo & Details
-                    </button>
-                    <Link
-                      href={isAdminRole ? "/admin/tasks" : "/employee/tasks"}
-                      onClick={() => setIsMenuOpen(false)}
-                      className="block p-2 rounded-xl hover:bg-slate-50 text-slate-900 transition"
-                    >
-                      📝 My Workboard & Tasks
-                    </Link>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-100">
-                    <button
-                      onClick={handleLogout}
-                      className="w-full flex items-center justify-center gap-2 p-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 font-extrabold text-xs hover:bg-rose-600 hover:text-white transition cursor-pointer"
-                    >
-                      🚪 Sign Out Session
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
       </header>
 
-      {/* Large Interactive Profile Photo & Details Modal */}
+      {/* Interactive Modals */}
       <ProfileModal
         isOpen={isProfileModalOpen}
         onClose={() => setIsProfileModalOpen(false)}
         user={user}
+      />
+
+      <GlobalSearchModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
       />
     </>
   );

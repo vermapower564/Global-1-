@@ -4,6 +4,8 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { setCurrentUserContext } from "@/utils/userContextStore";
+import { ROUTES } from "@/lib/routes";
+import { validateAndNormalizeGmail } from "@/lib/emailValidator";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -24,9 +26,21 @@ export default function LoginPage() {
     setSuccessMessage("");
 
     if (!loginIdentity.trim()) {
-      setErrorMessage("Please enter your registered ID or Email.");
+      setErrorMessage("Please enter your registered Employee ID or Gmail address.");
       setLoading(false);
       return;
+    }
+
+    const inputVal = loginIdentity.trim();
+
+    // Frontend strict check if user entered an email address
+    if (inputVal.includes("@")) {
+      const emailCheck = validateAndNormalizeGmail(inputVal);
+      if (!emailCheck.isValid) {
+        setErrorMessage(emailCheck.error || "Only Gmail addresses ending with @gmail.com are allowed.");
+        setLoading(false);
+        return;
+      }
     }
 
     try {
@@ -34,7 +48,7 @@ export default function LoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: loginIdentity.trim(),
+          email: inputVal,
           password,
         }),
       });
@@ -60,13 +74,13 @@ export default function LoginPage() {
 
         setTimeout(() => {
           if (isAdmin) {
-            router.push("/admin/dashboard");
+            router.push(ROUTES.ADMIN_HOME);
           } else {
-            router.push("/employee/dashboard");
+            router.push(ROUTES.EMPLOYEE_HOME);
           }
         }, 400);
       } else {
-        setErrorMessage(data.error || "Account not found for the entered ID or Email.");
+        setErrorMessage(data.error || "Account not found for the entered ID or Gmail address.");
       }
     } catch (err: any) {
       setErrorMessage("Network connection error. Please try again.");
@@ -84,7 +98,7 @@ export default function LoginPage() {
             O
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">OMS Enterprise</h1>
-          <p className="text-xs text-slate-500 mt-1 font-medium">Direct Identity Login</p>
+          <p className="text-xs text-slate-500 mt-1 font-medium font-sans">Direct Identity Sign In</p>
         </div>
 
         {errorMessage && (
@@ -102,14 +116,14 @@ export default function LoginPage() {
         <form onSubmit={handleIdentitySubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              ID or Email
+              ID or Gmail Address (@gmail.com)
             </label>
             <input
               type="text"
               required
               value={loginIdentity}
               onChange={(e) => setLoginIdentity(e.target.value)}
-              placeholder="e.g. EMP-8595 or aditya.dev@globalwebify.com"
+              placeholder="e.g. EMP-8595 or aditya.dev@gmail.com"
               className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs font-mono font-bold text-slate-900 focus:border-blue-600 focus:outline-none transition shadow-inner"
             />
           </div>
@@ -122,7 +136,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="text-[11px] font-bold text-blue-600 hover:underline"
+                className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer"
               >
                 {showPassword ? "👁️ Hide" : "👁️ Show"}
               </button>
@@ -146,7 +160,7 @@ export default function LoginPage() {
               />
               <span>Remember Session</span>
             </label>
-            <Link href="/auth/forgot-password" className="text-blue-600 font-bold hover:underline">
+            <Link href={ROUTES.FORGOT_PASSWORD} className="text-blue-600 font-bold hover:underline">
               Forgot Password?
             </Link>
           </div>
@@ -161,7 +175,7 @@ export default function LoginPage() {
         </form>
 
         <div className="pt-3 border-t border-slate-100 text-center text-[11px] text-slate-400 font-medium">
-          Protected by OMS Enterprise Database & Session Security
+          Strict @gmail.com Domain Security Enforced
         </div>
       </div>
     </div>

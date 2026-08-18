@@ -5,39 +5,27 @@ import { useRouter, usePathname } from "next/navigation";
 import { getCurrentUserContext } from "@/utils/userContextStore";
 import { ROUTES } from "@/lib/routes";
 
-const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
-
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default function EmployeeLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [authorized, setAuthorized] = useState<boolean | null>(null);
 
   useEffect(() => {
-    // 1. Client Context Role Check
+    // 1. Client Context Check
     const user = getCurrentUserContext();
-    const isUserAdmin = ADMIN_ROLES.includes(user.role?.toUpperCase()) || user.activeMode === "ADMIN_HR";
-
-    if (!isUserAdmin) {
-      console.warn(`Unauthorized access attempt to admin route (${pathname}) by role: ${user.role}`);
+    if (!user || !user.id) {
       setAuthorized(false);
-      router.replace(ROUTES.EMPLOYEE_HOME);
+      router.replace(ROUTES.LOGIN);
       return;
     }
 
-    // 2. Server-side session verification check
+    // 2. Server Session Verification
     fetch("/api/auth/me")
       .then((res) => res.json())
       .then((json) => {
         if (!json.success || !json.user) {
           setAuthorized(false);
           router.replace(ROUTES.LOGIN);
-          return;
-        }
-
-        const serverRole = (json.user.role || "").toUpperCase();
-        if (!ADMIN_ROLES.includes(serverRole)) {
-          setAuthorized(false);
-          router.replace(ROUTES.EMPLOYEE_HOME);
         } else {
           setAuthorized(true);
         }
@@ -51,12 +39,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return (
       <div className="min-h-screen flex items-center justify-center bg-white p-6 text-center">
         <div className="max-w-md p-8 rounded-2xl bg-white border border-slate-200 shadow-xl space-y-4">
-          <div className="h-12 w-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto text-2xl font-bold">
-            🛡️
+          <div className="h-12 w-12 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mx-auto text-2xl font-bold">
+            🔐
           </div>
-          <h2 className="text-xl font-bold text-slate-900">Access Denied</h2>
+          <h2 className="text-xl font-bold text-slate-900">Session Expired</h2>
           <p className="text-xs text-slate-500">
-            You are not authorized to access Admin routes. Redirecting to your Employee Workspace...
+            Please sign in to access your Employee Workspace. Redirecting to Login...
           </p>
         </div>
       </div>

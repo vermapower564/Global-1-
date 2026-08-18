@@ -73,7 +73,7 @@ export default function TaskDetailDrawer({ taskId, onClose, onTaskUpdated }: Tas
 
       const json = await res.json();
       if (json.success) {
-        alert("✓ Task updated in MySQL!");
+        alert("✓ Task updated successfully!");
         onTaskUpdated();
       } else {
         alert(json.error || "Failed to update task");
@@ -107,8 +107,8 @@ export default function TaskDetailDrawer({ taskId, onClose, onTaskUpdated }: Tas
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center">
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border text-slate-500 font-bold text-xs">
+      <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center font-sans">
+        <div className="bg-white p-6 rounded-2xl border border-gray-200 text-gray-700 font-bold text-xs shadow-xl">
           Loading Task Details...
         </div>
       </div>
@@ -116,39 +116,47 @@ export default function TaskDetailDrawer({ taskId, onClose, onTaskUpdated }: Tas
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex justify-end">
-      <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white w-full max-w-xl h-full shadow-2xl border-l border-slate-200 dark:border-slate-800 flex flex-col justify-between overflow-hidden animate-in slide-in-from-right duration-200">
-        
+    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex justify-end font-sans">
+      <div className="bg-white text-black w-full max-w-xl h-full shadow-2xl border-l border-gray-200 flex flex-col justify-between overflow-hidden animate-in slide-in-from-right duration-200">
         {/* Header */}
-        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-start justify-between gap-4">
+        <div className="p-6 border-b border-gray-100 flex items-start justify-between gap-4">
           <div>
             <span className="text-[10px] font-black uppercase tracking-wider text-blue-600">
               Task Detail Drawer • #{task?.id.slice(-6)}
             </span>
-            <h2 className="text-lg font-black text-slate-900 dark:text-white leading-snug mt-0.5">{task?.title}</h2>
+            <h2 className="text-lg font-black text-black leading-snug mt-0.5">{task?.title}</h2>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 font-bold">
+          <button
+            onClick={onClose}
+            className="p-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs transition cursor-pointer"
+          >
             ✕
           </button>
         </div>
 
         {/* Tab Selector */}
-        <div className="flex border-b border-slate-100 dark:border-slate-800 px-6 gap-6 text-xs font-extrabold">
+        <div className="flex border-b border-gray-100 px-6 gap-6 text-xs font-extrabold">
           <button
             onClick={() => setActiveTab("DETAILS")}
-            className={`py-3 border-b-2 transition ${activeTab === "DETAILS" ? "border-blue-600 text-blue-600" : "border-transparent text-slate-400"}`}
+            className={`py-3 border-b-2 transition cursor-pointer ${
+              activeTab === "DETAILS" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500"
+            }`}
           >
             Properties & Update
           </button>
           <button
             onClick={() => setActiveTab("COMMENTS")}
-            className={`py-3 border-b-2 transition ${activeTab === "COMMENTS" ? "border-blue-600 text-blue-600" : "border-transparent text-slate-400"}`}
+            className={`py-3 border-b-2 transition cursor-pointer ${
+              activeTab === "COMMENTS" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500"
+            }`}
           >
             Comments ({comments.length})
           </button>
           <button
             onClick={() => setActiveTab("HISTORY")}
-            className={`py-3 border-b-2 transition ${activeTab === "HISTORY" ? "border-blue-600 text-blue-600" : "border-transparent text-slate-400"}`}
+            className={`py-3 border-b-2 transition cursor-pointer ${
+              activeTab === "HISTORY" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500"
+            }`}
           >
             History Timeline ({history.length})
           </button>
@@ -159,83 +167,85 @@ export default function TaskDetailDrawer({ taskId, onClose, onTaskUpdated }: Tas
           {activeTab === "DETAILS" && (
             <div className="space-y-5">
               {/* Info Badges */}
-              <div className="grid grid-cols-2 gap-3 p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+              <div className="grid grid-cols-2 gap-3 p-4 rounded-2xl bg-gray-50 border border-gray-200">
                 <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Assignee</span>
-                  <p className="font-extrabold text-slate-900 dark:text-white">{task?.assignedToUser?.name || "Unassigned"}</p>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase">Assignee</span>
+                  <p className="font-black text-black text-sm">{task?.assignedToUser?.name || "Unassigned"}</p>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Priority</span>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase">Priority</span>
                   <p className="font-extrabold text-blue-600">{task?.priority}</p>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Due Date</span>
-                  <p className="font-bold text-slate-700 dark:text-slate-300">{new Date(task?.dueDate).toLocaleDateString()}</p>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase">Due Date</span>
+                  <p className="font-bold text-black font-mono">{task?.dueDate ? new Date(task.dueDate).toLocaleDateString("en-IN") : "—"}</p>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Est. Hours</span>
-                  <p className="font-bold text-slate-700 dark:text-slate-300">{task?.estimatedHours} hrs</p>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase">Est. Hours</span>
+                  <p className="font-bold text-black font-mono">{task?.estimatedHours} hrs</p>
                 </div>
               </div>
 
               {task?.description && (
                 <div className="space-y-1">
-                  <h4 className="font-extrabold text-slate-900 dark:text-white">Task Description</h4>
-                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">{task.description}</p>
+                  <h4 className="font-black text-black">Task Description</h4>
+                  <p className="text-gray-700 leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-200">{task.description}</p>
                 </div>
               )}
 
               {/* Form Update */}
-              <form onSubmit={handleUpdateTask} className="space-y-4 pt-3 border-t">
-                <h4 className="font-extrabold text-slate-900 dark:text-white">Update Status & Progress</h4>
+              <form onSubmit={handleUpdateTask} className="space-y-4 pt-3 border-t border-gray-100">
+                <h4 className="font-black text-black text-sm">Update Status & Progress</h4>
 
                 <div>
-                  <label className="block font-bold mb-1 text-slate-700 dark:text-slate-300">Status</label>
+                  <label className="block font-bold mb-1 text-black">Status</label>
                   <select
                     value={status}
                     onChange={(e) => setStatus(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 font-bold text-slate-900 dark:text-white"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 font-bold text-black focus:border-blue-600 focus:outline-none"
                   >
                     <option value="PENDING">PENDING</option>
                     <option value="IN_PROGRESS">IN_PROGRESS</option>
-                    <option value="BLOCKED">BLOCKED</option>
                     <option value="IN_REVIEW">IN_REVIEW</option>
+                    <option value="BLOCKED">BLOCKED</option>
                     <option value="COMPLETED">COMPLETED</option>
                   </select>
                 </div>
 
-                <div className="space-y-1">
-                  <div className="flex justify-between font-bold text-slate-700 dark:text-slate-300">
-                    <span>Progress</span>
-                    <span className="text-blue-600 font-black">{progress}%</span>
-                  </div>
+                <div>
+                  <label className="block font-bold mb-1 text-black">
+                    Progress: <span className="font-mono text-blue-600">{progress}%</span>
+                  </label>
                   <input
                     type="range"
                     min="0"
                     max="100"
-                    step="5"
                     value={progress}
-                    onChange={(e) => setProgress(parseInt(e.target.value))}
-                    className="w-full accent-blue-600 h-2 bg-slate-200 rounded-lg cursor-pointer"
+                    onChange={(e) => setProgress(Number(e.target.value))}
+                    className="w-full accent-blue-600"
                   />
                 </div>
 
                 {status === "BLOCKED" && (
                   <div>
-                    <label className="block font-bold text-rose-600 mb-1">Blocker Reason *</label>
+                    <label className="block font-bold mb-1 text-rose-600">Blocker Reason *</label>
                     <textarea
-                      rows={3}
+                      rows={2}
                       required
                       value={blockerReason}
                       onChange={(e) => setBlockerReason(e.target.value)}
-                      placeholder="Describe what is blocking this task..."
-                      className="w-full rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-rose-900 font-medium"
+                      placeholder="Why is this task blocked?"
+                      className="w-full rounded-xl border border-rose-300 bg-white p-2.5 text-black font-medium focus:border-rose-600 focus:outline-none"
                     />
                   </div>
                 )}
 
-                <button type="submit" disabled={isSubmitting} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-2.5 rounded-xl shadow-md transition">
-                  {isSubmitting ? "Saving..." : "Save Progress & Status to MySQL"}
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-2.5 rounded-xl shadow-md transition cursor-pointer"
+                >
+                  {isSubmitting ? "Updating..." : "Save Task Status"}
                 </button>
               </form>
             </div>
@@ -248,41 +258,50 @@ export default function TaskDetailDrawer({ taskId, onClose, onTaskUpdated }: Tas
                   type="text"
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
-                  placeholder="Type a discussion comment..."
-                  className="flex-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-xs font-semibold"
+                  placeholder="Add a comment or feedback..."
+                  className="flex-1 rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-black focus:border-blue-600 focus:outline-none"
                 />
-                <button type="submit" className="bg-blue-600 text-white font-extrabold text-xs px-4 py-2 rounded-xl shadow-xs">Post</button>
+                <button
+                  type="submit"
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-xs cursor-pointer"
+                >
+                  Post
+                </button>
               </form>
 
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {comments.map((c) => (
-                  <div key={c.id} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1">
+                  <div key={c.id} className="p-3.5 rounded-2xl bg-gray-50 border border-gray-200 space-y-1">
                     <div className="flex justify-between items-center text-[10px]">
-                      <span className="font-black text-slate-900 dark:text-white">{c.user?.name} ({c.user?.role})</span>
-                      <span className="text-slate-400">{new Date(c.createdAt).toLocaleTimeString()}</span>
+                      <span className="font-extrabold text-black">{c.user?.name || "Admin Member"}</span>
+                      <span className="text-gray-500 font-mono">{new Date(c.createdAt).toLocaleDateString("en-IN")}</span>
                     </div>
-                    <p className="text-slate-700 dark:text-slate-300">{c.commentText}</p>
+                    <p className="text-gray-800 font-medium">{c.commentText}</p>
                   </div>
                 ))}
 
                 {comments.length === 0 && (
-                  <p className="text-center text-slate-400 italic py-6">No comments posted yet.</p>
+                  <p className="text-center text-gray-400 italic py-6">No discussion comments yet.</p>
                 )}
               </div>
             </div>
           )}
 
           {activeTab === "HISTORY" && (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {history.map((h) => (
-                <div key={h.id} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1">
-                  <div className="flex justify-between items-center text-[10px]">
-                    <span className="font-black text-blue-600">{h.action}</span>
-                    <span className="text-slate-400">{new Date(h.createdAt).toLocaleString()}</span>
+                <div key={h.id} className="p-3 rounded-xl bg-gray-50 border border-gray-200 space-y-0.5 text-xs">
+                  <div className="flex justify-between text-[10px]">
+                    <span className="font-bold text-blue-600">{h.action}</span>
+                    <span className="text-gray-500 font-mono">{new Date(h.createdAt).toLocaleTimeString("en-IN")}</span>
                   </div>
-                  <p className="text-slate-700 dark:text-slate-300 font-medium">{h.description}</p>
+                  <p className="text-gray-800">{h.description}</p>
                 </div>
               ))}
+
+              {history.length === 0 && (
+                <p className="text-center text-gray-400 italic py-6">No change history recorded.</p>
+              )}
             </div>
           )}
         </div>

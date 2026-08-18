@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendSmtpEmail } from "@/lib/smtpTransporter";
+import { validateAndNormalizeGmail } from "@/lib/emailValidator";
 
 export const dynamic = "force-dynamic";
 
@@ -10,13 +11,24 @@ export async function POST(request: NextRequest) {
 
     if (!identityInput.trim()) {
       return NextResponse.json(
-        { success: false, error: "Please enter your registered Email or Employee ID." },
+        { success: false, error: "Please enter your registered Gmail or Employee ID." },
         { status: 400 }
       );
     }
 
     const cleanIdentity = identityInput.trim();
     const cleanLower = cleanIdentity.toLowerCase();
+
+    // If an email address was entered, validate @gmail.com strictly
+    if (cleanIdentity.includes("@")) {
+      const emailValidation = validateAndNormalizeGmail(cleanIdentity);
+      if (!emailValidation.isValid) {
+        return NextResponse.json(
+          { success: false, error: emailValidation.error || "Only Gmail addresses ending with @gmail.com are allowed." },
+          { status: 400 }
+        );
+      }
+    }
 
     const { prisma } = await import("@/lib/prisma");
 
@@ -33,16 +45,25 @@ export async function POST(request: NextRequest) {
 
     if (!dbUser) {
       return NextResponse.json(
-        { success: false, error: "Account not found." },
+        { success: false, error: "Account not found for the entered ID or Gmail address." },
         { status: 404 }
       );
     }
 
-    // 2. Generate Secure 6-Digit OTP Code
+    // 2. Validate registered DB email address is a valid @gmail.com
+    const dbEmailCheck = validateAndNormalizeGmail(dbUser.email);
+    if (!dbEmailCheck.isValid) {
+      return NextResponse.json(
+        { success: false, error: "Account recovery requires a valid @gmail.com address. Please contact administrator." },
+        { status: 400 }
+      );
+    }
+
+    // 3. Generate Secure 6-Digit OTP Code
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 Minutes Expiration
 
-    // 3. Store OTP in Database otptoken table
+    // 4. Store OTP in Database otptoken table
     await prisma.otptoken.create({
       data: {
         email: dbUser.email,
@@ -51,7 +72,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 4. Dispatch Email via Nodemailer SMTP Transporter
+    // 5. Dispatch Email via Nodemailer SMTP Transporter to verified @gmail.com
     sendSmtpEmail({
       to: dbUser.email,
       subject: `🔐 OMS Password Reset OTP: ${otpCode}`,
@@ -63,7 +84,7 @@ export async function POST(request: NextRequest) {
           <div style="background-color: #f1f5f9; padding: 16px; border-radius: 8px; font-size: 24px; font-weight: bold; letter-spacing: 4px; text-align: center; color: #2563eb; margin: 20px 0;">
             ${otpCode}
           </div>
-          <p style="font-size: 12px; color: #64748b;">This OTP code will expire in 10 minutes. If you did not request this, please contact your administrator immediately.</p>
+          <p style="font-size: 12px; color: #64748b;">This OTP code will expire in 10 minutes. Sent to registered Gmail: ${dbUser.email}</p>
         </div>
       `,
     }).catch((e) => console.warn("SMTP OTP email send warning:", e));
@@ -74,7 +95,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: "OTP sent successfully to your registered email address.",
+      message: "OTP sent successfully to your registered Gmail address.",
       email: dbUser.email,
       maskedEmail,
       employeeId: dbUser.employeeId,
