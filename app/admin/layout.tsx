@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { getCurrentUserContext } from "@/utils/userContextStore";
-import { ROUTES } from "@/lib/routes";
 
 const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
 
@@ -22,15 +21,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       .then((res) => res.json())
       .then((json) => {
         if (!json.success || !json.user) {
+          // Unauthenticated visitor -> redirect cleanly to /login
           setAuthorized(false);
-          router.replace(ROUTES.LOGIN);
+          router.replace("/login");
           return;
         }
 
         const serverRole = (json.user.role || "").toUpperCase();
         if (!ADMIN_ROLES.includes(serverRole)) {
+          // Authenticated Employee attempting admin route -> redirect to /employee
           setAuthorized(false);
-          router.replace(ROUTES.EMPLOYEE_HOME);
+          router.replace("/employee");
         } else {
           setAuthorized(true);
         }
@@ -40,33 +41,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           setAuthorized(true);
         } else {
           setAuthorized(false);
-          router.replace(ROUTES.LOGIN);
+          router.replace("/login");
         }
       });
   }, [pathname, router]);
 
-  if (authorized === null) {
+  if (authorized !== true) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white p-6 text-center font-sans">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6 text-center font-sans">
         <div className="p-8 rounded-3xl bg-white border border-gray-200 shadow-xl space-y-3 max-w-sm w-full">
           <div className="h-10 w-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="text-xs font-bold text-gray-700">Verifying Admin Authorization...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (authorized === false) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white p-6 text-center font-sans">
-        <div className="max-w-md p-8 rounded-3xl bg-white border border-rose-200 shadow-xl space-y-4">
-          <div className="h-12 w-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto text-2xl font-bold">
-            🛡️
-          </div>
-          <h2 className="text-xl font-black text-black">Access Denied</h2>
-          <p className="text-xs text-gray-600 leading-relaxed">
-            You do not have Administrator permissions. Redirecting to your authorized workspace...
-          </p>
+          <p className="text-xs font-bold text-gray-700">Verifying session...</p>
         </div>
       </div>
     );

@@ -8,6 +8,9 @@ const PUBLIC_PATHS = [
   "/auth/forgot-password",
   "/auth/reset-password",
   "/auth/verify-otp",
+  "/forgot-password",
+  "/reset-password",
+  "/verify-otp",
   "/api/auth/login",
   "/api/auth/forgot-password",
   "/api/auth/reset-password",
@@ -50,34 +53,34 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2. ROOT PATH (/) MUST ALWAYS REDIRECT TO /login
+  // 2. ROOT PATH (/) ALWAYS REDIRECTS TO /login FOR FRESH VISITORS
   if (pathname === "/") {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
   const isPublicPath = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
-  // Allow public auth routes without session checks
+  // 3. Allow public auth routes without session checks
   if (isPublicPath) {
     return NextResponse.next();
   }
 
-  // 3. Extract Session Token from HTTP-Only Cookie or Authorization Header
+  // 4. Extract Session Token from HTTP-Only Cookie or Authorization Header
   const cookieToken = request.cookies.get("oms_session")?.value;
   const authHeader = request.headers.get("authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : cookieToken;
 
-  // 4. Verify Session Token
+  // 5. Verify Session Token
   const session = token ? decodeSessionToken(token) : null;
   const isAuthenticated = !!(session && session.id);
   const userRole = (session?.role || "").toUpperCase();
   const isAdmin = ADMIN_ROLES.includes(userRole);
 
-  // 5. Enforce Authentication on All Protected Routes
+  // 6. Enforce Authentication on Protected Routes (Redirect unauthenticated visitors directly to /login)
   if (!isAuthenticated) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json(
-        { success: false, error: "Unauthenticated: Session token missing or expired." },
+        { success: false, error: "Unauthenticated: Please log in." },
         { status: 401 }
       );
     }
@@ -86,7 +89,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // 6. Enforce Role-Based Access Control on Admin Routes
+  // 7. Enforce Role-Based Access Control on Admin Routes
   const isAdminRoute =
     pathname.startsWith("/admin") ||
     pathname.startsWith("/audit-logs") ||
