@@ -128,7 +128,7 @@ function LoginForm() {
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white font-black text-2xl shadow-md mb-3 border-2 border-white">
             O
           </div>
-          <h1 className="text-2xl font-black text-black tracking-tight">OMS / Zyvoro</h1>
+          <h1 className="text-2xl font-black text-black tracking-tight">OMS Enterprise</h1>
           <p className="text-xs text-gray-500 mt-1 font-medium">Enterprise Operations Portal Login</p>
         </div>
 
