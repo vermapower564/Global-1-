@@ -221,7 +221,7 @@ export async function POST(request: Request) {
       email: normalizedEmail,
       department: department || "Operations",
       role: role || "DEVELOPER",
-      salary: Number(salary) || 0,
+      salary: String(salary || "0"),
       phone: phone || "+91 98765 00000",
     });
 

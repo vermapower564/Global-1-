@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyToken } from "@/lib/authService";
 import { getRolePermissions, Role, UserPermission } from "@/lib/rbac";
-import { prisma } from "@/lib/prisma";
 
 export interface AuthenticatedUser {
   id: string;
@@ -84,20 +83,25 @@ export async function authenticateRequest(
 }
 
 export async function logAuditEvent(
-  userId: string | null,
+  userIdOrReq: string | Request | null,
   action: string,
-  details: string,
+  details: string | Record<string, any>,
   ipAddress?: string
 ) {
   try {
-    await prisma.auditlog.create({
-      data: {
-        userId: userId || null,
-        action,
-        details,
-        ipAddress: ipAddress || "127.0.0.1",
-      },
-    });
+    const { queryDb } = await import("@/lib/db");
+    const userId = typeof userIdOrReq === "string" ? userIdOrReq : null;
+    const detailStr = typeof details === "object" ? JSON.stringify(details) : String(details);
+    const ip =
+      ipAddress ||
+      (typeof userIdOrReq === "object" && userIdOrReq !== null && "headers" in userIdOrReq
+        ? (userIdOrReq as Request).headers.get("x-forwarded-for") || "127.0.0.1"
+        : "127.0.0.1");
+
+    await queryDb(
+      `INSERT INTO auditlog (id, userId, action, details, ipAddress, timestamp) VALUES (?, ?, ?, ?, ?, NOW())`,
+      [`AUD-${Date.now()}`, userId, action, detailStr, ip]
+    );
   } catch (err: any) {
     console.warn("Audit Log Auto-Record Fallback:", err.message);
   }

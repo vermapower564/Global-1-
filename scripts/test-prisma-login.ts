@@ -1,4 +1,4 @@
-import { prisma } from "./lib/prisma";
+import { prisma } from "../lib/prisma";
 
 async function testLoginPrisma() {
   console.log("Testing prisma.user.findFirst...");
