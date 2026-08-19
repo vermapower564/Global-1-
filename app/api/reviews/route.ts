@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { queryDb } from "@/lib/db";
+import { queryDb, queryDbCached } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
 
     query += " ORDER BY createdAt DESC";
 
-    const rows: any = await queryDb(query, params);
+    const rows: any = await queryDbCached(query, params, 10);
 
     // Calculate aggregated metrics
     const totalReviews = rows.length;

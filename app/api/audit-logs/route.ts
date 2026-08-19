@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { queryDb } from "@/lib/db";
+import { queryDb, queryDbCached } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -22,12 +22,14 @@ function getActionCategory(action: string): string {
 
 export async function GET() {
   try {
-    const rows: any = await queryDb(
+    const rows: any = await queryDbCached(
       `SELECT a.*, u.name AS userName, u.employeeId AS userEmployeeId, u.email AS userEmail, u.role AS userRole
        FROM auditlog a
        LEFT JOIN user u ON a.userId = u.id
        ORDER BY a.timestamp DESC
-       LIMIT 200`
+       LIMIT 200`,
+      [],
+      5
     );
 
     const enrichedLogs = rows.map((r: any) => {

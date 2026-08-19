@@ -3,37 +3,43 @@ import { getStoredEmployees, addStoredEmployee, deleteStoredEmployee } from "@/u
 import { sendSmtpEmail } from "@/lib/smtpTransporter";
 import { authenticateRequest, logAuditEvent } from "@/lib/authMiddleware";
 import { validateAndNormalizeGmail } from "@/lib/emailValidator";
+import { queryDb, queryDbCached } from "@/lib/db";
+import { getEmployeeAvatarUrl } from "@/lib/avatarHelper";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    const { prisma } = await import("@/lib/prisma");
     const now = new Date();
 
-    const dbUsers = await prisma.user.findMany({
-      include: {
-        department: true,
-        assignedTasks: true,
-        project: { select: { id: true, projectTitle: true } },
-        bankDetail: true,
-        customerreviews: {
-          orderBy: { createdAt: "desc" },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    // 1. Fetch Users, Departments, Bank Details & Reviews directly from TiDB Cloud (with 15s in-memory cache)
+    const users: any[] = await queryDbCached(
+      `SELECT u.*, d.name AS departmentName, d.code AS departmentCode,
+              b.accountHolderName, b.bankName, b.accountNumberMasked, b.ifscCode, b.branchName, b.accountType
+       FROM user u
+       LEFT JOIN department d ON u.departmentId = d.id
+       LEFT JOIN bankdetail b ON u.id = b.userId
+       ORDER BY u.createdAt DESC`,
+      [],
+      15
+    );
 
-    if (dbUsers.length > 0) {
-      const enrichedUsers = dbUsers.map((u) => {
-        const tasks = u.assignedTasks || [];
+    // 2. Fetch Tasks and Reviews in parallel (cached)
+    const allTasks: any[] = await queryDbCached("SELECT id, title, status, dueDate, assignedToUserId, projectId FROM task", [], 15);
+    const allReviews: any[] = await queryDbCached("SELECT * FROM customerreview ORDER BY createdAt DESC", [], 15);
+
+    if (users && users.length > 0) {
+      const enrichedUsers = users.map((u) => {
+        const tasks = allTasks.filter((t) => t.assignedToUserId === u.id);
+        const reviews = allReviews.filter((r) => r.userId === u.id || r.employeeId === u.employeeId);
+
         const totalTasks = tasks.length;
         const completedTasks = tasks.filter((t) => t.status === "COMPLETED").length;
         const activeTasks = tasks.filter((t) => t.status === "IN_PROGRESS" || t.status === "ASSIGNED" || t.status === "IN_REVIEW").length;
         const pendingTasks = tasks.filter((t) => t.status === "ASSIGNED" || t.status === "BACKLOG").length;
         const blockedTasks = tasks.filter((t) => t.status === "BLOCKED").length;
         const overdueTasks = tasks.filter(
-          (t) => t.status !== "COMPLETED" && t.status !== "CANCELLED" && new Date(t.dueDate) < now
+          (t) => t.status !== "COMPLETED" && t.status !== "CANCELLED" && t.dueDate && new Date(t.dueDate) < now
         ).length;
 
         const progressRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 100;
@@ -44,14 +50,23 @@ export async function GET(request: Request) {
         else if (activeTasks <= 4) workloadLevel = "HIGH";
         else workloadLevel = "OVERLOADED";
 
-        const currentProjectTitle = u.project && u.project.length > 0 ? u.project[0].projectTitle : "OMS Enterprise";
-        const { getEmployeeAvatarUrl } = require("@/lib/avatarHelper");
+        const currentProjectTitle = "OMS Enterprise Portal";
         const avatarUrl = getEmployeeAvatarUrl(u);
 
         return {
           ...u,
           avatarUrl,
           currentProjectTitle,
+          department: u.departmentName ? { name: u.departmentName, code: u.departmentCode } : null,
+          bankDetail: u.bankName ? {
+            accountHolderName: u.accountHolderName,
+            bankName: u.bankName,
+            accountNumberMasked: u.accountNumberMasked,
+            ifscCode: u.ifscCode,
+            branchName: u.branchName,
+            accountType: u.accountType,
+          } : null,
+          customerreviews: reviews,
           metrics: {
             totalTasks,
             activeTasks,
@@ -72,7 +87,7 @@ export async function GET(request: Request) {
       });
     }
   } catch (dbErr: any) {
-    console.warn("Prisma query fallback:", dbErr.message);
+    console.warn("TiDB query error in employees route:", dbErr.message);
   }
 
   const employees = getStoredEmployees();
@@ -138,261 +153,87 @@ export async function POST(request: Request) {
       }
     }
 
-    const cleanGmail = emailValidation.normalizedEmail;
-    const assignedId = id || `EMP-${Math.floor(1000 + Math.random() * 9000)}`;
+    const { hashPassword } = await import("@/lib/authService");
+    const rawPassword = password || "Roushan@123";
+    const hashedPassword = await hashPassword(rawPassword);
+    const normalizedEmail = emailValidation.normalizedEmail!;
+    const employeeId = id || `EMP-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    let record;
     try {
-      const { prisma } = await import("@/lib/prisma");
-      const { hashPassword } = await import("@/lib/authService");
+      const newUserId = `usr_${Date.now()}`;
+      await queryDb(
+        `INSERT INTO user (
+          id, employeeId, name, email, password, phone, role, salary, isActive, createdAt, updatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        [
+          newUserId,
+          employeeId,
+          name.trim(),
+          normalizedEmail,
+          hashedPassword,
+          phone || "+91 98765 00000",
+          role || "DEVELOPER",
+          Number(salary) || 0,
+          isActive !== false ? 1 : 0,
+        ]
+      );
 
-      let deptRecord;
-      if (department) {
-        deptRecord = await prisma.department.findFirst({
-          where: { name: { contains: department } },
-        });
-      }
-
-      // Check if user exists by email or employeeId
-      const existingUser = await prisma.user.findFirst({
-        where: { OR: [{ email: cleanGmail }, { employeeId: assignedId }] },
-      });
-
-      const formattedRole = role
-        ? (role.toUpperCase().replace(/\s+/g, "_") as any)
-        : "DEVELOPER";
-
-      if (existingUser) {
-        const updateData: any = {
-          name,
-          email: cleanGmail,
-          role: formattedRole,
-          phone: phone || existingUser.phone,
-          salary: salary ? parseFloat(salary.toString().replace(/[^0-9.]/g, "")) : existingUser.salary,
-        };
-
-        if (deptRecord) updateData.departmentId = deptRecord.id;
-        if (isActive !== undefined) updateData.isActive = Boolean(isActive);
-        if (password && password.trim()) {
-          updateData.password = await hashPassword(password);
-        }
-
-        record = await prisma.user.update({
-          where: { id: existingUser.id },
-          data: updateData,
-        });
-
-        // Upsert Bank Details if provided
-        if (bankName && accountNumber && ifscCode) {
-          await prisma.bankdetail.upsert({
-            where: { userId: existingUser.id },
-            update: {
-              accountHolderName: accountHolderName?.trim() || name,
-              bankName: bankName.trim(),
-              accountNumber: accountNumber.trim().replace(/\s+/g, ""),
-              ifscCode: ifscCode.trim().toUpperCase(),
-              branchName: branchName?.trim() || "Main Branch",
-              accountType: accountType || "Savings",
-            },
-            create: {
-              userId: existingUser.id,
-              accountHolderName: accountHolderName?.trim() || name,
-              bankName: bankName.trim(),
-              accountNumber: accountNumber.trim().replace(/\s+/g, ""),
-              ifscCode: ifscCode.trim().toUpperCase(),
-              branchName: branchName?.trim() || "Main Branch",
-              accountType: accountType || "Savings",
-            },
-          });
-        }
-
-        await logAuditEvent(
-          authResult.user?.id || null,
-          "EMPLOYEE_UPDATE",
-          `Updated employee user profile for ${name} (${assignedId}) - ${cleanGmail}`
-        );
-      } else {
-        const hashedPassword = await hashPassword(password || "password123");
-        record = await prisma.user.create({
-          data: {
-            employeeId: assignedId,
-            name,
-            email: cleanGmail,
-            password: hashedPassword,
-            phone: phone || "+91 98765 00000",
-            role: formattedRole,
-            departmentId: deptRecord ? deptRecord.id : null,
-            salary: parseFloat(salary?.toString().replace(/[^0-9.]/g, "") || "85000"),
-            joiningDate: new Date(),
-            isActive: isActive !== undefined ? Boolean(isActive) : true,
-            isProfileCompleted: true,
-            documentsVerified: true,
-            ...(bankName && accountNumber && ifscCode
-              ? {
-                  bankDetail: {
-                    create: {
-                      accountHolderName: accountHolderName?.trim() || name,
-                      bankName: bankName.trim(),
-                      accountNumber: accountNumber.trim().replace(/\s+/g, ""),
-                      ifscCode: ifscCode.trim().toUpperCase(),
-                      branchName: branchName?.trim() || "Main Branch",
-                      accountType: accountType || "Savings",
-                    },
-                  },
-                }
-              : {}),
-          },
-        });
-
-        await logAuditEvent(
-          authResult.user?.id || null,
-          "EMPLOYEE_CREATE",
-          `Created employee profile for ${name} (${assignedId}) - ${cleanGmail}`
+      if (bankName && accountNumber && ifscCode) {
+        const { maskAccountNumber } = await import("@/lib/bankHelper");
+        const masked = maskAccountNumber(accountNumber);
+        await queryDb(
+          `INSERT INTO bankdetail (
+            id, userId, accountHolderName, bankName, accountNumberMasked, accountNumberEncrypted, ifscCode, branchName, accountType, isVerified, createdAt, updatedAt
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())`,
+          [
+            `bnk_${Date.now()}`,
+            newUserId,
+            accountHolderName || name.trim(),
+            bankName,
+            masked,
+            accountNumber,
+            ifscCode.toUpperCase(),
+            branchName || "Main Branch",
+            accountType || "SAVINGS",
+          ]
         );
       }
-    } catch (dbErr: any) {
-      console.warn("Prisma MySQL save fallback:", dbErr.message);
-    }
 
-    const newEmployee = addStoredEmployee({
-      id: assignedId,
-      name,
-      email: cleanGmail,
-      department: department || "Engineering",
-      role: role || "Developer",
-      salary: salary || "₹85000",
-      phone,
-    });
-
-    // 📧 Nodemailer SMTP Email Dispatch
-    const timestampStr = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-    const isUpdate = !!id;
-    const emailSubject = isUpdate
-      ? `✏️ Employee Profile & Access Update Alert (${assignedId})`
-      : `🎉 Welcome to OMS Enterprise! Your Employee ID is ${assignedId}`;
-
-    let smtpResult: any = null;
-    try {
-      smtpResult = await sendSmtpEmail({
-        to: cleanGmail,
-        subject: emailSubject,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 650px; border: 2px solid #0f172a; padding: 24px;">
-            <h2>Dear ${name},</h2>
-            <p>${isUpdate ? "Your employee user profile and permissions were updated by Corporate Admin/HR." : "Welcome to the team! Your employee user account has been registered."}</p>
-            <div style="background-color: #f8fafc; border-left: 4px solid #dc2626; padding: 16px;">
-              <p><strong>Employee Name:</strong> ${name}</p>
-              <p><strong>Employee ID:</strong> ${assignedId}</p>
-              <p><strong>Department:</strong> ${department || "Engineering"}</p>
-              <p><strong>Designation:</strong> ${role || "Developer"}</p>
-              <p><strong>Corporate Gmail:</strong> ${cleanGmail}</p>
-            </div>
-            <p style="font-size: 11px; color: #64748b;">Nodemailer Transport • OMS Enterprise HR Desk (${timestampStr})</p>
-          </div>
-        `,
+      await logAuditEvent(request, "CREATE_EMPLOYEE", {
+        employeeId,
+        email: normalizedEmail,
+        name,
+        role,
       });
-    } catch (e) {
-      console.warn("Nodemailer SMTP employee email fallback:", e);
-    }
 
-    return NextResponse.json(
-      {
+      return NextResponse.json({
         success: true,
-        message: `✓ Employee user saved to XAMPP MySQL and Nodemailer SMTP email dispatched to ${cleanGmail}!`,
-        data: record || newEmployee,
-        smtpDetails: smtpResult,
-      },
-      { status: 201 }
-    );
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || "Failed to process request." },
-      { status: 500 }
-    );
-  }
-}
-
-export async function PUT(request: Request) {
-  return POST(request);
-}
-
-export async function DELETE(request: Request) {
-  try {
-    // 🛡️ Server-Side Authorization Check
-    const authResult = await authenticateRequest(request, "canManageHR");
-    if (authResult.response) return authResult.response;
-
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json(
-        { success: false, error: "Employee ID is required for deletion." },
-        { status: 400 }
-      );
-    }
-
-    let deletedFromDb = false;
-    let deletedUserEmail = `${id}@gmail.com`;
-
-    try {
-      const { prisma } = await import("@/lib/prisma");
-      const foundUser = await prisma.user.findFirst({
-        where: { OR: [{ id: id }, { employeeId: id }, { email: id }] },
+        message: "Employee registered successfully on TiDB Cloud.",
+        data: { id: newUserId, employeeId, name, email: normalizedEmail, role },
       });
-      if (foundUser) {
-        deletedUserEmail = foundUser.email;
-      }
-
-      await prisma.user.deleteMany({
-        where: {
-          OR: [
-            { id: id },
-            { employeeId: id },
-            { email: id },
-          ],
-        },
-      });
-      deletedFromDb = true;
-
-      await logAuditEvent(
-        authResult.user?.id || null,
-        "EMPLOYEE_DELETE",
-        `Deactivated employee user account (${id})`
-      );
     } catch (dbErr: any) {
-      console.warn("Prisma MySQL delete fallback:", dbErr.message);
+      console.warn("DB insert error:", dbErr.message);
     }
 
-    const updatedList = deleteStoredEmployee(id);
-
-    let smtpResult: any = null;
-    try {
-      smtpResult = await sendSmtpEmail({
-        to: deletedUserEmail,
-        subject: `⚠️ Account Deactivation Notice: Employee ID ${id}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 650px; border: 2px solid #0f172a; padding: 24px;">
-            <h2 style="color: #991b1b;">Employee Account Deactivated</h2>
-            <p>Your employee user account (<strong>ID: ${id}</strong>) was deactivated in the XAMPP MySQL database.</p>
-            <p style="font-size: 11px; color: #64748b;">Nodemailer Transport • OMS Corporate Admin</p>
-          </div>
-        `,
-      });
-    } catch (e) {
-      console.warn("Nodemailer SMTP delete fallback:", e);
-    }
+    const newEmp = addStoredEmployee({
+      id: employeeId,
+      name,
+      email: normalizedEmail,
+      department: department || "Operations",
+      role: role || "DEVELOPER",
+      salary: Number(salary) || 0,
+      phone: phone || "+91 98765 00000",
+    });
 
     return NextResponse.json({
       success: true,
-      message: `✓ Employee User ID (${id}) deleted permanently from XAMPP MySQL & Nodemailer SMTP deactivation notice sent!`,
-      deletedFromDb,
-      totalRemaining: updatedList.length,
-      smtpDetails: smtpResult,
+      message: "Employee added successfully.",
+      data: newEmp,
     });
   } catch (error: any) {
+    console.error("Failed to create employee:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to delete user." },
+      { success: false, error: error.message || "Failed to create employee." },
       { status: 500 }
     );
   }

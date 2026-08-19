@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { queryDb } from "@/lib/db";
+import { queryDb, queryDbCached } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -73,9 +73,9 @@ const projectTeamMetadata: Record<string, {
 // GET: Fetch all projects with Team Leader, Teammates & Customer Reviews from TiDB Cloud
 export async function GET() {
   try {
-    const dbProjects: any = await queryDb("SELECT * FROM project ORDER BY createdAt DESC");
-    const allReviews: any = await queryDb("SELECT * FROM customerreview ORDER BY createdAt DESC");
-    const allTasks: any = await queryDb("SELECT id, title, projectId, status, assignedToUserId FROM task");
+    const dbProjects: any = await queryDbCached("SELECT * FROM project ORDER BY createdAt DESC", [], 15);
+    const allReviews: any = await queryDbCached("SELECT * FROM customerreview ORDER BY createdAt DESC", [], 15);
+    const allTasks: any = await queryDbCached("SELECT id, title, projectId, status, assignedToUserId FROM task", [], 15);
 
     const enrichedProjects = dbProjects.map((p: any) => {
       const projTitle = p.projectTitle || "OMS Deliverable";
