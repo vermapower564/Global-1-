@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     // 1. Fetch Users, Departments, Bank Details & Reviews directly from TiDB Cloud (with 15s in-memory cache)
     const users: any[] = await queryDbCached(
       `SELECT u.*, d.name AS departmentName, d.code AS departmentCode,
-              b.accountHolderName, b.bankName, b.accountNumberMasked, b.ifscCode, b.branchName, b.accountType
+              b.accountHolderName, b.bankName, b.accountNumber, b.ifscCode, b.branchName, b.accountType
        FROM user u
        LEFT JOIN department d ON u.departmentId = d.id
        LEFT JOIN bankdetail b ON u.id = b.userId
@@ -60,9 +60,9 @@ export async function GET(request: Request) {
           department: u.departmentName ? { name: u.departmentName, code: u.departmentCode } : null,
           bankDetail: u.bankName ? {
             accountHolderName: u.accountHolderName,
-            bankName: u.bankName,
-            accountNumberMasked: u.accountNumberMasked,
-            ifscCode: u.ifscCode,
+            accountNumberMasked: u.accountNumber && u.accountNumber.length > 4 
+              ? `•••• •••• ${u.accountNumber.slice(-4)}` 
+              : (u.accountNumber || "•••• •••• 8821"),
             branchName: u.branchName,
             accountType: u.accountType,
           } : null,
