@@ -77,8 +77,8 @@ function LoginForm() {
             : data.redirectTo || (isAdmin ? "/admin" : "/employee");
 
         setTimeout(() => {
-          router.push(destination);
-        }, 300);
+          window.location.href = destination;
+        }, 200);
       } else {
         setErrorMessage(data.error || "Invalid email/employee ID or password");
       }

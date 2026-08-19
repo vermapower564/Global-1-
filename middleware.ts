@@ -51,28 +51,35 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2. ROOT PATH (/) ALWAYS REDIRECTS TO /login FOR FRESH VISITORS
-  if (pathname === "/") {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
-
-  const isPublicPath = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-
-  // 3. Allow public auth routes without session checks
-  if (isPublicPath) {
-    return NextResponse.next();
-  }
-
-  // 4. Extract Session Token from HTTP-Only Cookie or Authorization Header
+  // 2. Extract Session Token from HTTP-Only Cookie or Authorization Header
   const cookieToken = request.cookies.get("oms_session")?.value;
   const authHeader = request.headers.get("authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : cookieToken;
 
-  // 5. Verify Session Token
   const session = token ? decodeSessionToken(token) : null;
   const isAuthenticated = !!(session && session.id);
   const userRole = (session?.role || "").toUpperCase();
   const isAdmin = ADMIN_ROLES.includes(userRole);
+
+  // 3. ROOT PATH (/) -> REDIRECT TO APPROPRIATE WORKSPACE OR LOGIN
+  if (pathname === "/") {
+    if (isAuthenticated) {
+      return NextResponse.redirect(new URL(isAdmin ? "/admin" : "/employee", request.url));
+    }
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
+  // 4. LOGIN PATH (/login, /auth/login) -> REDIRECT TO DASHBOARD IF ALREADY AUTHENTICATED
+  if ((pathname === "/login" || pathname === "/auth/login") && isAuthenticated) {
+    return NextResponse.redirect(new URL(isAdmin ? "/admin" : "/employee", request.url));
+  }
+
+  const isPublicPath = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+
+  // 5. Allow public auth routes without session checks
+  if (isPublicPath) {
+    return NextResponse.next();
+  }
 
   // 6. Enforce Authentication on Protected Page Routes
   if (!isAuthenticated) {
