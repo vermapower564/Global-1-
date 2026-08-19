@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequest } from "@/lib/authMiddleware";
-import { prisma } from "@/lib/prisma";
+import { queryDb, queryDbCached, clearQueryCache } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
     const authResult = await authenticateRequest(request);
-    const adminRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"];
+    const adminRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
 
     if (!authResult.user || !adminRoles.includes(authResult.user.role)) {
       return NextResponse.json(
@@ -17,158 +17,210 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const search = (searchParams.get("search") || "").trim().toLowerCase();
+    const search = (searchParams.get("search") || "").trim();
     const month = searchParams.get("month") || "All";
     const status = searchParams.get("status") || "All";
 
-    // 1. Fetch all salary slips with user relations
-    let slips = await prisma.salaryslip.findMany({
-      include: {
-        user: {
-          select: {
-            id: true,
-            employeeId: true,
-            name: true,
-            email: true,
-            role: true,
-            paymentScheduleDay: true,
-            department: { select: { name: true } },
-          },
-        },
-      },
-      orderBy: [{ monthKey: "desc" }, { employeeName: "asc" }],
-    });
+    let sql = `
+      SELECT 
+        s.*,
+        u.email AS user_email, u.role AS user_role,
+        d.name AS department_name
+      FROM salaryslip s
+      LEFT JOIN user u ON s.userId = u.id
+      LEFT JOIN department d ON u.departmentId = d.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
 
-    // 2. If no slips exist across the database, seed for active employees
-    if (slips.length === 0) {
-      const allUsers = await prisma.user.findMany({
-        where: { isActive: true },
-        select: { id: true, employeeId: true, name: true, salary: true, paymentScheduleDay: true },
-      });
-
-      for (const u of allUsers) {
-        const baseMonthly = u.salary > 0 ? Math.round(u.salary / 12) : 35000;
-        const basic = Math.round(baseMonthly * 0.6);
-        const hra = Math.round(baseMonthly * 0.2);
-        const allowances = Math.round(baseMonthly * 0.1);
-        const bonus = 2000;
-        const overtime = 3000;
-        const gross = basic + hra + allowances + bonus + overtime;
-        const pf = Math.round(basic * 0.12);
-        const tax = 1000;
-        const other = 500;
-        const totalDed = pf + tax + other;
-        const net = gross - totalDed;
-
-        const scheduleDay = u.paymentScheduleDay || 1;
-        const months = [
-          { name: "August 2026", key: "2026-08", status: "PAID", dayOffset: 0 },
-          { name: "July 2026", key: "2026-07", status: "PAID", dayOffset: -1 },
-        ];
-
-        for (const m of months) {
-          const payDate = new Date(2026, 7 + m.dayOffset, scheduleDay);
-          const txnId = `TXN-${Math.floor(10000000 + Math.random() * 90000000)}`;
-
-          await prisma.salaryslip.upsert({
-            where: {
-              userId_monthKey: {
-                userId: u.id,
-                monthKey: m.key,
-              },
-            },
-            update: {},
-            create: {
-              userId: u.id,
-              employeeId: u.employeeId,
-              employeeName: u.name,
-              salaryMonth: m.name,
-              monthKey: m.key,
-              basicSalary: basic,
-              hra,
-              allowances,
-              bonus,
-              overtime,
-              grossSalary: gross,
-              pfDeduction: pf,
-              taxDeduction: tax,
-              otherDeductions: other,
-              totalDeductions: totalDed,
-              netSalary: net,
-              paymentDate: payDate,
-              paymentStatus: m.status,
-              paymentMethod: "Bank Transfer",
-              transactionReference: txnId,
-              notes: "Monthly compensation disbursed via direct bank transfer.",
-            },
-          });
-        }
-      }
-
-      slips = await prisma.salaryslip.findMany({
-        include: {
-          user: {
-            select: {
-              id: true,
-              employeeId: true,
-              name: true,
-              email: true,
-              role: true,
-              paymentScheduleDay: true,
-              department: { select: { name: true } },
-            },
-          },
-        },
-        orderBy: [{ monthKey: "desc" }, { employeeName: "asc" }],
-      });
+    if (month && month !== "All") {
+      sql += ` AND (s.monthKey = ? OR s.salaryMonth LIKE ?)`;
+      params.push(month, `%${month}%`);
     }
 
-    // 3. Client-side Filter Logic
-    let filtered = slips;
+    if (status && status !== "All") {
+      sql += ` AND s.paymentStatus = ?`;
+      params.push(status);
+    }
 
     if (search) {
-      filtered = filtered.filter(
-        (s) =>
-          s.employeeName.toLowerCase().includes(search) ||
-          s.employeeId.toLowerCase().includes(search) ||
-          (s.user?.email && s.user.email.toLowerCase().includes(search)) ||
-          (s.user?.department?.name && s.user.department.name.toLowerCase().includes(search))
-      );
+      sql += ` AND (s.employeeName LIKE ? OR s.employeeId LIKE ? OR u.email LIKE ? OR d.name LIKE ?)`;
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
-    if (month !== "All") {
-      filtered = filtered.filter((s) => s.salaryMonth === month || s.monthKey === month);
-    }
+    sql += ` ORDER BY s.monthKey DESC, s.employeeName ASC`;
 
-    if (status !== "All") {
-      filtered = filtered.filter((s) => s.paymentStatus.toUpperCase() === status.toUpperCase());
-    }
+    const rawSlips = await queryDbCached<any[]>(sql, params, 10);
 
-    // 4. Compute High-Level Metrics
-    const totalOutflow = slips.reduce((sum, s) => sum + (s.paymentStatus === "PAID" ? s.netSalary : 0), 0);
+    const slips = (rawSlips || []).map((s) => ({
+      ...s,
+      user: {
+        id: s.userId,
+        employeeId: s.employeeId,
+        name: s.employeeName,
+        email: s.user_email,
+        role: s.user_role,
+        department: s.department_name ? { name: s.department_name } : null,
+      },
+    }));
+
+    // Extract available distinct months for filter dropdown
+    const distinctMonthRows = await queryDbCached<any[]>(
+      `SELECT DISTINCT salaryMonth, monthKey FROM salaryslip ORDER BY monthKey DESC`,
+      [],
+      30
+    );
+    const availableMonths = (distinctMonthRows || []).map((r) => r.salaryMonth || r.monthKey);
+
+    // Compute Summary KPIs
+    const totalDisbursed = slips.reduce((sum, s) => sum + (s.netSalary || 0), 0);
+    const totalGross = slips.reduce((sum, s) => sum + (s.grossSalary || 0), 0);
+    const totalDeductions = slips.reduce((sum, s) => sum + (s.totalDeductions || 0), 0);
     const paidCount = slips.filter((s) => s.paymentStatus === "PAID").length;
-    const scheduledCount = slips.filter((s) => s.paymentStatus === "SCHEDULED").length;
-    const pendingCount = slips.filter((s) => s.paymentStatus === "PENDING").length;
+    const pendingCount = slips.filter((s) => s.paymentStatus !== "PAID").length;
 
-    // Available Distinct Months for Filter Dropdown
-    const availableMonths = Array.from(new Set(slips.map((s) => s.salaryMonth)));
+    const summaryPayload = {
+      totalDisbursed,
+      totalGross,
+      totalDeductions,
+      paidCount,
+      pendingCount,
+      totalSlips: slips.length,
+    };
 
     return NextResponse.json({
       success: true,
-      slips: filtered,
-      totalCount: slips.length,
-      metrics: {
-        totalOutflow,
-        paidCount,
-        scheduledCount,
-        pendingCount,
-      },
-      availableMonths,
+      total: slips.length,
+      data: slips,
+      slips: slips,
+      summary: summaryPayload,
+      metrics: summaryPayload,
+      availableMonths: availableMonths.length > 0 ? availableMonths : ["August 2026", "July 2026", "June 2026"],
     });
   } catch (error: any) {
-    console.error("Failed to fetch all salary slips:", error);
+    console.error("API error fetching salary slips:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to load master salary slips." },
+      { success: false, error: error.message || "Failed to retrieve salary slips." },
+      { status: 500 }
+    );
+  }
+}
+
+// POST: Generate / Record a Salary Slip
+export async function POST(request: NextRequest) {
+  try {
+    const authResult = await authenticateRequest(request);
+    const adminRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
+
+    if (!authResult.user || !adminRoles.includes(authResult.user.role)) {
+      return NextResponse.json(
+        { success: false, error: "Forbidden: Admin authorization required." },
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json();
+    const {
+      employeeId,
+      salaryMonth,
+      basicSalary,
+      hra,
+      allowances,
+      bonus,
+      overtime,
+      pfDeduction,
+      taxDeduction,
+      otherDeductions,
+      paymentMethod,
+      notes,
+    } = body;
+
+    if (!employeeId || !salaryMonth) {
+      return NextResponse.json(
+        { success: false, error: "Employee ID and Salary Month are required." },
+        { status: 400 }
+      );
+    }
+
+    const uRows = await queryDb<any[]>(
+      `SELECT id, employeeId, name FROM user WHERE id = ? OR employeeId = ? LIMIT 1`,
+      [employeeId, employeeId]
+    );
+
+    if (!uRows || uRows.length === 0) {
+      return NextResponse.json({ success: false, error: "Employee not found." }, { status: 404 });
+    }
+
+    const user = uRows[0];
+    const bSalary = parseFloat(basicSalary) || 0;
+    const h = parseFloat(hra) || 0;
+    const allow = parseFloat(allowances) || 0;
+    const bon = parseFloat(bonus) || 0;
+    const ot = parseFloat(overtime) || 0;
+    const gross = bSalary + h + allow + bon + ot;
+
+    const pf = parseFloat(pfDeduction) || 0;
+    const tax = parseFloat(taxDeduction) || 0;
+    const other = parseFloat(otherDeductions) || 0;
+    const totalDed = pf + tax + other;
+    const net = Math.max(0, gross - totalDed);
+
+    const monthKey = salaryMonth.replace(/\s+/g, "-").toLowerCase();
+    const slipId = `SLIP-${user.employeeId}-${monthKey}-${Date.now()}`;
+    const txnRef = `TXN-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    await queryDb(
+      `INSERT INTO salaryslip (
+        id, userId, employeeId, employeeName, salaryMonth, monthKey,
+        basicSalary, hra, allowances, bonus, overtime, grossSalary,
+        pfDeduction, taxDeduction, otherDeductions, totalDeductions, netSalary,
+        paymentDate, paymentStatus, paymentMethod, transactionReference, notes,
+        generatedAt, updatedAt
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        NOW(), 'PAID', ?, ?, ?,
+        NOW(), NOW()
+      )`,
+      [
+        slipId,
+        user.id,
+        user.employeeId,
+        user.name,
+        salaryMonth,
+        monthKey,
+        bSalary,
+        h,
+        allow,
+        bon,
+        ot,
+        gross,
+        pf,
+        tax,
+        other,
+        totalDed,
+        net,
+        paymentMethod || "Direct Bank Transfer / NEFT",
+        txnRef,
+        notes || `Generated salary slip for ${salaryMonth}`,
+      ]
+    );
+
+    clearQueryCache("salaryslip");
+
+    return NextResponse.json(
+      {
+        success: true,
+        message: `✓ Salary slip for ${salaryMonth} generated successfully!`,
+        slipId,
+      },
+      { status: 201 }
+    );
+  } catch (error: any) {
+    console.error("API error creating salary slip:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to generate salary slip." },
       { status: 500 }
     );
   }

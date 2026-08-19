@@ -26,8 +26,8 @@ export default function EmployeeSalaryPage() {
           );
           const dataSlips = await resSlips.json();
           if (dataSlips.success) {
-            setSalarySlips(dataSlips.slips || []);
-            setSummary(dataSlips.summary || null);
+            setSalarySlips(dataSlips.slips || dataSlips.data || []);
+            setSummary(dataSlips.summary || dataSlips.metrics || null);
           }
         }
       })

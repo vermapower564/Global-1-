@@ -1,50 +1,150 @@
-import { NextResponse } from "next/server";
-import { getStoredWorkUpdates, addStoredWorkUpdate, evaluateWorkUpdate, WorkStatus, PriorityLevel } from "@/utils/workUpdateStore";
+import { NextRequest, NextResponse } from "next/server";
+import { authenticateRequest, logAuditEvent } from "@/lib/authMiddleware";
+import { queryDb, queryDbCached, clearQueryCache } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
+
+export async function GET(request: NextRequest) {
   try {
-    const { authenticateRequest } = await import("@/lib/authMiddleware");
     const authResult = await authenticateRequest(request);
-    const authUser = authResult.user;
-
-    const { prisma } = await import("@/lib/prisma");
-
-    const isAdminOrManager = authUser && ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"].includes(authUser.role);
-    const whereClause = (authUser && !isAdminOrManager) ? { userId: authUser.id } : {};
-
-    const dbUpdates = await prisma.dailyworkupdate.findMany({
-      where: whereClause,
-      include: {
-        user: { select: { id: true, name: true, employeeId: true } },
-      },
-      orderBy: { submittedAt: "desc" },
-    });
-
-    if (dbUpdates.length > 0) {
-      return NextResponse.json({ success: true, total: dbUpdates.length, data: dbUpdates });
+    if (authResult.response || !authResult.user) {
+      return authResult.response || NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
     }
-  } catch (dbErr: any) {
-    console.warn("Prisma query fallback:", dbErr.message);
-  }
 
-  const updates = getStoredWorkUpdates();
-  return NextResponse.json({
-    success: true,
-    total: updates.length,
-    data: updates,
-  });
+    const authUser = authResult.user;
+    const { searchParams } = new URL(request.url);
+
+    const filterUserId = searchParams.get("userId");
+    const filterEmployeeId = searchParams.get("employeeId");
+    const filterPeriod = searchParams.get("period"); // 'today' | 'yesterday' | 'daywise' | 'month' | 'year'
+    const filterDate = searchParams.get("date");
+    const filterMonth = searchParams.get("month");
+    const filterYear = searchParams.get("year");
+    const search = searchParams.get("search") || "";
+
+    const isAdmin = ADMIN_ROLES.includes(authUser.role);
+
+    let sql = `
+      SELECT 
+        w.*,
+        u.id AS user_id, u.employeeId AS user_employeeId, u.name AS user_name, u.email AS user_email, u.role AS user_role,
+        d.name AS department_name
+      FROM dailyworkupdate w
+      LEFT JOIN user u ON w.userId = u.id
+      LEFT JOIN department d ON u.departmentId = d.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+
+    // Worker role visibility scoping
+    if (!isAdmin) {
+      sql += ` AND w.userId = ?`;
+      params.push(authUser.id);
+    } else {
+      if (filterUserId) {
+        sql += ` AND w.userId = ?`;
+        params.push(filterUserId);
+      }
+      if (filterEmployeeId && filterEmployeeId !== "ALL") {
+        sql += ` AND (u.employeeId = ? OR u.id = ?)`;
+        params.push(filterEmployeeId, filterEmployeeId);
+      }
+    }
+
+    // Time Slide / Period Filtering
+    if (filterPeriod === "today") {
+      sql += ` AND DATE(w.date) = CURDATE()`;
+    } else if (filterPeriod === "yesterday") {
+      sql += ` AND DATE(w.date) = SUBDATE(CURDATE(), 1)`;
+    } else if (filterPeriod === "daywise" && filterDate) {
+      sql += ` AND DATE(w.date) = DATE(?)`;
+      params.push(filterDate);
+    } else if (filterPeriod === "month") {
+      const targetMonth = filterMonth || new Date().toISOString().slice(0, 7);
+      sql += ` AND DATE_FORMAT(w.date, '%Y-%m') = ?`;
+      params.push(targetMonth);
+    } else if (filterPeriod === "year") {
+      const targetYear = filterYear || new Date().getFullYear().toString();
+      sql += ` AND YEAR(w.date) = ?`;
+      params.push(targetYear);
+    } else {
+      if (filterDate) {
+        sql += ` AND DATE(w.date) = DATE(?)`;
+        params.push(filterDate);
+      } else if (filterMonth) {
+        sql += ` AND DATE_FORMAT(w.date, '%Y-%m') = ?`;
+        params.push(filterMonth);
+      } else if (filterYear) {
+        sql += ` AND YEAR(w.date) = ?`;
+        params.push(filterYear);
+      }
+    }
+
+    if (search.trim()) {
+      sql += ` AND (u.name LIKE ? OR u.employeeId LIKE ? OR w.projectName LIKE ? OR w.description LIKE ?)`;
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    sql += ` ORDER BY w.date DESC, w.submittedAt DESC`;
+
+    const rawRows = await queryDbCached<any[]>(sql, params, 5);
+
+    const updates = (rawRows || []).map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      date: r.date,
+      projectName: r.projectName,
+      clientName: r.clientName,
+      startTime: r.startTime,
+      endTime: r.endTime,
+      hoursWorked: r.hoursWorked,
+      priority: r.priority,
+      description: r.description,
+      achievements: r.achievements,
+      blockers: r.blockers,
+      tomorrowPlan: r.tomorrowPlan,
+      gitCommits: r.gitCommits,
+      driveLinks: r.driveLinks,
+      screenshots: r.screenshots,
+      status: r.status,
+      rating: r.rating,
+      managerRemarks: r.managerRemarks,
+      submittedAt: r.submittedAt,
+      user: {
+        id: r.user_id,
+        employeeId: r.user_employeeId,
+        name: r.user_name,
+        email: r.user_email,
+        role: r.user_role,
+        department: r.department_name ? { name: r.department_name } : null,
+      },
+    }));
+
+    return NextResponse.json({
+      success: true,
+      total: updates.length,
+      data: updates,
+    });
+  } catch (error: any) {
+    console.error("Daily work fetch error:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to fetch work updates." },
+      { status: 500 }
+    );
+  }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const authResult = await authenticateRequest(request);
+    if (authResult.response || !authResult.user) {
+      return authResult.response || NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
+    }
+
+    const body = await request.json().catch(() => ({}));
     const {
-      userId,
-      employeeName,
-      employeeId,
-      department,
       projectName,
       clientName,
       startTime,
@@ -60,133 +160,97 @@ export async function POST(request: Request) {
       screenshots,
     } = body;
 
-    if (!employeeName && !description) {
+    if (!description && !projectName) {
       return NextResponse.json(
-        { success: false, error: "Employee Name and Task Description are required." },
+        { success: false, error: "Project name and work description are required." },
         { status: 400 }
       );
     }
 
-    let createdRecord;
-    try {
-      const { prisma } = await import("@/lib/prisma");
-      
-      // Auto-find or create User record for Foreign Key constraint in XAMPP MySQL
-      let user = userId 
-        ? await prisma.user.findUnique({ where: { id: userId } })
-        : await prisma.user.findFirst();
+    const updateId = `DWU-${authResult.user.id}-${Date.now()}`;
+    const parsedHours = parseFloat(hoursWorked) || 8.0;
 
-      if (!user) {
-        user = await prisma.user.create({
-          data: {
-            employeeId: employeeId || `EMP-${Math.floor(1000 + Math.random() * 9000)}`,
-            name: employeeName || "Aditya Raj",
-            email: `${(employeeName || "engineer").toLowerCase().replace(/\s+/g, ".")}@oms.com`,
-            password: "hashed_secure_password_123",
-            role: "DEVELOPER",
-            joiningDate: new Date(),
-          },
-        });
-      }
+    await queryDb(
+      `INSERT INTO dailyworkupdate (
+        id, userId, date, hoursWorked, description, achievements, blockers, tomorrowPlan,
+        status, priority, projectName, clientName, startTime, endTime, gitCommits, driveLinks, screenshots, submittedAt
+      ) VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        updateId,
+        authResult.user.id,
+        parsedHours,
+        description || "Daily Task Work Log",
+        achievements || null,
+        blockers || null,
+        tomorrowPlan || null,
+        priority === "HIGH" ? "HIGH" : priority === "LOW" ? "LOW" : "MEDIUM",
+        projectName || "OMS Operations",
+        clientName || "Internal Enterprise",
+        startTime || "09:00 AM",
+        endTime || "06:00 PM",
+        gitCommits || null,
+        driveLinks || null,
+        screenshots || null,
+      ]
+    );
 
-      createdRecord = await prisma.dailyworkupdate.create({
-        data: {
-          userId: user.id,
-          projectName: projectName || "OMS Portal Maintenance",
-          clientName: clientName || "Internal Operations",
-          startTime: startTime || "09:00 AM",
-          endTime: endTime || "05:30 PM",
-          hoursWorked: parseFloat(hoursWorked) || 8.0,
-          priority: priority === "HIGH" ? "HIGH" : priority === "LOW" ? "LOW" : "MEDIUM",
-          description: description || "Daily Task Work Log",
-          achievements: achievements || null,
-          blockers: blockers || null,
-          tomorrowPlan: tomorrowPlan || null,
-          gitCommits: gitCommits || null,
-          driveLinks: driveLinks || null,
-          screenshots: screenshots || null,
-          status: "PENDING",
-        },
-      });
-    } catch (dbErr: any) {
-      console.warn("Prisma MySQL save fallback:", dbErr.message);
-    }
+    clearQueryCache("dailyworkupdate");
 
-    const today = new Date().toISOString().split("T")[0];
-    const newUpdate = addStoredWorkUpdate({
-      employeeName: employeeName || "Employee",
-      employeeId: employeeId || "EMP001",
-      department: department || "Engineering",
-      projectName: projectName || "OMS Portal Maintenance",
-      clientName: clientName || "Internal Operations",
-      date: today,
-      startTime: startTime || "09:00 AM",
-      endTime: endTime || "05:30 PM",
-      hoursWorked: parseFloat(hoursWorked) || 8.0,
-      priority: (priority as PriorityLevel) || "HIGH",
-      description,
-      achievements,
-      blockers,
-      tomorrowPlan,
-      gitCommits,
-      driveLinks,
-      screenshots,
-    });
+    await logAuditEvent(
+      authResult.user.id,
+      "WORK_UPDATE_SUBMITTED",
+      `Submitted daily work report for project: ${projectName || "General"}`
+    );
 
     return NextResponse.json(
       {
         success: true,
-        message: "✓ Daily Work EOD update saved to XAMPP MySQL (dailyworkupdate table) via Prisma!",
-        data: createdRecord || newUpdate,
+        message: "✓ Daily Work EOD update saved to TiDB Cloud!",
+        id: updateId,
       },
       { status: 201 }
     );
   } catch (error: any) {
+    console.error("Submit work update error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to submit EOD report." },
+      { success: false, error: "Failed to submit work update." },
       { status: 500 }
     );
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
   try {
-    const body = await request.json();
+    const authResult = await authenticateRequest(request);
+    if (authResult.response || !authResult.user) {
+      return authResult.response || NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
+    }
+
+    const isAdmin = ADMIN_ROLES.includes(authResult.user.role);
+    if (!isAdmin) {
+      return NextResponse.json({ success: false, error: "Forbidden: Only managers can evaluate work updates." }, { status: 403 });
+    }
+
+    const body = await request.json().catch(() => ({}));
     const { id, status, rating, managerRemarks } = body;
 
     if (!id || !status) {
-      return NextResponse.json(
-        { success: false, error: "EOD ID and Status are required." },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "Report ID and Status are required." }, { status: 400 });
     }
 
-    try {
-      const { prisma } = await import("@/lib/prisma");
-      await prisma.dailyworkupdate.update({
-        where: { id },
-        data: {
-          status: status.toUpperCase() as any,
-          rating: rating || 5,
-          managerRemarks: managerRemarks || "Approved",
-        },
-      });
-    } catch (dbErr: any) {
-      console.warn("Prisma update fallback:", dbErr.message);
-    }
+    await queryDb(
+      `UPDATE dailyworkupdate SET status = ?, rating = ?, managerRemarks = ? WHERE id = ?`,
+      [status.toUpperCase(), rating || 5, managerRemarks || "Approved by Manager", id]
+    );
 
-    const updated = evaluateWorkUpdate(id, status as WorkStatus, rating || 5, managerRemarks || "");
-    const item = updated.find((u) => u.id === id);
+    clearQueryCache("dailyworkupdate");
 
     return NextResponse.json({
       success: true,
       message: `EOD report ${id} evaluated by Manager.`,
-      data: item,
     });
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || "Failed to evaluate EOD report." },
-      { status: 500 }
-    );
+    console.error("Evaluate work update error:", error);
+    return NextResponse.json({ success: false, error: "Failed to evaluate work update." }, { status: 500 });
   }
 }

@@ -28,6 +28,8 @@ interface SalarySlipItem {
   transactionReference: string | null;
   notes: string | null;
   generatedAt: string;
+  bankName?: string;
+  accountNumberMasked?: string;
   user?: {
     id: string;
     employeeId: string;
@@ -42,10 +44,16 @@ interface SalarySlipItem {
 export default function AdminSalarySlipsFolderPage() {
   const [slips, setSlips] = useState<SalarySlipItem[]>([]);
   const [metrics, setMetrics] = useState<any>(null);
-  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
+  const [availableMonths, setAvailableMonths] = useState<string[]>([
+    "August 2026",
+    "July 2026",
+    "June 2026",
+    "May 2026",
+  ]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [monthFilter, setMonthFilter] = useState("All");
+  // Default to single month (August 2026) as requested
+  const [monthFilter, setMonthFilter] = useState("August 2026");
   const [statusFilter, setStatusFilter] = useState("All");
   const [toastMsg, setToastMsg] = useState("");
 
@@ -66,9 +74,9 @@ export default function AdminSalarySlipsFolderPage() {
       const json = await res.json();
 
       if (json.success) {
-        setSlips(json.slips || []);
-        setMetrics(json.metrics || null);
-        if (json.availableMonths) {
+        setSlips(json.slips || json.data || []);
+        setMetrics(json.metrics || json.summary || null);
+        if (json.availableMonths && json.availableMonths.length > 0) {
           setAvailableMonths(json.availableMonths);
         }
       }
@@ -86,6 +94,23 @@ export default function AdminSalarySlipsFolderPage() {
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     fetchSalarySlips();
+  };
+
+  // Previous & Next Month Navigation Helpers
+  const handlePreviousMonth = () => {
+    const currentIndex = availableMonths.indexOf(monthFilter);
+    if (currentIndex !== -1 && currentIndex < availableMonths.length - 1) {
+      setMonthFilter(availableMonths[currentIndex + 1]);
+    } else if (monthFilter === "All" && availableMonths.length > 0) {
+      setMonthFilter(availableMonths[0]);
+    }
+  };
+
+  const handleNextMonth = () => {
+    const currentIndex = availableMonths.indexOf(monthFilter);
+    if (currentIndex > 0) {
+      setMonthFilter(availableMonths[currentIndex - 1]);
+    }
   };
 
   const handleUpdateStatus = async (slip: SalarySlipItem, newStatus: string) => {
@@ -111,6 +136,10 @@ export default function AdminSalarySlipsFolderPage() {
     }
   };
 
+  const currentIndex = availableMonths.indexOf(monthFilter);
+  const canGoPrevious = currentIndex !== -1 && currentIndex < availableMonths.length - 1;
+  const canGoNext = currentIndex > 0;
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16 font-sans bg-white text-black">
       {/* Toast Notification */}
@@ -123,323 +152,278 @@ export default function AdminSalarySlipsFolderPage() {
         </div>
       )}
 
-      {/* Breadcrumbs */}
-      <div className="flex items-center gap-2 text-xs font-bold text-slate-500 font-mono">
-        <span>OMS</span>
-        <span>/</span>
-        <span>Admin</span>
-        <span>/</span>
-        <span className="text-black font-extrabold">Salary Slips Folder</span>
-      </div>
-
       {/* Header Banner */}
-      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-gray-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <span className="text-xs font-bold uppercase tracking-wider text-blue-600">
-            📁 Organization Payroll & Compensation Center
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight mt-1">
-            All Employee Salary Slips Master Folder ({slips.length})
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-black uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+              📁 Organization Payroll Folder
+            </span>
+            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+              TiDB Cloud Ledger
+            </span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight mt-2">
+            Monthly Employee Salary Slips
           </h1>
-          <p className="text-xs text-slate-600 mt-1">
-            Central repository of monthly earnings, deductions, net salary disbursement, and printable PDF salary slips for all staff members.
+          <p className="text-xs text-gray-500 mt-1">
+            Review monthly salary disbursements for all employees. Use Previous/Next month controls to navigate payroll history.
           </p>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-3">
           <Link
             href="/admin/employees"
-            className="bg-slate-100 hover:bg-slate-200 text-black font-extrabold text-xs px-4 py-2.5 rounded-xl border border-slate-200 transition cursor-pointer"
+            className="bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold text-xs px-4 py-2.5 rounded-xl transition border border-gray-200"
           >
-            ← Employee Directory
+            Employee Directory →
           </Link>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-          <span className="text-slate-500 font-extrabold uppercase text-[10px] block">
-            Total Monthly Outflow
-          </span>
-          <p className="text-2xl font-black text-black font-mono">
-            ₹{(metrics?.totalOutflow || 0).toLocaleString("en-IN")}
-          </p>
-          <span className="text-[10px] text-emerald-600 font-bold block">Disbursed Successfully</span>
+      {/* 🗓️ MONTH SWITCHER CONTROL STRIP (One Month at a Time + Previous Month) */}
+      <div className="bg-blue-50/70 border-2 border-blue-200 p-5 rounded-3xl shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          {/* Previous Month Button */}
+          <button
+            onClick={handlePreviousMonth}
+            disabled={!canGoPrevious}
+            className={`px-4 py-2.5 rounded-2xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-xs ${
+              canGoPrevious
+                ? "bg-white text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200"
+                : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+            }`}
+          >
+            <span>←</span> Previous Month
+          </button>
+
+          {/* Current Month Active Badge */}
+          <div className="bg-white px-5 py-2 rounded-2xl border-2 border-blue-600 shadow-xs text-center flex-1 md:flex-none">
+            <span className="text-[10px] font-black uppercase text-blue-600 block">Active Payroll Month</span>
+            <span className="text-base font-black text-black">{monthFilter}</span>
+          </div>
+
+          {/* Next Month Button */}
+          <button
+            onClick={handleNextMonth}
+            disabled={!canGoNext}
+            className={`px-4 py-2.5 rounded-2xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-xs ${
+              canGoNext
+                ? "bg-white text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200"
+                : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+            }`}
+          >
+            Next Month <span>→</span>
+          </button>
         </div>
 
-        <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-          <span className="text-slate-500 font-extrabold uppercase text-[10px] block">
-            Paid Slips
-          </span>
-          <p className="text-2xl font-black text-emerald-600 font-mono">
-            {metrics?.paidCount || 0} Slips
-          </p>
-          <span className="text-[10px] text-slate-500 font-bold block">Credited to Bank Accounts</span>
-        </div>
-
-        <div className="p-5 rounded-2xl bg-blue-50 border border-blue-200 space-y-1">
-          <span className="text-blue-700 font-extrabold uppercase text-[10px] block">
-            Scheduled Slips
-          </span>
-          <p className="text-2xl font-black text-blue-700 font-mono">
-            {metrics?.scheduledCount || 0} Slips
-          </p>
-          <span className="text-[10px] text-blue-600 font-bold block">Awaiting Cycle Date</span>
-        </div>
-
-        <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-          <span className="text-slate-500 font-extrabold uppercase text-[10px] block">
-            Pending / In-Review
-          </span>
-          <p className="text-2xl font-black text-amber-600 font-mono">
-            {metrics?.pendingCount || 0} Slips
-          </p>
-          <span className="text-[10px] text-slate-500 font-bold block">Payroll Approval Queue</span>
+        {/* Quick Month Selector Tabs */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-bold text-gray-500 mr-1">Select Month:</span>
+          {availableMonths.map((m) => (
+            <button
+              key={m}
+              onClick={() => setMonthFilter(m)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                monthFilter === m
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
+              }`}
+            >
+              {m}
+            </button>
+          ))}
+          <button
+            onClick={() => setMonthFilter("All")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+              monthFilter === "All"
+                ? "bg-blue-600 text-white shadow-xs"
+                : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
+            }`}
+          >
+            All Archive
+          </button>
         </div>
       </div>
 
-      {/* Filter & Search Bar */}
-      <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col sm:flex-row justify-between items-center gap-4">
-        <form onSubmit={handleSearchSubmit} className="w-full sm:w-80 flex gap-2">
+      {/* Summary KPI Cards for Selected Month */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-2xs">
+          <span className="text-[10px] font-extrabold uppercase text-gray-500">
+            Total Slips ({monthFilter})
+          </span>
+          <p className="text-2xl font-black text-black font-mono mt-1">{slips.length}</p>
+          <span className="text-xs text-gray-500 block mt-0.5">Employees processed</span>
+        </div>
+
+        <div className="bg-white p-5 rounded-3xl border border-emerald-200 shadow-2xs">
+          <span className="text-[10px] font-extrabold uppercase text-emerald-600">
+            Total Disbursed (Net)
+          </span>
+          <p className="text-2xl font-black text-emerald-600 font-mono mt-1">
+            ₹{(metrics?.totalDisbursed || 0).toLocaleString("en-IN")}
+          </p>
+          <span className="text-xs text-emerald-600 block mt-0.5">Bank disbursements</span>
+        </div>
+
+        <div className="bg-white p-5 rounded-3xl border border-blue-200 shadow-2xs">
+          <span className="text-[10px] font-extrabold uppercase text-blue-600">
+            Gross Payroll
+          </span>
+          <p className="text-2xl font-black text-blue-600 font-mono mt-1">
+            ₹{(metrics?.totalGross || 0).toLocaleString("en-IN")}
+          </p>
+          <span className="text-xs text-blue-600 block mt-0.5">Basic + HRA + Allowances</span>
+        </div>
+
+        <div className="bg-white p-5 rounded-3xl border border-rose-200 shadow-2xs">
+          <span className="text-[10px] font-extrabold uppercase text-rose-600">
+            Total Deductions
+          </span>
+          <p className="text-2xl font-black text-rose-600 font-mono mt-1">
+            ₹{(metrics?.totalDeductions || 0).toLocaleString("en-IN")}
+          </p>
+          <span className="text-xs text-rose-600 block mt-0.5">PF (12%) + Tax + PT</span>
+        </div>
+      </div>
+
+      {/* Search & Status Filters */}
+      <div className="bg-white p-4 rounded-2xl border border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xs">
+        <form onSubmit={handleSearchSubmit} className="relative w-full sm:w-80">
           <input
             type="text"
-            placeholder="Search by name, employee ID, or department..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs text-black focus:border-blue-600 focus:outline-none font-medium"
+            placeholder="Search by employee name, ID, or bank..."
+            className="w-full rounded-xl border border-gray-300 bg-gray-50 py-2 pl-9 pr-4 text-xs font-semibold text-black focus:border-blue-600 focus:outline-none"
           />
-          <button
-            type="submit"
-            className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-3.5 py-2 rounded-xl transition shrink-0 cursor-pointer"
-          >
-            Search
-          </button>
+          <span className="absolute left-3 top-2.5 text-gray-400 text-xs">🔍</span>
         </form>
 
-        <div className="flex items-center gap-3 overflow-x-auto w-full sm:w-auto">
-          {/* Month Filter */}
-          <select
-            value={monthFilter}
-            onChange={(e) => setMonthFilter(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-black font-extrabold focus:outline-none"
-          >
-            <option value="All">All Salary Months</option>
-            {availableMonths.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-
-          {/* Status Filter */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-black font-extrabold focus:outline-none"
-          >
-            <option value="All">All Statuses</option>
-            <option value="PAID">PAID</option>
-            <option value="SCHEDULED">SCHEDULED</option>
-            <option value="PENDING">PENDING</option>
-            <option value="FAILED">FAILED</option>
-          </select>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-gray-500">Status:</span>
+          {["All", "PAID", "SCHEDULED", "PENDING"].map((st) => (
+            <button
+              key={st}
+              onClick={() => setStatusFilter(st)}
+              className={`px-3 py-1 rounded-xl text-xs font-black transition cursor-pointer ${
+                statusFilter === st
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              {st}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Master Salary Slips Table */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-md overflow-hidden">
+      {/* Salary Slips Table */}
+      <div className="bg-white rounded-3xl border border-gray-200 shadow-md overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-black font-extrabold uppercase text-[11px]">
-                <th className="py-3.5 px-4 text-black">Employee</th>
-                <th className="py-3.5 px-4 text-black">Employee ID</th>
-                <th className="py-3.5 px-4 text-black">Department & Role</th>
-                <th className="py-3.5 px-4 text-black">Salary Month</th>
-                <th className="py-3.5 px-4 text-black">Gross Pay</th>
-                <th className="py-3.5 px-4 text-black">Deductions</th>
-                <th className="py-3.5 px-4 text-black">Net Salary</th>
-                <th className="py-3.5 px-4 text-black">Disbursement Date</th>
-                <th className="py-3.5 px-4 text-black">Status</th>
-                <th className="py-3.5 px-4 text-black">Actions</th>
+              <tr className="bg-gray-50 border-b border-gray-200 text-black font-bold uppercase text-[10px]">
+                <th className="py-4 px-5">Employee</th>
+                <th className="py-4 px-5">Salary Month</th>
+                <th className="py-4 px-5">Gross Pay</th>
+                <th className="py-4 px-5">Deductions</th>
+                <th className="py-4 px-5">Net Take-Home</th>
+                <th className="py-4 px-5">Bank Account</th>
+                <th className="py-4 px-5">Status</th>
+                <th className="py-4 px-5 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-10 text-slate-500 font-medium text-xs">
-                    Loading salary slip database records...
+                  <td colSpan={8} className="py-16 text-center text-gray-400 font-bold text-xs">
+                    Loading salary slips for {monthFilter}...
                   </td>
                 </tr>
               ) : slips.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-10 text-slate-400 italic text-xs">
-                    No salary slips found matching your filters.
+                  <td colSpan={8} className="py-16 text-center text-gray-400 italic text-xs">
+                    No salary slips found for {monthFilter}.
                   </td>
                 </tr>
               ) : (
-                slips.map((slip) => {
-                  const empInitials = (slip.employeeName || "E")
-                    .split(" ")
-                    .map((n: string) => n[0])
-                    .join("")
-                    .toUpperCase()
-                    .slice(0, 2);
-
-                  return (
-                    <tr key={slip.id} className="hover:bg-slate-50 transition text-black">
-                      {/* Employee Avatar & Name (Blue box) */}
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white font-black text-xs shadow-md shrink-0">
-                            {empInitials}
-                          </div>
-                          <div>
-                            <Link
-                              href={`/admin/employees/${slip.employeeId || slip.userId}`}
-                              className="font-black text-black hover:text-blue-600 transition-colors text-xs block"
-                            >
-                              {slip.employeeName}
-                            </Link>
-                            <span className="text-[11px] text-slate-500 font-mono">
-                              {slip.user?.email || "employee@gmail.com"}
-                            </span>
-                          </div>
+                slips.map((slip) => (
+                  <tr key={slip.id} className="hover:bg-blue-50/40 transition text-black">
+                    <td className="py-4 px-5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-xs">
+                          {(slip.employeeName || "E")[0]}
                         </div>
-                      </td>
+                        <div>
+                          <p className="font-extrabold text-sm text-black">{slip.employeeName}</p>
+                          <p className="text-[10px] text-gray-500 font-mono">{slip.employeeId}</p>
+                        </div>
+                      </div>
+                    </td>
 
-                      {/* Employee ID */}
-                      <td className="py-3.5 px-4">
-                        <Link
-                          href={`/admin/employees/${slip.employeeId || slip.userId}`}
-                          className="font-mono text-xs font-bold text-slate-900 hover:text-blue-600 transition"
-                        >
-                          {slip.employeeId}
-                        </Link>
-                      </td>
-
-                      {/* Dept & Role */}
-                      <td className="py-3.5 px-4">
-                        <p className="font-bold text-black text-xs">
-                          {slip.user?.role?.replace(/_/g, " ") || "Software Developer"}
-                        </p>
-                        <p className="text-[11px] text-slate-500 font-medium">
-                          {slip.user?.department?.name || "Development & Engineering"}
-                        </p>
-                      </td>
-
-                      {/* Salary Month */}
-                      <td className="py-3.5 px-4 font-black text-black text-xs">
+                    <td className="py-4 px-5">
+                      <span className="font-bold text-xs bg-blue-50 text-blue-800 px-2.5 py-1 rounded-lg border border-blue-200">
                         {slip.salaryMonth}
-                      </td>
+                      </span>
+                    </td>
 
-                      {/* Gross */}
-                      <td className="py-3.5 px-4 font-mono font-bold text-black">
-                        ₹{Number(slip.grossSalary || 0).toLocaleString("en-IN")}
-                      </td>
+                    <td className="py-4 px-5 font-mono font-bold text-gray-800">
+                      ₹{slip.grossSalary?.toLocaleString("en-IN")}
+                    </td>
 
-                      {/* Deductions */}
-                      <td className="py-3.5 px-4 font-mono font-bold text-rose-700">
-                        ₹{Number(slip.totalDeductions || 0).toLocaleString("en-IN")}
-                      </td>
+                    <td className="py-4 px-5 font-mono font-bold text-rose-600">
+                      -₹{slip.totalDeductions?.toLocaleString("en-IN")}
+                    </td>
 
-                      {/* Net Salary */}
-                      <td className="py-3.5 px-4 font-mono font-black text-emerald-700 text-sm">
-                        ₹{Number(slip.netSalary || 0).toLocaleString("en-IN")}
-                      </td>
+                    <td className="py-4 px-5 font-mono font-black text-emerald-600 text-sm">
+                      ₹{slip.netSalary?.toLocaleString("en-IN")}
+                    </td>
 
-                      {/* Payment Date */}
-                      <td className="py-3.5 px-4 font-mono text-black text-xs">
-                        {slip.paymentDate
-                          ? new Date(slip.paymentDate).toLocaleDateString("en-IN", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                            })
-                          : "—"}
-                      </td>
+                    <td className="py-4 px-5">
+                      <p className="font-bold text-xs text-gray-700">{slip.bankName || "State Bank of India"}</p>
+                      <p className="text-[10px] text-gray-400 font-mono">{slip.accountNumberMasked || "••••••••6543"}</p>
+                    </td>
 
-                      {/* Status */}
-                      <td className="py-3.5 px-4">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                            slip.paymentStatus === "PAID"
-                              ? "bg-emerald-100 text-emerald-800"
-                              : slip.paymentStatus === "SCHEDULED"
-                              ? "bg-blue-100 text-blue-800"
-                              : slip.paymentStatus === "FAILED"
-                              ? "bg-rose-100 text-rose-800"
-                              : "bg-amber-100 text-amber-800"
-                          }`}
-                        >
-                          ● {slip.paymentStatus}
-                        </span>
-                      </td>
+                    <td className="py-4 px-5">
+                      <span
+                        className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${
+                          slip.paymentStatus === "PAID"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {slip.paymentStatus}
+                      </span>
+                    </td>
 
-                      {/* Actions */}
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => {
-                              setSelectedSlip(slip);
-                              setShowSlipModal(true);
-                            }}
-                            className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[11px] px-3 py-1 rounded-lg transition cursor-pointer"
-                          >
-                            View Slip
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedSlip(slip);
-                              setShowSlipModal(true);
-                            }}
-                            className="bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-600 hover:text-white font-bold text-[11px] px-2.5 py-1 rounded-lg transition cursor-pointer"
-                          >
-                            PDF
-                          </button>
-                          <Link
-                            href={`/admin/employees/${slip.employeeId || slip.userId}`}
-                            className="bg-slate-100 hover:bg-slate-200 text-black font-bold text-[11px] px-2 py-1 rounded-lg transition"
-                            title="Open 360° Profile"
-                          >
-                            360°
-                          </Link>
-                          {slip.paymentStatus !== "PAID" ? (
-                            <button
-                              onClick={() => handleUpdateStatus(slip, "PAID")}
-                              className="bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-600 hover:text-white font-bold text-[11px] px-2 py-1 rounded-lg transition cursor-pointer"
-                              title="Mark as Paid"
-                            >
-                              ✓ Paid
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleUpdateStatus(slip, "PENDING")}
-                              className="bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-600 hover:text-white font-bold text-[11px] px-2 py-1 rounded-lg transition cursor-pointer"
-                              title="Mark as Pending"
-                            >
-                              Pending
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
+                    <td className="py-4 px-5 text-right">
+                      <button
+                        onClick={() => {
+                          setSelectedSlip(slip);
+                          setShowSlipModal(true);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs transition cursor-pointer shadow-xs"
+                      >
+                        View Slip 📄
+                      </button>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Salary Slip Modal */}
-      <SalarySlipModal
-        isOpen={showSlipModal}
-        onClose={() => setShowSlipModal(false)}
-        slip={selectedSlip}
-        employee={selectedSlip?.user}
-      />
+      {/* Salary Slip Print Modal */}
+      {showSlipModal && selectedSlip && (
+        <SalarySlipModal
+          slip={selectedSlip}
+          employee={selectedSlip.user || { name: selectedSlip.employeeName, employeeId: selectedSlip.employeeId }}
+          onClose={() => setShowSlipModal(false)}
+        />
+      )}
     </div>
   );
 }

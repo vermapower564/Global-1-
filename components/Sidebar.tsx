@@ -79,6 +79,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       title: "OPERATIONS & RECORDS",
       items: [
         { name: "Salary Slips Folder", href: "/admin/salary-slips", icon: IconFolder },
+        { name: "History & Archives Folders", href: "/admin/history", icon: IconFolder },
         { name: "Attendance Ledger", href: ROUTES.ADMIN_ATTENDANCE, icon: IconCalendar },
         { name: "Daily Work Review", href: ROUTES.ADMIN_WORK, icon: IconFileEdit },
         { name: "Client Reviews & NPS", href: ROUTES.ADMIN_REVIEWS, icon: IconStar },

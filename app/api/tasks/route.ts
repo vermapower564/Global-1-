@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get("search") || "";
     const isOverdueParam = searchParams.get("overdue") === "true";
     const isBlockedParam = searchParams.get("blocked") === "true";
+    const dateParam = searchParams.get("date") || ""; // e.g. YYYY-MM-DD
 
     let sql = `
       SELECT 
@@ -57,11 +58,11 @@ export async function GET(request: NextRequest) {
       params.push(assignedToUserId);
     }
 
-    if (status) {
+    if (status && status !== "ALL") {
       sql += ` AND t.status = ?`;
       params.push(status);
     }
-    if (priority) {
+    if (priority && priority !== "ALL") {
       sql += ` AND t.priority = ?`;
       params.push(priority);
     }
@@ -69,9 +70,19 @@ export async function GET(request: NextRequest) {
       sql += ` AND t.status = 'BLOCKED'`;
     }
 
+    if (dateParam && dateParam !== "ALL") {
+      sql += ` AND (
+        DATE(t.dueDate) = ? 
+        OR DATE(t.completedAt) = ? 
+        OR DATE(t.updatedAt) = ?
+        OR (DATE(t.createdAt) <= ? AND (t.status != 'COMPLETED' OR DATE(t.completedAt) >= ?))
+      )`;
+      params.push(dateParam, dateParam, dateParam, dateParam, dateParam);
+    }
+
     if (search) {
-      sql += ` AND (t.title LIKE ? OR t.description LIKE ?)`;
-      params.push(`%${search}%`, `%${search}%`);
+      sql += ` AND (t.title LIKE ? OR t.description LIKE ? OR u.name LIKE ? OR u.employeeId LIKE ?)`;
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
     sql += ` ORDER BY FIELD(t.priority, 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'), t.dueDate ASC`;
@@ -100,22 +111,20 @@ export async function GET(request: NextRequest) {
           employeeId: r.user_employeeId,
           email: r.user_email,
           role: r.user_role,
-          departmentId: r.user_departmentId,
         },
         createdById: r.createdById,
-        createdBy: {
-          id: r.createdById,
+        creator: {
           name: r.creator_name,
           employeeId: r.creator_employeeId,
         },
         status: r.status,
         priority: r.priority,
-        progress: r.progress || 0,
+        progress: r.progress,
         startDate: r.startDate,
         dueDate: r.dueDate,
         completedAt: r.completedAt,
-        estimatedHours: r.estimatedHours || 0,
-        actualHours: r.actualHours || 0,
+        estimatedHours: r.estimatedHours,
+        actualHours: r.actualHours,
         blockerReason: r.blockerReason,
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,
@@ -124,42 +133,25 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    const finalTasks = isOverdueParam ? tasks.filter((t) => t.isOverdue) : tasks;
-
-    const total = finalTasks.length;
-    const inProgress = finalTasks.filter((t) => t.status === "IN_PROGRESS").length;
-    const completed = finalTasks.filter((t) => t.status === "COMPLETED").length;
-    const pending = finalTasks.filter((t) => t.status === "ASSIGNED" || t.status === "BACKLOG").length;
-    const inReview = finalTasks.filter((t) => t.status === "IN_REVIEW").length;
-    const blocked = finalTasks.filter((t) => t.status === "BLOCKED").length;
-    const overdue = finalTasks.filter((t) => t.isOverdue).length;
-
-    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
-
-    let workloadLevel: "LOW" | "NORMAL" | "HIGH" | "OVERLOADED" = "NORMAL";
-    const activeTaskCount = inProgress + pending + blocked + inReview;
-    if (activeTaskCount === 0) workloadLevel = "LOW";
-    else if (activeTaskCount <= 2) workloadLevel = "NORMAL";
-    else if (activeTaskCount <= 4) workloadLevel = "HIGH";
-    else workloadLevel = "OVERLOADED";
+    const summary = {
+      total: tasks.length,
+      pending: tasks.filter((t) => t.status === "ASSIGNED" || t.status === "PENDING" || t.status === "BACKLOG").length,
+      inProgress: tasks.filter((t) => t.status === "IN_PROGRESS").length,
+      inReview: tasks.filter((t) => t.status === "IN_REVIEW").length,
+      blocked: tasks.filter((t) => t.status === "BLOCKED").length,
+      completed: tasks.filter((t) => t.status === "COMPLETED").length,
+      critical: tasks.filter((t) => t.priority === "CRITICAL").length,
+      overdue: tasks.filter((t) => t.isOverdue).length,
+      targetDate: dateParam || null,
+    };
 
     return NextResponse.json({
       success: true,
-      tasks: finalTasks,
-      summary: {
-        total,
-        inProgress,
-        completed,
-        pending,
-        inReview,
-        blocked,
-        overdue,
-        completionRate,
-        workloadLevel,
-      },
+      tasks,
+      summary,
     });
   } catch (error: any) {
-    console.error("Failed to fetch tasks:", error);
+    console.error("GET /api/tasks error:", error);
     return NextResponse.json(
       { success: false, error: error.message || "Failed to fetch tasks." },
       { status: 500 }
@@ -170,94 +162,77 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const authResult = await authenticateRequest(request);
-    if (authResult.response || !authResult.user) {
-      return authResult.response || NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
+    const adminRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "PROJECT_MANAGER", "ADMIN_HR"];
+
+    if (!authResult.user || !adminRoles.includes(authResult.user.role)) {
+      return NextResponse.json({ success: false, error: "Forbidden: Only admins/managers can create tasks." }, { status: 403 });
     }
 
     const body = await request.json();
-    const { title, description, assignedToUserId, priority, dueDate, estimatedHours, projectId } = body;
+    const {
+      title,
+      description,
+      projectId,
+      assignedToUserId,
+      priority = "MEDIUM",
+      dueDate,
+      estimatedHours = 8,
+      startDate,
+    } = body;
 
-    if (!title || !assignedToUserId || !dueDate) {
+    if (!title || !assignedToUserId) {
       return NextResponse.json(
-        { success: false, error: "Task title, assigned employee ID, and due date are required." },
+        { success: false, error: "Task title and assigned employee are required." },
         { status: 400 }
       );
     }
 
-    const taskId = `TSK-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
-    const estHours = estimatedHours ? parseFloat(estimatedHours) : 8.0;
-    const priorityVal = priority || "MEDIUM";
-    const due = new Date(dueDate);
+    const taskId = `TSK-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
 
-    // Insert Task directly into TiDB Cloud
     await queryDb(
       `INSERT INTO task (
         id, title, description, projectId, assignedToUserId, createdById,
-        status, priority, progress, startDate, dueDate, completedAt,
-        estimatedHours, actualHours, blockerReason, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, 'ASSIGNED', ?, 0, NOW(), ?, NULL, ?, 0, NULL, NOW(), NOW())`,
+        status, priority, progress, startDate, dueDate, estimatedHours, actualHours,
+        createdAt, updatedAt
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?,
+        'ASSIGNED', ?, 0, ?, ?, ?, 0,
+        NOW(), NOW()
+      )`,
       [
         taskId,
-        title.trim(),
-        description ? description.trim() : null,
+        title,
+        description || null,
         projectId || null,
         assignedToUserId,
         authResult.user.id,
-        priorityVal,
-        due,
-        estHours,
+        priority,
+        startDate || new Date().toISOString().split("T")[0],
+        dueDate ? new Date(dueDate).toISOString().split("T")[0] : null,
+        parseFloat(estimatedHours) || 8,
       ]
     );
 
-    // Insert TaskHistory record
-    const histId = `HIST-${Date.now()}`;
     await queryDb(
       `INSERT INTO taskhistory (id, taskId, userId, action, oldValue, newValue, description, createdAt)
-       VALUES (?, ?, ?, 'ASSIGNED', NULL, 'ASSIGNED', ?, NOW())`,
+       VALUES (?, ?, ?, 'TASK_CREATED', NULL, 'ASSIGNED', ?, NOW())`,
       [
-        histId,
+        `TH-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
         taskId,
         authResult.user.id,
-        `Task created by ${authResult.user.email} and assigned to user ID ${assignedToUserId} with ${priorityVal} priority`,
+        `Task "${title}" created and assigned by ${(authResult.user as any).name || authResult.user.email}.`,
       ]
     );
 
-    // Invalidate task cache
     clearQueryCache("task");
-
-    // Fetch newly created task with user details for immediate client return
-    const [taskRow] = await queryDb<any[]>(
-      `SELECT t.*, u.name AS user_name, u.employeeId AS user_employeeId, u.email AS user_email
-       FROM task t
-       LEFT JOIN user u ON t.assignedToUserId = u.id
-       WHERE t.id = ?`,
-      [taskId]
-    );
-
-    await logAuditEvent(
-      authResult.user.id,
-      "TASK_CREATED",
-      `Task "${title.trim()}" assigned to employee ${taskRow?.user_name || assignedToUserId}`
-    );
 
     return NextResponse.json({
       success: true,
-      message: "✓ Task created & assigned successfully in TiDB Cloud!",
-      task: {
-        ...taskRow,
-        assignedToUser: {
-          id: taskRow?.assignedToUserId,
-          name: taskRow?.user_name,
-          employeeId: taskRow?.user_employeeId,
-          email: taskRow?.user_email,
-        },
-      },
-    });
+      message: "✓ Task assigned successfully!",
+      taskId,
+    }, { status: 201 });
   } catch (error: any) {
-    console.error("Failed to create task:", error);
-    return NextResponse.json(
-      { success: false, error: error.message || "Failed to create task." },
-      { status: 500 }
-    );
+    console.error("POST /api/tasks error:", error);
+    return NextResponse.json({ success: false, error: "Failed to create task." }, { status: 500 });
   }
 }

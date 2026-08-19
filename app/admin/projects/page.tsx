@@ -37,8 +37,12 @@ export default function AdminProjectsPage() {
       p.teamLeader?.name?.toLowerCase().includes(q);
 
     if (statusFilter === "ALL") return matchesSearch;
-    if (statusFilter === "COMPLETED") return matchesSearch && (p.status === "COMPLETED" || p.metrics?.progressRate === 100);
-    if (statusFilter === "IN_PROGRESS") return matchesSearch && p.status !== "COMPLETED";
+    if (statusFilter === "COMPLETED") {
+      return matchesSearch && (p.status === "COMPLETED" || (p.metrics?.progressRate || 0) >= 100);
+    }
+    if (statusFilter === "IN_PROGRESS") {
+      return matchesSearch && p.status === "IN_PROGRESS" && (p.metrics?.progressRate || 0) < 100;
+    }
     return matchesSearch;
   });
 

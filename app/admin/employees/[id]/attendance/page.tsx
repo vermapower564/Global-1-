@@ -30,7 +30,7 @@ export default function EmployeeAttendanceHistoryPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
 
-    fetch("/api/attendance")
+    fetch(`/api/attendance?employeeId=${encodeURIComponent(employeeId)}`)
       .then((res) => res.json())
       .then((json) => {
         if (json.success && json.data) {
