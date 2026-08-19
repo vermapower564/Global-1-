@@ -16,6 +16,7 @@ export const ROUTES = {
   ADMIN_WORK: "/admin/work",
   ADMIN_REPORTS: "/admin/reports",
   ADMIN_AUDIT_LOGS: "/admin/audit-logs",
+  ADMIN_REVIEWS: "/admin/reviews",
 
   // Centralized Employee Routes
   EMPLOYEE_HOME: "/employee",
@@ -24,6 +25,8 @@ export const ROUTES = {
   EMPLOYEE_WORK: "/employee/work",
   EMPLOYEE_ATTENDANCE: "/employee/attendance",
   EMPLOYEE_PROJECTS: "/employee/projects",
+  EMPLOYEE_REVIEWS: "/employee/reviews",
+  EMPLOYEE_FEEDBACK: "/employee/feedback",
   EMPLOYEE_PROFILE: "/employee/profile",
 } as const;
 

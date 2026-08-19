@@ -9,6 +9,8 @@ async function testBackendApis() {
     { name: "Attendance Ledger", url: "http://127.0.0.1:3000/api/attendance", method: "GET", expectedStatus: [200] },
     { name: "Daily Work Updates", url: "http://127.0.0.1:3000/api/daily-work", method: "GET", expectedStatus: [200] },
     { name: "System Audit Logs", url: "http://127.0.0.1:3000/api/audit-logs", method: "GET", expectedStatus: [200] },
+    { name: "Projects Endpoint", url: "http://127.0.0.1:3000/api/projects", method: "GET", expectedStatus: [200] },
+    { name: "Health Check", url: "http://127.0.0.1:3000/api/health", method: "GET", expectedStatus: [200] },
   ];
 
   let passed = 0;
@@ -31,23 +33,23 @@ async function testBackendApis() {
     }
   }
 
-  // Test Non-Gmail Login Rejection
+  // Test Non-Existent Account Rejection
   try {
-    const yahooRes = await fetch("http://127.0.0.1:3000/api/auth/login", {
+    const unknownRes = await fetch("http://127.0.0.1:3000/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "test@yahoo.com", password: "password123" }),
+      body: JSON.stringify({ identity: "unknown.user999@gmail.com", password: "wrongpassword" }),
     });
-    const yahooJson = await yahooRes.json();
-    if (yahooRes.status === 400 && yahooJson.error?.includes("@gmail.com")) {
-      console.log(`✅ [400] Strict Gmail Validation Test Passed (Rejected test@yahoo.com)`);
+    const unknownJson = await unknownRes.json();
+    if (unknownRes.status === 401 && unknownJson.error === "Invalid email/employee ID or password") {
+      console.log(`✅ [401] Invalid Credentials Test Passed`);
       passed++;
     } else {
-      console.error(`❌ [${yahooRes.status}] Failed Gmail Validation Test for test@yahoo.com`);
+      console.error(`❌ [${unknownRes.status}] Failed Credentials Test for unknown account`);
       failed++;
     }
   } catch (err: any) {
-    console.error(`❌ Non-Gmail Login Test Error: ${err.message}`);
+    console.error(`❌ Login Test Error: ${err.message}`);
     failed++;
   }
 

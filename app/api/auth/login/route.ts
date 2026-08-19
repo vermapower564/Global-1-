@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { comparePassword, generateToken } from "@/lib/authService";
+import { queryDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"];
+const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,29 +33,46 @@ export async function POST(request: NextRequest) {
     const cleanLower = cleanIdentity.toLowerCase();
     const cleanUpper = cleanIdentity.toUpperCase();
 
-    // 3. Query Prisma MySQL User Model (Search by Email OR Employee ID)
-    let dbUser = null;
+    // 3. Query TiDB Database for User (Search by Email OR Employee ID)
+    let dbUser: any = null;
+
     try {
-      dbUser = await prisma.user.findFirst({
-        where: {
-          OR: [
-            { email: { equals: cleanLower } },
-            { employeeId: { equals: cleanIdentity } },
-            { employeeId: { equals: cleanUpper } },
-            { employeeId: { equals: cleanLower } },
-          ],
-        },
-        include: { department: true },
-      });
-    } catch (dbError: any) {
-      console.error("Database connection error during login:", dbError?.message || dbError);
-      return NextResponse.json(
-        { success: false, error: "Unable to connect to the authentication service. Please try again." },
-        { status: 500 }
+      const rows: any = await queryDb(
+        `SELECT u.*, d.name AS departmentName 
+         FROM user u 
+         LEFT JOIN department d ON u.departmentId = d.id 
+         WHERE LOWER(u.email) = ? OR u.employeeId = ? OR u.employeeId = ? OR u.employeeId = ? OR u.id = ?
+         LIMIT 1`,
+        [cleanLower, cleanIdentity, cleanUpper, cleanLower, cleanIdentity]
       );
+
+      if (rows && rows.length > 0) {
+        dbUser = {
+          ...rows[0],
+          department: rows[0].departmentName ? { name: rows[0].departmentName } : null,
+        };
+      }
+    } catch (dbError: any) {
+      console.warn("TiDB login query error, trying Prisma fallback:", dbError?.message);
+      try {
+        const { prisma } = await import("@/lib/prisma");
+        dbUser = await prisma.user.findFirst({
+          where: {
+            OR: [
+              { email: { equals: cleanLower } },
+              { employeeId: { equals: cleanIdentity } },
+              { employeeId: { equals: cleanUpper } },
+              { employeeId: { equals: cleanLower } },
+            ],
+          },
+          include: { department: true },
+        });
+      } catch (prismaError: any) {
+        console.error("Prisma fallback error:", prismaError?.message);
+      }
     }
 
-    // 4. Verify Account Existence (Generic error to prevent user enumeration)
+    // 4. Verify Account Existence
     if (!dbUser) {
       return NextResponse.json(
         { success: false, error: "Invalid email/employee ID or password" },
@@ -85,14 +102,14 @@ export async function POST(request: NextRequest) {
     const isAdmin = ADMIN_ROLES.includes(userRole);
     const redirectTo = isAdmin ? "/admin" : "/employee";
 
-    // 8. Construct Safe Authenticated User Object (Never expose password hash)
+    // 8. Construct Safe Authenticated User Object
     const authenticatedUser = {
       id: dbUser.id,
       employeeId: dbUser.employeeId,
       name: dbUser.name,
       email: dbUser.email,
       role: dbUser.role,
-      department: dbUser.department?.name || "Operations",
+      department: dbUser.department?.name || dbUser.departmentName || "Operations",
     };
 
     // 9. Generate JWT Session Token
@@ -120,23 +137,23 @@ export async function POST(request: NextRequest) {
       maxAge: 7 * 24 * 60 * 60, // 7 Days
     });
 
-    // Async Audit Logging (non-blocking)
-    prisma.auditlog
-      .create({
-        data: {
-          userId: dbUser.id,
-          action: "USER_LOGIN",
-          details: `User ${dbUser.name} (${dbUser.email} / ${dbUser.employeeId}) logged in successfully as ${dbUser.role}`,
-          ipAddress: request.headers.get("x-forwarded-for") || "127.0.0.1",
-        },
-      })
-      .catch(() => {});
+    // Async Audit Logging (non-blocking) on TiDB
+    queryDb(
+      "INSERT INTO auditlog (id, userId, action, details, ipAddress, timestamp) VALUES (?, ?, ?, ?, ?, NOW())",
+      [
+        `AUD-${Date.now()}`,
+        dbUser.id,
+        "USER_LOGIN",
+        `User ${dbUser.name} (${dbUser.email} / ${dbUser.employeeId}) logged in successfully as ${dbUser.role} on TiDB Cloud`,
+        request.headers.get("x-forwarded-for") || "127.0.0.1",
+      ]
+    ).catch(() => {});
 
     return response;
   } catch (error: any) {
     console.error("Login processing error:", error?.message || error);
     return NextResponse.json(
-      { success: false, error: "Unable to connect to the authentication service. Please try again." },
+      { success: false, error: "Unable to process login. Please try again." },
       { status: 500 }
     );
   }

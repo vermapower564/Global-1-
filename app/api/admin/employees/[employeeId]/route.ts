@@ -103,6 +103,7 @@ export async function GET(
           orderBy: { timestamp: "desc" },
           take: 15,
         },
+        bankDetail: true,
       },
     });
 

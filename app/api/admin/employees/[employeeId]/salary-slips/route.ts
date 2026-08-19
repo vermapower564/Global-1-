@@ -43,6 +43,7 @@ export async function GET(
         salary: true,
         paymentScheduleDay: true,
         department: { select: { name: true } },
+        bankDetail: true,
       },
     });
 
@@ -65,14 +66,18 @@ export async function GET(
       );
     }
 
+    const { maskAccountNumber } = await import("@/lib/bankHelper");
+    const userBank = user.bankDetail;
+    const fallbackMaskedAcc = userBank ? maskAccountNumber(userBank.accountNumber) : "••••••••1234";
+
     // 2. Fetch existing salary slips
-    let slips = await prisma.salaryslip.findMany({
+    let rawSlips = await prisma.salaryslip.findMany({
       where: { userId: user.id },
       orderBy: { monthKey: "desc" },
     });
 
     // If no slips exist yet, auto-seed initial realistic monthly slips based on employee salary
-    if (slips.length === 0) {
+    if (rawSlips.length === 0) {
       const baseMonthly = user.salary > 0 ? Math.round(user.salary / 12) : 35000;
       const basic = Math.round(baseMonthly * 0.6);
       const hra = Math.round(baseMonthly * 0.2);
@@ -120,16 +125,28 @@ export async function GET(
             paymentStatus: m.status,
             paymentMethod: "Bank Transfer",
             transactionReference: txnId,
+            accountHolderName: userBank?.accountHolderName || user.name,
+            bankName: userBank?.bankName || "State Bank of India",
+            accountNumberMasked: fallbackMaskedAcc,
+            ifscCode: userBank?.ifscCode || "SBIN0001001",
             notes: "Monthly payroll disbursed via direct bank transfer.",
           },
         });
       }
 
-      slips = await prisma.salaryslip.findMany({
+      rawSlips = await prisma.salaryslip.findMany({
         where: { userId: user.id },
         orderBy: { monthKey: "desc" },
       });
     }
+
+    const slips = rawSlips.map((s) => ({
+      ...s,
+      accountHolderName: s.accountHolderName || userBank?.accountHolderName || user.name,
+      bankName: s.bankName || userBank?.bankName || "Bank Transfer",
+      accountNumberMasked: s.accountNumberMasked || fallbackMaskedAcc,
+      ifscCode: s.ifscCode || userBank?.ifscCode || "SBIN0001001",
+    }));
 
     // 3. Compute Summary Statistics
     const nextPaymentDate = calculateNextPaymentDate(user.paymentScheduleDay || 1);
@@ -240,6 +257,30 @@ export async function POST(
 
     const netSalary = Math.max(0, grossSalary - totalDeductions);
 
+    // 8. PAYROLL SAFETY: Check required bank details
+    const bankDetail = await prisma.bankdetail.findUnique({
+      where: { userId: user.id },
+    });
+
+    if (
+      !bankDetail ||
+      !bankDetail.accountNumber ||
+      !bankDetail.ifscCode ||
+      !bankDetail.accountHolderName ||
+      !bankDetail.bankName
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Bank details incomplete. Please update employee bank information before processing payment.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const { maskAccountNumber } = await import("@/lib/bankHelper");
+    const maskedAcc = maskAccountNumber(bankDetail.accountNumber);
+
     // Upsert to prevent duplicate payment record for the same employee + monthKey
     const slip = await prisma.salaryslip.upsert({
       where: {
@@ -263,8 +304,12 @@ export async function POST(
         netSalary,
         paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
         paymentStatus,
-        paymentMethod,
+        paymentMethod: paymentMethod || "Bank Transfer",
         transactionReference: transactionReference || `TXN-${Math.floor(10000000 + Math.random() * 90000000)}`,
+        accountHolderName: bankDetail.accountHolderName,
+        bankName: bankDetail.bankName,
+        accountNumberMasked: maskedAcc,
+        ifscCode: bankDetail.ifscCode,
         notes,
       },
       create: {
@@ -286,8 +331,12 @@ export async function POST(
         netSalary,
         paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
         paymentStatus,
-        paymentMethod,
+        paymentMethod: paymentMethod || "Bank Transfer",
         transactionReference: transactionReference || `TXN-${Math.floor(10000000 + Math.random() * 90000000)}`,
+        accountHolderName: bankDetail.accountHolderName,
+        bankName: bankDetail.bankName,
+        accountNumberMasked: maskedAcc,
+        ifscCode: bankDetail.ifscCode,
         notes,
       },
     });

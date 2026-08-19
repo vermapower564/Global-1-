@@ -15,6 +15,8 @@ import {
   IconFileText,
   IconSettings,
   IconUserCheck,
+  IconStar,
+  IconAward,
 } from "./Icons";
 import { getCurrentUserContext } from "@/utils/userContextStore";
 import { ROUTES } from "@/lib/routes";
@@ -79,6 +81,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
         { name: "Salary Slips Folder", href: "/admin/salary-slips", icon: IconFolder },
         { name: "Attendance Ledger", href: ROUTES.ADMIN_ATTENDANCE, icon: IconCalendar },
         { name: "Daily Work Review", href: ROUTES.ADMIN_WORK, icon: IconFileEdit },
+        { name: "Client Reviews & NPS", href: ROUTES.ADMIN_REVIEWS, icon: IconStar },
         { name: "Executive Reports", href: ROUTES.ADMIN_REPORTS, icon: IconFileText },
         { name: "Security Audit Logs", href: ROUTES.ADMIN_AUDIT_LOGS, icon: IconHistory },
       ],
@@ -105,6 +108,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     {
       title: "TEAM & INSIGHTS",
       items: [
+        { name: "Client Reviews & Feedback", href: ROUTES.EMPLOYEE_REVIEWS, icon: IconStar },
         { name: "Project Teammates", href: "/employee/team", icon: IconUsers },
         { name: "My Performance", href: "/employee/reports", icon: IconFileText },
       ],

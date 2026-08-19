@@ -4,7 +4,17 @@ import { prisma } from "@/lib/prisma";
 export async function GET() {
   try {
     const payrolls = await prisma.payrollapproval.findMany({
-      include: { user: { select: { name: true, employeeId: true, email: true, role: true } } },
+      include: {
+        user: {
+          select: {
+            name: true,
+            employeeId: true,
+            email: true,
+            role: true,
+            bankDetail: true,
+          },
+        },
+      },
       orderBy: { approvedAt: "desc" },
     });
     return NextResponse.json({ success: true, count: payrolls.length, data: payrolls });
@@ -22,12 +32,27 @@ export async function POST(req: Request) {
     const { userId, employeeName, monthYear, baseSalary, bonus, deductions, bankRefNo } = body;
 
     const userObj = userId
-      ? await prisma.user.findUnique({ where: { id: userId } })
-      : await prisma.user.findFirst();
+      ? await prisma.user.findUnique({ where: { id: userId }, include: { bankDetail: true } })
+      : await prisma.user.findFirst({ include: { bankDetail: true } });
 
     if (!userObj) {
       return NextResponse.json(
         { success: false, error: "Valid employee user is required for payroll approval" },
+        { status: 400 }
+      );
+    }
+
+    if (
+      !userObj.bankDetail ||
+      !userObj.bankDetail.accountNumber ||
+      !userObj.bankDetail.ifscCode ||
+      !userObj.bankDetail.bankName
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Bank details incomplete. Please update employee bank information before processing payment.",
+        },
         { status: 400 }
       );
     }

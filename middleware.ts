@@ -1,22 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"];
+const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
 
 const PUBLIC_PATHS = [
   "/login",
   "/auth/login",
   "/auth/forgot-password",
+  "/auth/forget-password",
   "/auth/reset-password",
   "/auth/verify-otp",
   "/forgot-password",
+  "/forget-password",
   "/reset-password",
   "/verify-otp",
-  "/api/auth/login",
-  "/api/auth/forgot-password",
-  "/api/auth/reset-password",
-  "/api/auth/verify-otp",
-  "/api/auth/logout",
-  "/api/health",
+  "/feedback",
+  "/review",
 ];
 
 function decodeSessionToken(token: string): { id: string; email: string; role: string; exp?: number } | null {
@@ -43,10 +41,10 @@ function decodeSessionToken(token: string): { id: string; email: string; role: s
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // 1. Skip static assets, Next.js internal files, images, favicon
+  // 1. Skip static assets, Next.js internal files, images, favicon, and API routes
   if (
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/api/health") ||
+    pathname.startsWith("/api") ||
     pathname.includes(".") ||
     pathname.startsWith("/favicon.ico")
   ) {
@@ -76,14 +74,8 @@ export function middleware(request: NextRequest) {
   const userRole = (session?.role || "").toUpperCase();
   const isAdmin = ADMIN_ROLES.includes(userRole);
 
-  // 6. Enforce Authentication on Protected Routes (Redirect unauthenticated visitors directly to /login)
+  // 6. Enforce Authentication on Protected Page Routes
   if (!isAuthenticated) {
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json(
-        { success: false, error: "Unauthenticated: Please log in." },
-        { status: 401 }
-      );
-    }
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(loginUrl);
@@ -96,12 +88,6 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/payroll");
 
   if (isAdminRoute && !isAdmin) {
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json(
-        { success: false, error: "Forbidden: Admin role required." },
-        { status: 403 }
-      );
-    }
     return NextResponse.redirect(new URL("/employee", request.url));
   }
 
@@ -110,6 +96,14 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - api routes
+     * - public files with extensions
+     */
+    "/((?!_next/static|_next/image|favicon.ico|api|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

@@ -145,13 +145,15 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
-    const { id, resignationId, status, managerRemarks, hrRemarks } = body;
+    const { id, resignationId, status, managerRemarks, hrRemarks, deleteEmployee, noticePeriodDays } = body;
 
     if (!status) {
       return NextResponse.json({ success: false, error: "Status is required." }, { status: 400 });
     }
 
-    let updatedRecord;
+    let updatedRecord: any = null;
+    let employeeDeleted = false;
+
     try {
       const { prisma } = await import("@/lib/prisma");
       const targetWhere = id ? { id } : { resignationId };
@@ -167,11 +169,25 @@ export async function PUT(request: Request) {
         },
       });
 
-      // Update User isResigned flag if APPROVED or COMPLETED
-      if ((status === "APPROVED" || status === "COMPLETED") && updatedRecord.userId) {
+      // If Admin chooses to delete employee upon accepting resignation
+      if (status === "APPROVED" && deleteEmployee && updatedRecord.userId) {
+        try {
+          await prisma.user.delete({
+            where: { id: updatedRecord.userId },
+          });
+          employeeDeleted = true;
+        } catch (delErr: any) {
+          // If cascading fails, mark as deactivated and resigned
+          await prisma.user.update({
+            where: { id: updatedRecord.userId },
+            data: { isActive: false, isResigned: true },
+          });
+        }
+      } else if ((status === "APPROVED" || status === "COMPLETED") && updatedRecord.userId) {
+        // Update User isResigned flag if APPROVED or COMPLETED
         await prisma.user.update({
           where: { id: updatedRecord.userId },
-          data: { isResigned: true },
+          data: { isResigned: true, isActive: false },
         });
 
         await prisma.auditlog.create({

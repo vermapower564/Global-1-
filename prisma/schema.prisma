@@ -279,6 +279,10 @@ model salaryslip {
   paymentStatus        String    @default("PAID")
   paymentMethod        String    @default("Bank Transfer")
   transactionReference String?
+  accountHolderName    String?
+  bankName             String?
+  accountNumberMasked  String?
+  ifscCode             String?
   notes                String?   @db.Text
   generatedAt          DateTime  @default(now())
   updatedAt            DateTime  @default(now()) @updatedAt
@@ -418,12 +422,14 @@ model user {
   pdfdocument        pdfdocument[]
   payrollapproval    payrollapproval[]
   salaryslips        salaryslip[]
+  bankDetail         bankdetail?
   resignation        resignation[]
   assignedTasks      task[]             @relation("AssignedTasks")
   createdTasks       task[]             @relation("CreatedTasks")
   taskhistory        taskhistory[]
   taskcomment        taskcomment[]
   notification       notification[]
+  customerreviews    customerreview[]
   department         department?        @relation(fields: [departmentId], references: [id], map: "User_departmentId_fkey")
   manager            user?              @relation("ManagerEmployees", fields: [managerId], references: [id], map: "User_managerId_fkey")
   employees          user[]             @relation("ManagerEmployees")
@@ -431,6 +437,23 @@ model user {
 
   @@index([departmentId], map: "User_departmentId_fkey")
   @@index([managerId], map: "User_managerId_fkey")
+}
+
+model bankdetail {
+  id                String   @id @default(cuid())
+  userId            String   @unique(map: "BankDetail_userId_key")
+  accountHolderName String
+  bankName          String
+  accountNumber     String
+  ifscCode          String
+  branchName        String?
+  accountType       String   @default("Savings")
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now()) @updatedAt
+  user              user     @relation(fields: [userId], references: [id], onDelete: Cascade, map: "BankDetail_userId_fkey")
+
+  @@index([userId], map: "BankDetail_userId_fkey")
 }
 
 model task {
@@ -515,6 +538,41 @@ model videoproductionitem {
   status        String   @default("FINAL_APPROVED")
   versionUrl    String
   createdAt     DateTime @default(now())
+}
+
+model customerreview {
+  id                  String   @id @default(cuid())
+  employeeId          String
+  userId              String?
+  employeeName        String
+  projectId           String?
+  projectName         String?
+  customerName        String
+  customerEmail       String
+  customerCompany     String?
+  customerRole        String?
+  rating              Int      @default(5)
+  communicationRating Int      @default(5)
+  codeQualityRating   Int      @default(5)
+  timelinessRating    Int      @default(5)
+  reviewTitle         String
+  feedbackText        String   @db.Text
+  highlights          String?
+  serviceCategory     String   @default("Engineering")
+  status              String   @default("PUBLISHED")
+  shareableToken      String?
+  verifiedByClient    Boolean  @default(true)
+  clientAvatar        String?
+  responseComment     String?  @db.Text
+  respondedAt         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @default(now()) @updatedAt
+  user                user?    @relation(fields: [userId], references: [id], map: "CustomerReview_userId_fkey")
+
+  @@index([employeeId], map: "idx_customerreview_employeeId")
+  @@index([userId], map: "idx_customerreview_userId")
+  @@index([rating], map: "idx_customerreview_rating")
+  @@index([status], map: "idx_customerreview_status")
 }
 
 enum user_role {

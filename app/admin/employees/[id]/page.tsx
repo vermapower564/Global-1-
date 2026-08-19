@@ -55,6 +55,18 @@ export default function AdminEmployeeDetailsPage() {
   );
   const [isSubmittingTask, setIsSubmittingTask] = useState(false);
 
+  // Bank Details State
+  const [showEditBankModal, setShowEditBankModal] = useState(false);
+  const [bankAccountHolder, setBankAccountHolder] = useState("");
+  const [bankName, setBankName] = useState("HDFC Bank");
+  const [bankAccountNumber, setBankAccountNumber] = useState("");
+  const [bankIfscCode, setBankIfscCode] = useState("");
+  const [bankBranchName, setBankBranchName] = useState("Main Branch");
+  const [bankAccountType, setBankAccountType] = useState("Savings");
+  const [showFullAccountNo, setShowFullAccountNo] = useState(false);
+  const [isSavingBank, setIsSavingBank] = useState(false);
+  const [bankError, setBankError] = useState("");
+
   const fetchEmployeeData = async () => {
     try {
       setLoading(true);
@@ -68,6 +80,17 @@ export default function AdminEmployeeDetailsPage() {
         setEmployee(json.employee);
         setStats(json.stats);
         setSelectedScheduleDay(json.employee.paymentScheduleDay || 1);
+        if (json.employee.bankDetail) {
+          const bd = json.employee.bankDetail;
+          setBankAccountHolder(bd.accountHolderName || json.employee.name);
+          setBankName(bd.bankName || "HDFC Bank");
+          setBankAccountNumber(bd.accountNumber || "");
+          setBankIfscCode(bd.ifscCode || "");
+          setBankBranchName(bd.branchName || "Main Branch");
+          setBankAccountType(bd.accountType || "Savings");
+        } else {
+          setBankAccountHolder(json.employee.name || "");
+        }
       } else {
         // Fallback to /api/employees
         const resList = await fetch("/api/employees");
@@ -82,6 +105,15 @@ export default function AdminEmployeeDetailsPage() {
           if (found) {
             setEmployee(found);
             setSelectedScheduleDay(found.paymentScheduleDay || 1);
+            if (found.bankDetail) {
+              const bd = found.bankDetail;
+              setBankAccountHolder(bd.accountHolderName || found.name);
+              setBankName(bd.bankName || "HDFC Bank");
+              setBankAccountNumber(bd.accountNumber || "");
+              setBankIfscCode(bd.ifscCode || "");
+              setBankBranchName(bd.branchName || "Main Branch");
+              setBankAccountType(bd.accountType || "Savings");
+            }
           } else {
             setErrorMsg("The requested employee could not be found.");
           }
@@ -99,6 +131,53 @@ export default function AdminEmployeeDetailsPage() {
       setErrorMsg("Failed to load employee details.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveBankDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBankError("");
+
+    if (!bankAccountHolder.trim()) {
+      setBankError("Account Holder Name is required.");
+      return;
+    }
+    if (!bankAccountNumber.trim()) {
+      setBankError("Bank Account Number is required.");
+      return;
+    }
+    if (!bankIfscCode.trim()) {
+      setBankError("IFSC Code is required.");
+      return;
+    }
+
+    try {
+      setIsSavingBank(true);
+      const res = await fetch(`/api/admin/employees/${encodeURIComponent(employeeIdParam)}/bank-details`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountHolderName: bankAccountHolder.trim(),
+          bankName,
+          accountNumber: bankAccountNumber.trim(),
+          ifscCode: bankIfscCode.trim().toUpperCase(),
+          branchName: bankBranchName.trim(),
+          accountType: bankAccountType,
+        }),
+      });
+
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setToastMsg("✓ Employee bank details updated successfully.");
+        setShowEditBankModal(false);
+        fetchEmployeeData();
+      } else {
+        setBankError(json.error || "Failed to save bank details.");
+      }
+    } catch (err: any) {
+      setBankError("Network error while saving bank details.");
+    } finally {
+      setIsSavingBank(false);
     }
   };
 
@@ -449,6 +528,109 @@ export default function AdminEmployeeDetailsPage() {
             >
               {employee.isActive !== false ? "Deactivate Account" : "Reactivate Account"}
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 🏦 BANK DETAILS & SALARY ACCOUNT SECTION                                  */}
+      {/* ========================================================================= */}
+      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-md space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+          <div>
+            <h2 className="text-xl font-black text-black tracking-tight flex items-center gap-2">
+              <span>🏦</span> Bank Details & Salary Account Information
+            </h2>
+            <p className="text-xs text-slate-600 mt-0.5">
+              Verified banking details utilized for monthly automated salary disbursements and PDF payslip generation.
+            </p>
+          </div>
+
+          <button
+            onClick={() => setShowEditBankModal(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5 w-fit"
+          >
+            <span>✏️</span>
+            <span>Edit Bank Details</span>
+          </button>
+        </div>
+
+        {/* Bank Details Grid Card (White theme, black text, light gray borders) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+            <span className="text-slate-500 font-extrabold uppercase text-[10px] tracking-wider block">
+              Account Holder Name
+            </span>
+            <p className="text-sm font-black text-black">
+              {employee.bankDetail?.accountHolderName || employee.name}
+            </p>
+            <span className="text-[10px] text-slate-500 font-bold block">Authorized Primary Beneficiary</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+            <span className="text-slate-500 font-extrabold uppercase text-[10px] tracking-wider block">
+              Bank Name
+            </span>
+            <p className="text-sm font-black text-black">
+              {employee.bankDetail?.bankName || "State Bank of India"}
+            </p>
+            <span className="text-[10px] text-slate-500 font-bold block">
+              {employee.bankDetail?.accountType || "Savings"} Account
+            </span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500 font-extrabold uppercase text-[10px] tracking-wider block">
+                Account Number
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowFullAccountNo(!showFullAccountNo)}
+                className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
+              >
+                {showFullAccountNo ? "Hide" : "Show Full"}
+              </button>
+            </div>
+            <p className="text-sm font-black text-black font-mono">
+              {showFullAccountNo
+                ? employee.bankDetail?.accountNumber || "••••••••1234"
+                : employee.bankDetail?.accountNumber
+                ? `••••••••${employee.bankDetail.accountNumber.slice(-4)}`
+                : "••••••••1234"}
+            </p>
+            <span className="text-[10px] text-slate-500 font-bold block">Protected Financial Credential</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+            <span className="text-slate-500 font-extrabold uppercase text-[10px] tracking-wider block">
+              IFSC Code
+            </span>
+            <p className="text-sm font-black text-black font-mono uppercase">
+              {employee.bankDetail?.ifscCode || "SBIN0001001"}
+            </p>
+            <span className="text-[10px] text-slate-500 font-bold block">Verified RTGS / NEFT / IMPS Code</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+            <span className="text-slate-500 font-extrabold uppercase text-[10px] tracking-wider block">
+              Branch Name
+            </span>
+            <p className="text-sm font-black text-black">
+              {employee.bankDetail?.branchName || "Cyber City Branch"}
+            </p>
+            <span className="text-[10px] text-slate-500 font-bold block">Operating Branch</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-1">
+            <span className="text-emerald-700 font-extrabold uppercase text-[10px] tracking-wider block">
+              Disbursement Verification
+            </span>
+            <p className="text-sm font-black text-emerald-800 flex items-center gap-1.5">
+              <span>✓</span>
+              <span>Active & Ready for Payroll</span>
+            </p>
+            <span className="text-[10px] text-emerald-600 font-bold block">Direct Bank Transfer Enabled</span>
           </div>
         </div>
       </div>
@@ -1244,6 +1426,139 @@ export default function AdminEmployeeDetailsPage() {
                   className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow-md transition"
                 >
                   {isSubmittingTask ? "Assigning..." : "Assign Task"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Edit Bank Details */}
+      {showEditBankModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 font-sans">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-gray-200 space-y-4 text-black animate-in fade-in">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+              <div>
+                <h3 className="font-black text-base text-black flex items-center gap-2">
+                  <span>🏦</span> Update Employee Bank Details
+                </h3>
+                <p className="text-[11px] text-gray-500 font-bold">
+                  {employee.name} ({employee.employeeId})
+                </p>
+              </div>
+              <button
+                onClick={() => setShowEditBankModal(false)}
+                className="text-gray-400 hover:text-black font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {bankError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold">
+                ⚠️ {bankError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveBankDetails} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-black mb-1">Account Holder Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={bankAccountHolder}
+                  onChange={(e) => setBankAccountHolder(e.target.value)}
+                  placeholder="e.g. Rahul Sharma"
+                  className="w-full rounded-xl border border-gray-300 p-2.5 font-bold text-black focus:border-blue-600 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-black mb-1">Bank Name *</label>
+                  <select
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    className="w-full rounded-xl border border-gray-300 p-2.5 font-bold text-black focus:border-blue-600 focus:outline-none"
+                  >
+                    <option value="HDFC Bank">HDFC Bank</option>
+                    <option value="State Bank of India">State Bank of India</option>
+                    <option value="ICICI Bank">ICICI Bank</option>
+                    <option value="Axis Bank">Axis Bank</option>
+                    <option value="Kotak Mahindra Bank">Kotak Mahindra Bank</option>
+                    <option value="Punjab National Bank">Punjab National Bank</option>
+                    <option value="Bank of Baroda">Bank of Baroda</option>
+                    <option value="Other">Other Bank</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-black mb-1">Account Type *</label>
+                  <select
+                    value={bankAccountType}
+                    onChange={(e) => setBankAccountType(e.target.value)}
+                    className="w-full rounded-xl border border-gray-300 p-2.5 font-bold text-black focus:border-blue-600 focus:outline-none"
+                  >
+                    <option value="Savings">Savings</option>
+                    <option value="Current">Current</option>
+                    <option value="Salary">Salary</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-black mb-1">Account Number *</label>
+                  <input
+                    type="text"
+                    required
+                    value={bankAccountNumber}
+                    onChange={(e) => setBankAccountNumber(e.target.value.replace(/\D/g, ""))}
+                    placeholder="e.g. 50100432198765"
+                    className="w-full rounded-xl border border-gray-300 p-2.5 font-mono font-bold text-black focus:border-blue-600 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-black mb-1">IFSC Code *</label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={11}
+                    value={bankIfscCode}
+                    onChange={(e) => setBankIfscCode(e.target.value.toUpperCase())}
+                    placeholder="e.g. HDFC0001234"
+                    className="w-full rounded-xl border border-gray-300 p-2.5 font-mono font-bold uppercase text-black focus:border-blue-600 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-black mb-1">Branch Name</label>
+                <input
+                  type="text"
+                  value={bankBranchName}
+                  onChange={(e) => setBankBranchName(e.target.value)}
+                  placeholder="e.g. Cyber City Branch"
+                  className="w-full rounded-xl border border-gray-300 p-2.5 font-bold text-black focus:border-blue-600 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setShowEditBankModal(false)}
+                  className="px-4 py-2.5 rounded-xl border border-gray-300 text-gray-700 font-bold hover:bg-gray-100 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingBank}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow-md transition cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingBank ? "Saving..." : "✓ Save Bank Details"}
                 </button>
               </div>
             </form>

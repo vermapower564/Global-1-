@@ -16,6 +16,10 @@ export async function GET(request: Request) {
         department: true,
         assignedTasks: true,
         project: { select: { id: true, projectTitle: true } },
+        bankDetail: true,
+        customerreviews: {
+          orderBy: { createdAt: "desc" },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -86,7 +90,23 @@ export async function POST(request: Request) {
     if (authResult.response) return authResult.response;
 
     const body = await request.json();
-    const { name, email, department, role, salary, phone, id, password, isActive } = body;
+    const {
+      name,
+      email,
+      department,
+      role,
+      salary,
+      phone,
+      id,
+      password,
+      isActive,
+      accountHolderName,
+      bankName,
+      accountNumber,
+      ifscCode,
+      branchName,
+      accountType,
+    } = body;
 
     if (!name || !email) {
       return NextResponse.json(
@@ -102,6 +122,20 @@ export async function POST(request: Request) {
         { success: false, error: emailValidation.error || "Only Gmail addresses ending with @gmail.com are allowed." },
         { status: 400 }
       );
+    }
+
+    // Validate Bank Details if provided
+    if (bankName || accountNumber || ifscCode) {
+      const { validateBankDetails } = await import("@/lib/bankHelper");
+      const bankValidation = validateBankDetails({
+        accountHolderName: accountHolderName || name,
+        bankName,
+        accountNumber,
+        ifscCode,
+      });
+      if (!bankValidation.isValid) {
+        return NextResponse.json({ success: false, error: bankValidation.error }, { status: 400 });
+      }
     }
 
     const cleanGmail = emailValidation.normalizedEmail;
@@ -148,6 +182,30 @@ export async function POST(request: Request) {
           data: updateData,
         });
 
+        // Upsert Bank Details if provided
+        if (bankName && accountNumber && ifscCode) {
+          await prisma.bankdetail.upsert({
+            where: { userId: existingUser.id },
+            update: {
+              accountHolderName: accountHolderName?.trim() || name,
+              bankName: bankName.trim(),
+              accountNumber: accountNumber.trim().replace(/\s+/g, ""),
+              ifscCode: ifscCode.trim().toUpperCase(),
+              branchName: branchName?.trim() || "Main Branch",
+              accountType: accountType || "Savings",
+            },
+            create: {
+              userId: existingUser.id,
+              accountHolderName: accountHolderName?.trim() || name,
+              bankName: bankName.trim(),
+              accountNumber: accountNumber.trim().replace(/\s+/g, ""),
+              ifscCode: ifscCode.trim().toUpperCase(),
+              branchName: branchName?.trim() || "Main Branch",
+              accountType: accountType || "Savings",
+            },
+          });
+        }
+
         await logAuditEvent(
           authResult.user?.id || null,
           "EMPLOYEE_UPDATE",
@@ -169,6 +227,20 @@ export async function POST(request: Request) {
             isActive: isActive !== undefined ? Boolean(isActive) : true,
             isProfileCompleted: true,
             documentsVerified: true,
+            ...(bankName && accountNumber && ifscCode
+              ? {
+                  bankDetail: {
+                    create: {
+                      accountHolderName: accountHolderName?.trim() || name,
+                      bankName: bankName.trim(),
+                      accountNumber: accountNumber.trim().replace(/\s+/g, ""),
+                      ifscCode: ifscCode.trim().toUpperCase(),
+                      branchName: branchName?.trim() || "Main Branch",
+                      accountType: accountType || "Savings",
+                    },
+                  },
+                }
+              : {}),
           },
         });
 
