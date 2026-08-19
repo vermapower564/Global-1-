@@ -14,7 +14,7 @@ const queryCache = new Map<string, { data: any; expiresAt: number }>();
 export function getDbConfig() {
   const rawUrl =
     process.env.DATABASE_URL ||
-    "mysql://4BrXAABTf5SQeKq.root:nGi46nlizXdJsS0a@gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/oms?sslaccept=strict";
+    "mysql://4BrXAABTf5SQeKq.root:oF5rWQth8eQANTqp@gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/oms?sslaccept=strict";
 
   try {
     const url = new URL(rawUrl);
@@ -24,7 +24,7 @@ export function getDbConfig() {
       host: url.hostname || "gateway01.ap-southeast-1.prod.aws.tidbcloud.com",
       port: url.port ? parseInt(url.port, 10) : 4000,
       user: decodeURIComponent(url.username || "4BrXAABTf5SQeKq.root"),
-      password: decodeURIComponent(url.password || "nGi46nlizXdJsS0a"),
+      password: decodeURIComponent(url.password || "oF5rWQth8eQANTqp"),
       database: url.pathname.replace(/^\//, "") || "oms",
       waitForConnections: true,
       connectionLimit: 25,
@@ -45,7 +45,7 @@ export function getDbConfig() {
       host: "gateway01.ap-southeast-1.prod.aws.tidbcloud.com",
       port: 4000,
       user: "4BrXAABTf5SQeKq.root",
-      password: "nGi46nlizXdJsS0a",
+      password: "oF5rWQth8eQANTqp",
       database: "oms",
       waitForConnections: true,
       connectionLimit: 25,
@@ -81,6 +81,7 @@ export function clearQueryCache(prefix?: string) {
     }
   }
 }
+export const invalidateDbCache = clearQueryCache;
 
 export async function queryDb<T = any>(sql: string, params: any[] = []): Promise<T> {
   const p = getDbPool();
