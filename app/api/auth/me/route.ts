@@ -87,6 +87,7 @@ export async function GET(req: NextRequest) {
 
     const response = NextResponse.json({
       success: true,
+      authenticated: true,
       user: {
         id: dbUser.id,
         employeeId: dbUser.employeeId || "EMP-001",
