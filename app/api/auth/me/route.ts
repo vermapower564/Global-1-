@@ -40,9 +40,9 @@ export async function GET(req: NextRequest) {
         `SELECT u.*, d.name AS departmentName, d.code AS departmentCode 
          FROM user u 
          LEFT JOIN department d ON u.departmentId = d.id 
-         WHERE u.id = ? OR u.email = ? 
+         WHERE u.id = ? OR u.employeeId = ? OR u.email = ? 
          LIMIT 1`,
-        [decoded.id, decoded.email || decoded.id],
+        [decoded.id, decoded.id, decoded.email || decoded.id],
         15
       );
 
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
       console.warn("TiDB auth validation error:", dbErr.message);
     }
 
-    if (!dbUser || !dbUser.isActive) {
+    if (!dbUser || dbUser.isActive === false || dbUser.isActive === 0) {
       return NextResponse.json(
         { success: false, error: "Unauthorized: Account is inactive or non-existent." },
         { status: 401 }

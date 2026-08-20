@@ -419,6 +419,7 @@ export default function AdminSalarySlipsFolderPage() {
       {/* Salary Slip Print Modal */}
       {showSlipModal && selectedSlip && (
         <SalarySlipModal
+          isOpen={showSlipModal}
           slip={selectedSlip}
           employee={selectedSlip.user || { name: selectedSlip.employeeName, employeeId: selectedSlip.employeeId }}
           onClose={() => setShowSlipModal(false)}

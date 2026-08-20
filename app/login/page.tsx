@@ -27,7 +27,7 @@ function LoginForm() {
     setSuccessMessage("");
 
     if (!identity.trim()) {
-      setErrorMessage("Please enter your Email or Employee ID.");
+      setErrorMessage("Please enter your User ID or Email.");
       setLoading(false);
       return;
     }
@@ -78,9 +78,9 @@ function LoginForm() {
 
         setTimeout(() => {
           window.location.href = destination;
-        }, 200);
+        }, 150);
       } else {
-        setErrorMessage(data.error || "Invalid email/employee ID or password");
+        setErrorMessage(data.error || "Invalid ID or Password");
       }
     } catch (err: any) {
       setErrorMessage("Unable to connect to the authentication service. Please try again.");
@@ -98,7 +98,7 @@ function LoginForm() {
             O
           </div>
           <h1 className="text-2xl font-black text-black tracking-tight">OMS</h1>
-          <p className="text-xs text-gray-500 mt-1 font-medium">Enterprise Portal Login</p>
+          <p className="text-xs text-gray-500 mt-1 font-medium">Enterprise Operations Management</p>
         </div>
 
         {errorMessage && (
@@ -116,14 +116,14 @@ function LoginForm() {
         <form onSubmit={handleLoginSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-black mb-1.5">
-              Email / Employee ID
+              User ID / Employee ID / Email
             </label>
             <input
               type="text"
               required
               value={identity}
               onChange={(e) => setIdentity(e.target.value)}
-              placeholder="Enter email or employee ID"
+              placeholder="Enter User ID, Employee ID or Email"
               className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-xs font-mono font-bold text-black focus:border-blue-600 focus:outline-none transition shadow-2xs"
             />
           </div>
@@ -173,8 +173,44 @@ function LoginForm() {
           </button>
         </form>
 
-        <div className="pt-3 border-t border-gray-100 text-center text-[11px] text-gray-500 font-medium">
-          Secure Role-Based Authentication
+        {/* ⚡ Quick Fill / 1-Click Demo Logins */}
+        <div className="pt-4 border-t border-gray-100 space-y-2">
+          <p className="text-[11px] font-extrabold uppercase tracking-wider text-gray-500 text-center">
+            Quick 1-Click Fill
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setIdentity("EMP-8595");
+                setPassword("Roushan@123");
+              }}
+              className="p-2.5 rounded-xl border border-blue-200 bg-blue-50/50 hover:bg-blue-100/60 text-left transition cursor-pointer group"
+            >
+              <span className="text-[11px] font-black text-blue-900 block flex items-center gap-1">
+                👑 Super Admin
+              </span>
+              <span className="text-[10px] text-gray-500 font-mono block">EMP-8595</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIdentity("EMP014");
+                setPassword("Roushan@123");
+              }}
+              className="p-2.5 rounded-xl border border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/60 text-left transition cursor-pointer group"
+            >
+              <span className="text-[11px] font-black text-emerald-900 block flex items-center gap-1">
+                👤 Employee
+              </span>
+              <span className="text-[10px] text-gray-500 font-mono block">EMP014</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="pt-2 text-center text-[10px] text-gray-400 font-medium">
+          Default Password: <span className="font-mono font-bold text-gray-600">Roushan@123</span>
         </div>
       </div>
     </div>

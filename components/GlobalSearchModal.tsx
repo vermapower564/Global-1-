@@ -148,24 +148,34 @@ export default function GlobalSearchModal({ isOpen, onClose }: GlobalSearchModal
               {/* Teammates Section */}
               {filteredEmployees.length > 0 && (
                 <div className="space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 px-2 block">Team Directory ({filteredEmployees.length})</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 px-2 block">Team Directory & Work ({filteredEmployees.length})</span>
                   <div className="space-y-1">
                     {filteredEmployees.map((e) => (
                       <div
                         key={e.id}
                         onClick={() => {
                           onClose();
-                          router.push("/employee/team");
+                          router.push(`/admin/employees/${encodeURIComponent(e.employeeId || e.id)}`);
                         }}
-                        className="p-3 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 cursor-pointer flex justify-between items-center transition"
+                        className="p-3 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 cursor-pointer flex justify-between items-center transition group"
                       >
-                        <div>
-                          <p className="text-xs font-black text-slate-900 dark:text-white">{e.name}</p>
-                          <p className="text-[11px] text-slate-400">{e.employeeId || e.id} • {e.email}</p>
+                        <div className="flex items-center gap-3">
+                          <div className="h-8 w-8 rounded-lg bg-blue-600 text-white font-black text-xs flex items-center justify-center">
+                            {e.name ? e.name.charAt(0).toUpperCase() : "E"}
+                          </div>
+                          <div>
+                            <p className="text-xs font-black text-slate-900 dark:text-white group-hover:text-blue-600 transition">{e.name}</p>
+                            <p className="text-[11px] text-slate-400">{e.employeeId || e.id} • {e.email}</p>
+                          </div>
                         </div>
-                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
-                          {e.role || "ENGINEER"}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                            {e.role || "ENGINEER"}
+                          </span>
+                          <span className="text-[10px] font-bold text-blue-600 group-hover:underline">
+                            Inspect Work →
+                          </span>
+                        </div>
                       </div>
                     ))}
                   </div>

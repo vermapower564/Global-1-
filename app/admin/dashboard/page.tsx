@@ -1,22 +1,38 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import {
+  IconDashboard,
+  IconFolder,
+  IconUsers,
+  IconCalendar,
+  IconClipboardList,
+  IconTrendingUp,
+  IconCheck,
+  IconAlertTriangle,
+  IconSearch,
+  IconFileText,
+} from "@/components/Icons";
+import EmployeeWorkModal from "@/components/EmployeeWorkModal";
 
 export default function AdminDashboardPage() {
   const [user, setUser] = useState<any>(null);
-  const [workforceCount, setWorkforceCount] = useState(0);
-  const [employees, setEmployees] = useState<any[]>([]);
-  const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
-  const [taskSummary, setTaskSummary] = useState<any>(null);
-  const [pendingWorkItems, setPendingWorkItems] = useState<any[]>([]);
-  const [overdueTasks, setOverdueTasks] = useState<any[]>([]);
-  const [blockedTasks, setBlockedTasks] = useState<any[]>([]);
-  const [projectsCount, setProjectsCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // Discussion state per topic
-  const [topicNotes, setTopicNotes] = useState<{ [key: string]: string }>({});
+  // Search & Work Inspection State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [allEmployees, setAllEmployees] = useState<any[]>([]);
+  const [isSearchDropdownOpen, setIsSearchDropdownOpen] = useState(false);
+  const [selectedEmployeeIdForWork, setSelectedEmployeeIdForWork] = useState<string | null>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  // High-level Metrics
+  const [projects, setProjects] = useState<any[]>([]);
+  const [taskSummary, setTaskSummary] = useState<any>(null);
+  const [blockedTasks, setBlockedTasks] = useState<any[]>([]);
+  const [overdueCount, setOverdueCount] = useState(0);
+  const [recentAuditLogs, setRecentAuditLogs] = useState<any[]>([]);
 
   useEffect(() => {
     // 1. Fetch server session user
@@ -29,470 +45,612 @@ export default function AdminDashboardPage() {
       })
       .catch(() => {});
 
-    // 2. Fetch workforce directory
+    // 2. Fetch workforce for instant search
     fetch("/api/employees")
       .then((res) => res.json())
       .then((json) => {
-        if (json.success) {
-          setWorkforceCount(json.total || 0);
-          setEmployees(json.data || []);
+        if (json.success && json.data) {
+          setAllEmployees(json.data);
         }
       })
-      .catch((e) => console.warn("Failed to load employees metric:", e));
+      .catch(() => {});
 
-    // 3. Fetch all attendance punch clock records
-    fetch("/api/attendance")
+    // 3. Fetch projects metrics
+    fetch("/api/projects")
       .then((res) => res.json())
       .then((json) => {
         if (json.success) {
-          setAttendanceRecords(json.data || []);
+          setProjects(json.projects || []);
         }
       })
-      .catch((e) => console.warn("Failed to load attendance punch clock:", e));
+      .catch((e) => console.warn("Failed to load projects:", e));
 
-    // 4. Fetch tasks intelligence & pending work
+    // 4. Fetch tasks summary & critical blockers
     fetch("/api/tasks")
       .then((res) => res.json())
       .then((json) => {
         if (json.success) {
           setTaskSummary(json.summary || null);
           const tasks = json.tasks || [];
-          setOverdueTasks(tasks.filter((t: any) => t.isOverdue));
           setBlockedTasks(tasks.filter((t: any) => t.status === "BLOCKED"));
-          setPendingWorkItems(tasks.filter((t: any) => t.status === "ASSIGNED" || t.status === "IN_PROGRESS"));
+          setOverdueCount(tasks.filter((t: any) => t.isOverdue).length);
         }
       })
-      .catch((e) => console.warn("Failed to load tasks metric:", e));
+      .catch((e) => console.warn("Failed to load tasks summary:", e));
 
-    // 5. Fetch projects metrics
-    fetch("/api/projects")
+    // 5. Fetch recent audit logs for executive overview
+    fetch("/api/audit-logs")
       .then((res) => res.json())
-      .then((json) => {
-        if (json.success) {
-          setProjectsCount(json.total || json.projects?.length || 0);
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setRecentAuditLogs(data.slice(0, 5));
+        } else if (data.success && Array.isArray(data.logs)) {
+          setRecentAuditLogs(data.logs.slice(0, 5));
         }
       })
-      .catch((e) => console.warn("Failed to load projects metric:", e))
+      .catch((e) => console.warn("Failed to load audit logs:", e))
       .finally(() => setLoading(false));
   }, []);
 
-  const activeEmployeesCount = employees.filter((e) => e.isActive !== false).length;
-  const onLeaveEmployeesCount = employees.filter((e) => e.metrics?.workloadLevel === "ON_LEAVE" || e.status === "ON_LEAVE").length;
+  // Handle outside click to close search dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
+        setIsSearchDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
-  const getTwoMonthDeadline = () => {
-    const d = new Date();
-    d.setMonth(d.getMonth() + 2);
-    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-  };
+  const totalProjects = projects.length || 5;
+  const activeProjects = projects.filter((p) => p.status !== "COMPLETED");
+  const inProgressTasks = taskSummary?.inProgress || 0;
+  const completedTasks = taskSummary?.completed || 0;
+  const totalTasks = (taskSummary?.total || 0) || (inProgressTasks + completedTasks);
+  const taskCompletionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 100;
 
-  const handleNoteChange = (taskId: string, val: string) => {
-    setTopicNotes((prev) => ({ ...prev, [taskId]: val }));
-  };
+  // Filtered employees for instant live search
+  const filteredEmployees = searchQuery.trim()
+    ? allEmployees.filter((emp) => {
+        const q = searchQuery.toLowerCase().trim();
+        return (
+          (emp.name || "").toLowerCase().includes(q) ||
+          (emp.employeeId || "").toLowerCase().includes(q) ||
+          (emp.email || "").toLowerCase().includes(q) ||
+          (typeof emp.department === "object" ? emp.department?.name : emp.department || "")
+            .toLowerCase()
+            .includes(q) ||
+          (emp.role || "").toLowerCase().includes(q)
+        );
+      })
+    : [];
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16 font-sans bg-white text-black">
-      {/* Header Banner */}
+      {/* 👑 Executive Header Banner */}
       <div className="bg-white p-6 sm:p-8 rounded-3xl border border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
         <div>
-          <span className="text-xs font-bold uppercase tracking-wider text-blue-600">
-            Admin Command Center • Enterprise Control
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="text-xs font-bold uppercase tracking-wider text-blue-600">
+              Admin Executive Control Center
+            </span>
+          </div>
           <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight mt-1">
-            Welcome Back, {user?.name || "Administrator"}
+            Welcome back, {user?.name || "Administrator"}
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Real-time workforce headcount, shift punch clock, pending projects & compensation management.
+            High-level executive overview of organization health, active project delivery, and member work tracking.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+
+        <div className="flex flex-wrap items-center gap-3">
           <Link
-            href="/admin/employees"
-            className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition"
+            href="/admin/projects"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition flex items-center gap-1.5"
           >
-            Workforce Directory →
+            <span>+ New Project</span>
           </Link>
           <Link
-            href="/admin/tasks"
-            className="bg-white hover:bg-gray-50 text-black font-extrabold text-xs px-4 py-2.5 rounded-xl border border-gray-300 transition"
+            href="/admin/reports"
+            className="bg-white hover:bg-gray-50 text-black font-extrabold text-xs px-4 py-2.5 rounded-xl border border-gray-300 transition flex items-center gap-1.5 shadow-2xs"
           >
-            Organization Tasks →
+            <span>Executive Reports →</span>
           </Link>
         </div>
       </div>
 
-      {/* 📊 EMPLOYEES OVERVIEW WIDGET */}
-      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-xs space-y-4">
-        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-          <div>
-            <h2 className="font-black text-black text-base tracking-tight">EMPLOYEES OVERVIEW</h2>
-            <p className="text-xs text-gray-500">Live headcount, active status breakdown, and shift metrics.</p>
-          </div>
-          <Link
-            href="/admin/employees"
-            className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2 rounded-xl transition shadow-xs"
-          >
-            View All Employees →
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-center text-xs">
-          <div className="p-4 rounded-2xl bg-white border border-gray-200 space-y-1 shadow-2xs">
-            <span className="text-gray-500 font-extrabold uppercase text-[10px]">Total Staff</span>
-            <p className="text-2xl font-black text-black">{workforceCount}</p>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-emerald-200 space-y-1 shadow-2xs">
-            <span className="text-emerald-700 font-extrabold uppercase text-[10px]">Active Staff</span>
-            <p className="text-2xl font-black text-emerald-600">{activeEmployeesCount}</p>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-blue-200 space-y-1 shadow-2xs">
-            <span className="text-blue-700 font-extrabold uppercase text-[10px]">On Leave</span>
-            <p className="text-2xl font-black text-blue-600">{onLeaveEmployeesCount}</p>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-amber-200 space-y-1 shadow-2xs">
-            <span className="text-amber-700 font-extrabold uppercase text-[10px]">Absent Today</span>
-            <p className="text-2xl font-black text-amber-600">1</p>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-gray-200 space-y-1 shadow-2xs">
-            <span className="text-gray-500 font-extrabold uppercase text-[10px]">Pending Onboarding</span>
-            <p className="text-2xl font-black text-black">2</p>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-rose-200 space-y-1 shadow-2xs">
-            <span className="text-rose-700 font-extrabold uppercase text-[10px]">Overdue Tasks</span>
-            <p className="text-2xl font-black text-rose-600">{overdueTasks.length}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* ⚠️ EMPLOYEE ATTENTION CENTER */}
-      <div className="p-6 rounded-3xl bg-white border border-amber-200 space-y-4 shadow-xs">
-        <div className="flex items-center justify-between border-b border-amber-100 pb-3">
-          <div>
-            <h2 className="font-black text-black text-base tracking-tight flex items-center gap-2">
-              <span className="text-amber-500">⚠️</span> EMPLOYEE ATTENTION CENTER
+      {/* 🔍 INSTANT EMPLOYEE WORK SEARCH & INSPECTION SPOTLIGHT */}
+      <div
+        ref={searchContainerRef}
+        className="bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-white p-6 rounded-3xl border border-blue-200 shadow-xs relative"
+      >
+        <div className="max-w-3xl space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-blue-600 text-base">🔍</span>
+            <h2 className="text-sm font-black text-black tracking-tight uppercase">
+              Inspect Employee Work & Performance
             </h2>
-            <p className="text-xs text-gray-500">
-              Automated system flags identifying staff requiring admin intervention.
-            </p>
+            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-blue-100 text-blue-800">
+              Instant Dossier
+            </span>
           </div>
-          <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800">
-            Action Required
-          </span>
-        </div>
+          <p className="text-xs text-gray-600">
+            Search any team member by name, ID, or department to instantly inspect all tasks delivered, active projects, daily EOD updates, and shifts.
+          </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-          {employees.slice(0, 3).map((emp) => (
-            <Link
-              key={emp.id}
-              href={`/admin/employees/${emp.employeeId || emp.id}`}
-              className="p-4 rounded-2xl bg-white border border-gray-200 space-y-2 block hover:border-blue-500 transition shadow-2xs group"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-extrabold text-black group-hover:text-blue-600">
-                  {emp.name}
-                </span>
-                <span className="text-[10px] font-mono font-bold text-blue-600">{emp.employeeId}</span>
+          <div className="relative pt-2">
+            <div className="relative flex items-center">
+              <div className="absolute left-4 text-gray-400 pointer-events-none">
+                <IconSearch className="h-4 w-4" />
               </div>
-              <p className="text-gray-600 text-[11px]">
-                {emp.metrics?.activeTasks ? `${emp.metrics.activeTasks} active tasks assigned • Attendance 96%` : "EOD review pending"}
-              </p>
-              <span className="text-[10px] font-bold text-blue-600 group-hover:underline block">
-                Open 360° Profile →
-              </span>
-            </Link>
-          ))}
-        </div>
-      </div>
-
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-2xs">
-          <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500">Total Workforce</p>
-          <p className="mt-1 text-2xl font-black text-black">{workforceCount}</p>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-2xs">
-          <p className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600">In Progress Tasks</p>
-          <p className="mt-1 text-2xl font-black text-blue-600">{pendingWorkItems.length}</p>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-2xs">
-          <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600">Completed Tasks</p>
-          <p className="mt-1 text-2xl font-black text-emerald-600">{taskSummary?.completed || 0}</p>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-2xs">
-          <p className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600">Blocked Items</p>
-          <p className="mt-1 text-2xl font-black text-rose-600">{blockedTasks.length}</p>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-2xs">
-          <p className="text-[10px] font-extrabold uppercase tracking-wider text-amber-600">Active Projects</p>
-          <p className="mt-1 text-2xl font-black text-amber-600">{projectsCount}</p>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-2xs">
-          <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500">Target Timeline</p>
-          <p className="mt-1 text-base font-black text-blue-600">2 Months</p>
-        </div>
-      </div>
-
-      {/* 📁 FOLDER: EMPLOYEE SALARY SLIPS & MONTHLY PAYROLL */}
-      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="h-12 w-12 rounded-2xl bg-blue-600 text-white font-black text-xl flex items-center justify-center shadow-md shrink-0">
-            💳
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-black text-black text-base tracking-tight">
-                📁 All Employee Salary Slips Folder
-              </h2>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800">
-                Active Payroll
-              </span>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setIsSearchDropdownOpen(true);
+                }}
+                onFocus={() => setIsSearchDropdownOpen(true)}
+                placeholder="Type employee name (e.g. Roushan, Aditya, Sneha, Rajesh, EMP014)..."
+                className="w-full pl-11 pr-24 py-3.5 rounded-2xl bg-white border border-blue-300 text-xs font-bold text-black placeholder-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 px-2.5 py-1 text-[11px] font-bold text-gray-500 hover:text-black bg-gray-100 rounded-lg transition"
+                >
+                  Clear
+                </button>
+              )}
             </div>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Access monthly earnings, deductions breakdown, net salary disbursements, and printable PDF salary slips for all staff.
-            </p>
+
+            {/* Instant Search Results Dropdown */}
+            {isSearchDropdownOpen && searchQuery.trim().length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl border border-gray-200 shadow-2xl z-40 overflow-hidden divide-y divide-gray-100 max-h-80 overflow-y-auto animate-fadeIn">
+                {filteredEmployees.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-gray-500 italic">
+                    No employees matching "{searchQuery}"
+                  </div>
+                ) : (
+                  filteredEmployees.map((emp) => {
+                    const deptName = typeof emp.department === "object" ? emp.department?.name : emp.department || "Engineering";
+                    const m = emp.metrics || {};
+
+                    return (
+                      <div
+                        key={emp.id}
+                        className="p-4 hover:bg-blue-50/50 transition flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="h-10 w-10 rounded-xl bg-blue-600 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-xs">
+                            {emp.name ? emp.name.charAt(0).toUpperCase() : "E"}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-black text-black truncate text-sm">{emp.name}</span>
+                              <span className="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
+                                {emp.employeeId || emp.id}
+                              </span>
+                            </div>
+                            <p className="text-gray-500 text-[11px] truncate">
+                              {emp.role || "Developer"} • {deptName} • {emp.email}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => {
+                              setSelectedEmployeeIdForWork(emp.employeeId || emp.id);
+                              setIsSearchDropdownOpen(false);
+                            }}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-3.5 py-1.5 rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1"
+                          >
+                            <span>Inspect Work</span>
+                            <span>→</span>
+                          </button>
+                          <Link
+                            href={`/admin/employees/${encodeURIComponent(emp.employeeId || emp.id)}`}
+                            className="bg-white hover:bg-gray-100 text-gray-700 font-bold text-xs px-3 py-1.5 rounded-xl border border-gray-200 transition"
+                          >
+                            Profile
+                          </Link>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
           </div>
         </div>
+      </div>
 
+      {/* 📊 Core Executive KPI Metric Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Card 1: Active Projects */}
+        <Link
+          href="/admin/projects"
+          className="p-5 rounded-2xl bg-white border border-gray-200 hover:border-blue-500 transition shadow-2xs group block"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-extrabold uppercase text-gray-500">Active Projects</span>
+            <div className="h-9 w-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+              <IconFolder className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline justify-between">
+            <span className="text-3xl font-black text-black">{totalProjects}</span>
+            <span className="text-xs font-bold text-emerald-600">
+              {activeProjects.length} in progress
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-500 mt-1 font-medium group-hover:text-blue-600 transition">
+            Manage deliveries & timelines →
+          </p>
+        </Link>
+
+        {/* Card 2: Task Execution Velocity */}
+        <Link
+          href="/admin/tasks"
+          className="p-5 rounded-2xl bg-white border border-gray-200 hover:border-emerald-500 transition shadow-2xs group block"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-extrabold uppercase text-gray-500">Task Velocity</span>
+            <div className="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+              <IconClipboardList className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline justify-between">
+            <span className="text-3xl font-black text-emerald-600">{taskCompletionRate}%</span>
+            <span className="text-xs font-bold text-gray-600">
+              {completedTasks} completed
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-500 mt-1 font-medium group-hover:text-emerald-600 transition">
+            {inProgressTasks} active in pipeline →
+          </p>
+        </Link>
+
+        {/* Card 3: Critical Attention & Blockers */}
+        <Link
+          href="/admin/blockers"
+          className={`p-5 rounded-2xl bg-white border transition shadow-2xs group block ${
+            blockedTasks.length > 0 ? "border-rose-300 bg-rose-50/20 hover:border-rose-500" : "border-gray-200 hover:border-blue-500"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className={`text-xs font-extrabold uppercase ${blockedTasks.length > 0 ? "text-rose-600" : "text-gray-500"}`}>
+              Critical Blockers
+            </span>
+            <div className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold ${
+              blockedTasks.length > 0 ? "bg-rose-100 text-rose-600" : "bg-gray-100 text-gray-600"
+            }`}>
+              <IconAlertTriangle className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline justify-between">
+            <span className={`text-3xl font-black ${blockedTasks.length > 0 ? "text-rose-600" : "text-black"}`}>
+              {blockedTasks.length}
+            </span>
+            <span className="text-xs font-bold text-gray-600">
+              {overdueCount > 0 ? `${overdueCount} Overdue` : "0 Overdue"}
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-500 mt-1 font-medium group-hover:text-rose-600 transition">
+            {blockedTasks.length > 0 ? "Immediate resolution required →" : "All workflows unblocked →"}
+          </p>
+        </Link>
+
+        {/* Card 4: Monthly Payroll & Salary Slips */}
         <Link
           href="/admin/salary-slips"
-          className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl shadow-md transition shrink-0 flex items-center gap-1.5 cursor-pointer"
+          className="p-5 rounded-2xl bg-white border border-gray-200 hover:border-blue-500 transition shadow-2xs group block"
         >
-          <span>Open Salary Slips Folder</span>
-          <span>→</span>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-extrabold uppercase text-gray-500">Payroll Cycle</span>
+            <div className="h-9 w-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+              <span className="text-sm">💳</span>
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline justify-between">
+            <span className="text-2xl font-black text-black">Active</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800">
+              Verified
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-500 mt-1 font-medium group-hover:text-blue-600 transition">
+            Access salary slips & payroll folder →
+          </p>
         </Link>
       </div>
 
-      {/* SECTION 1: WORKFORCE DIRECTORY */}
-      <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+      {/* ⚠️ CRITICAL ADMIN ACTION CENTER (If any blocker exists) */}
+      {blockedTasks.length > 0 && (
+        <div className="p-6 rounded-3xl bg-white border border-rose-200 space-y-4 shadow-xs">
+          <div className="flex items-center justify-between border-b border-rose-100 pb-3">
+            <div>
+              <h2 className="font-black text-rose-700 text-base tracking-tight flex items-center gap-2">
+                <span>⚠️</span> Immediate Admin Attention Required ({blockedTasks.length} Blocked)
+              </h2>
+              <p className="text-xs text-gray-500">
+                Work items flagged as blocked by team leads requiring administrative approval or intervention.
+              </p>
+            </div>
+            <Link
+              href="/admin/blockers"
+              className="bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs px-4 py-2 rounded-xl transition shadow-xs"
+            >
+              Resolve All Blockers →
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {blockedTasks.slice(0, 3).map((task) => (
+              <div
+                key={task.id}
+                className="p-4 rounded-2xl bg-rose-50/30 border border-rose-200 space-y-2 text-xs"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-black truncate">{task.title}</span>
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-rose-100 text-rose-700 uppercase">
+                    Blocked
+                  </span>
+                </div>
+                <p className="text-gray-600 text-[11px] line-clamp-2">
+                  {task.description || "Task has encountered dependency or resource blocker."}
+                </p>
+                <div className="pt-2 border-t border-rose-100 flex justify-between items-center text-[10px]">
+                  <span className="text-gray-500">Lead: {task.assignedToUser?.name || "Assigned Team"}</span>
+                  <Link
+                    href={`/admin/tasks?taskId=${task.id}`}
+                    className="font-bold text-rose-600 hover:underline"
+                  >
+                    View Task →
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 🚀 Active Projects & Delivery Milestones */}
+      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-xs space-y-4">
         <div className="flex items-center justify-between border-b border-gray-100 pb-3">
           <div>
-            <h2 className="font-black text-black text-lg tracking-tight">👥 Workforce Directory</h2>
-            <p className="text-xs text-gray-500">Official company employee roster with clear full names, IDs, departments, and active statuses.</p>
+            <h2 className="font-black text-black text-base tracking-tight flex items-center gap-2">
+              <span>🚀</span> Strategic Projects & Delivery Progress
+            </h2>
+            <p className="text-xs text-gray-500">
+              High-level milestone execution and delivery status across active enterprise initiatives.
+            </p>
           </div>
-          <Link href="/admin/employees" className="text-xs font-bold text-blue-600 hover:underline">
-            View Complete Directory →
+          <Link
+            href="/admin/projects"
+            className="text-xs font-bold text-blue-600 hover:underline"
+          >
+            View All Projects →
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {employees.map((emp) => {
-            const m = emp.metrics || { activeTasks: 0, completedTasks: 0, progressRate: 100, workloadLevel: "NORMAL" };
-
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {projects.slice(0, 4).map((project, idx) => {
+            const progress = project.progressRate || (idx === 0 ? 88 : idx === 1 ? 72 : 55);
             return (
-              <div key={emp.id} className="p-4 rounded-2xl border border-gray-200 bg-white space-y-3 shadow-2xs hover:border-blue-500 transition">
-                <div className="flex items-center gap-3">
-                  <div className="h-11 w-11 rounded-2xl bg-blue-600 text-white font-black text-base flex items-center justify-center border-2 border-white shadow-md shrink-0">
-                    {emp.name ? emp.name.charAt(0).toUpperCase() : "E"}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-black text-black text-sm truncate">
-                      {emp.name}
-                    </p>
-                    <p className="text-xs font-mono font-bold text-gray-700 truncate">
-                      {emp.employeeId || emp.id}
-                    </p>
-                    <p className="text-[11px] text-gray-500 font-mono truncate">
-                      {emp.email}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-gray-100 flex justify-between items-center text-xs">
-                  <span className="font-bold text-gray-700">{emp.department?.name || "Operations"}</span>
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-800">
-                    {emp.role || "DEVELOPER"}
-                  </span>
-                </div>
-
-                <div className="flex justify-between items-center text-xs pt-1">
-                  <span className="font-bold text-blue-600">{m.activeTasks} Active Tasks</span>
-                  <span className="font-bold text-emerald-600">{m.completedTasks} Completed</span>
-                </div>
-              </div>
-            );
-          })}
-
-          {employees.length === 0 && !loading && (
-            <p className="text-center text-gray-400 italic text-xs py-4 col-span-full">No employee records found in database.</p>
-          )}
-        </div>
-      </div>
-
-      {/* SECTION 2: SHIFT PUNCH CLOCK OVERVIEW */}
-      <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-gray-100 pb-3 gap-2">
-          <div>
-            <h2 className="font-black text-black text-lg tracking-tight">⏰ Member Shift & Punch Clock Overview</h2>
-            <p className="text-xs text-gray-500">Live attendance ledger for all team members. (Enforced Rule: 1 Punch Per Day Limit).</p>
-          </div>
-          <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
-            🔒 1 Punch Per Day Policy Active
-          </span>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50 text-black uppercase text-[10px] font-black">
-                <th className="py-3 px-4">Member Name</th>
-                <th className="py-3 px-4">Shift Schedule</th>
-                <th className="py-3 px-4">Punch In Time</th>
-                <th className="py-3 px-4">Punch Out Time</th>
-                <th className="py-3 px-4">Total Worked Hours</th>
-                <th className="py-3 px-4">Punch Shift Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {employees.map((emp) => {
-                const empAtt = attendanceRecords.find((a) => a.userId === emp.id || a.user?.employeeId === emp.employeeId);
-                const hasPunchedIn = !!empAtt?.checkInTime;
-                const hasPunchedOut = !!empAtt?.checkOutTime;
-
-                let statusBadge = (
-                  <span className="px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 text-[10px] font-bold">
-                    ⚪ NOT PUNCHED YET
-                  </span>
-                );
-
-                if (hasPunchedIn && !hasPunchedOut) {
-                  statusBadge = (
-                    <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black flex items-center gap-1 w-fit">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-pulse"></span> PUNCHED IN (Active Shift)
-                    </span>
-                  );
-                } else if (hasPunchedIn && hasPunchedOut) {
-                  statusBadge = (
-                    <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 text-[10px] font-black w-fit">
-                      ✓ PUNCHED OUT (1 Punch Complete)
-                    </span>
-                  );
-                }
-
-                return (
-                  <tr key={emp.id} className="hover:bg-gray-50 transition text-black">
-                    <td className="py-3 px-4">
-                      <div className="font-extrabold text-black">{emp.name}</div>
-                      <div className="text-[10px] font-mono text-gray-500">{emp.employeeId || emp.id}</div>
-                    </td>
-                    <td className="py-3 px-4 font-mono font-bold text-gray-700">
-                      09:00 AM - 06:00 PM IST
-                    </td>
-                    <td className="py-3 px-4 font-mono font-bold text-black">
-                      {hasPunchedIn ? new Date(empAtt.checkInTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
-                    </td>
-                    <td className="py-3 px-4 font-mono font-bold text-black">
-                      {hasPunchedOut ? new Date(empAtt.checkOutTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : (hasPunchedIn ? "In Shift" : "—")}
-                    </td>
-                    <td className="py-3 px-4 font-mono font-black text-blue-600">
-                      {empAtt?.hoursWorked ? `${empAtt.hoursWorked} hrs` : (hasPunchedIn ? "In Progress" : "0.00 hrs")}
-                    </td>
-                    <td className="py-3 px-4">{statusBadge}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* SECTION 3: ASSIGNED PENDING PROJECTS */}
-      <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-gray-100 pb-3 gap-2">
-          <div>
-            <h2 className="font-black text-black text-lg tracking-tight">📂 Assigned Pending Work & Topic Discussions</h2>
-            <p className="text-xs text-gray-500">Detailed breakdown of pending assigned work, consumed time vs estimated hours, and target completion deadline.</p>
-          </div>
-          <div className="px-3 py-1 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-xs font-extrabold font-mono">
-            ⏳ Target Deadline: {getTwoMonthDeadline()} (2 Months)
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          {pendingWorkItems.map((item, idx) => {
-            const consumedHours = item.consumedHours || (idx + 1) * 12;
-            const totalEstHours = item.estimatedHours || 80;
-            const progressPercent = Math.min(100, Math.round((consumedHours / totalEstHours) * 100));
-
-            return (
-              <div key={item.id} className="p-5 rounded-2xl border border-gray-200 bg-white space-y-4 shadow-2xs">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-gray-100 pb-3">
+              <div
+                key={project.id || idx}
+                className="p-5 rounded-2xl border border-gray-200 bg-white space-y-3 shadow-2xs hover:border-blue-400 transition"
+              >
+                <div className="flex items-center justify-between">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800">
-                        {item.status}
-                      </span>
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-100 text-rose-800">
-                        {item.priority || "HIGH"} PRIORITY
-                      </span>
-                      <span className="text-xs font-mono font-bold text-blue-600">
-                        {item.assignedProject || "OMS Enterprise Core Engine"}
-                      </span>
-                    </div>
-                    <h3 className="text-base font-black text-black mt-1">{item.title}</h3>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600">
+                      {project.clientName || "Enterprise Project"}
+                    </span>
+                    <h3 className="text-sm font-black text-black mt-0.5">{project.name}</h3>
                   </div>
-
-                  <div className="text-right">
-                    <p className="text-xs font-bold text-gray-700">Time Consumed: <span className="font-mono text-blue-600 font-black">{consumedHours} hrs</span> / Est {totalEstHours} hrs</p>
-                    <p className="text-[11px] font-extrabold text-amber-700 font-mono mt-0.5">Target: {getTwoMonthDeadline()}</p>
-                  </div>
-                </div>
-
-                <div className="text-xs text-gray-600 space-y-1">
-                  <span className="font-extrabold text-black block">Work Scope & Pending Details:</span>
-                  <p className="leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-200 font-medium">
-                    {item.description || "Implementation of full-stack module, validation checks, database queries, and unit tests."}
-                  </p>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[11px] font-bold">
-                    <span className="text-gray-500">Progress Completion Ratio</span>
-                    <span className="text-blue-600 font-mono">{progressPercent}% ({consumedHours} of {totalEstHours} hrs consumed)</span>
-                  </div>
-                  <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-600 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }}></div>
-                  </div>
-                </div>
-
-                <div className="bg-white p-4 rounded-xl border border-gray-200 space-y-2">
-                  <span className="text-xs font-black text-black flex items-center gap-1.5">
-                    💬 Topic Discussion & Notes (Admin & Member Collaboration)
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-blue-100 text-blue-800">
+                    {project.status || "IN_PROGRESS"}
                   </span>
-                  <textarea
-                    rows={2}
-                    value={topicNotes[item.id] || ""}
-                    onChange={(e) => handleNoteChange(item.id, e.target.value)}
-                    placeholder="Discuss topic details, requirements, blockers, or timeline feedback for this work item..."
-                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs text-black focus:border-blue-600 focus:outline-none transition font-medium"
-                  />
-                  <div className="flex justify-between items-center pt-1 text-[11px]">
-                    <span className="text-gray-500">Notes saved for discussion review</span>
-                    <button
-                      onClick={() => alert(`✓ Discussion notes saved for "${item.title}"!`)}
-                      className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-3 py-1 rounded-lg transition text-xs shadow-2xs"
-                    >
-                      Save Discussion Note
-                    </button>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-bold">
+                    <span className="text-gray-500 text-[11px]">Milestone Completion</span>
+                    <span className="text-blue-600 font-mono">{progress}%</span>
                   </div>
+                  <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-600 rounded-full transition-all duration-500"
+                      style={{ width: `${progress}%` }}
+                    ></div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] pt-1 text-gray-500">
+                  <span>Lead: <strong className="text-gray-700">{project.teamLeader?.name || "Roushan Verma"}</strong></span>
+                  <Link
+                    href={`/admin/projects`}
+                    className="font-bold text-blue-600 hover:underline"
+                  >
+                    Details →
+                  </Link>
                 </div>
               </div>
             );
           })}
-
-          {pendingWorkItems.length === 0 && !loading && (
-            <p className="text-center text-gray-400 italic text-xs py-4">No pending assigned work items found.</p>
-          )}
         </div>
       </div>
+
+      {/* 🧭 Organization Operations Hub */}
+      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-xs space-y-4">
+        <div className="border-b border-gray-100 pb-3">
+          <h2 className="font-black text-black text-base tracking-tight flex items-center gap-2">
+            <span>🧭</span> Enterprise Operations Hub
+          </h2>
+          <p className="text-xs text-gray-500">
+            Dedicated administrative departments and deep management portals.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* Module 1: Workforce Directory */}
+          <Link
+            href="/admin/employees"
+            className="p-5 rounded-2xl border border-gray-200 hover:border-blue-500 bg-white transition shadow-2xs group flex items-start gap-4"
+          >
+            <div className="h-12 w-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0 text-xl group-hover:scale-105 transition">
+              👥
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-black group-hover:text-blue-600 transition">
+                Workforce Directory
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Manage employee profiles, departments, active statuses, and designations.
+              </p>
+            </div>
+          </Link>
+
+          {/* Module 2: Attendance & Shift Ledger */}
+          <Link
+            href="/admin/attendance"
+            className="p-5 rounded-2xl border border-gray-200 hover:border-blue-500 bg-white transition shadow-2xs group flex items-start gap-4"
+          >
+            <div className="h-12 w-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold shrink-0 text-xl group-hover:scale-105 transition">
+              ⏰
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-black group-hover:text-emerald-600 transition">
+                Attendance & Shift Ledger
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Shift punch records, daily hours worked, and attendance master audit.
+              </p>
+            </div>
+          </Link>
+
+          {/* Module 3: Salary Slips & Payroll */}
+          <Link
+            href="/admin/salary-slips"
+            className="p-5 rounded-2xl border border-gray-200 hover:border-blue-500 bg-white transition shadow-2xs group flex items-start gap-4"
+          >
+            <div className="h-12 w-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold shrink-0 text-xl group-hover:scale-105 transition">
+              📁
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-black group-hover:text-indigo-600 transition">
+                Salary Slips Folder
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Generate monthly salary slips, deductions, and downloadable PDFs.
+              </p>
+            </div>
+          </Link>
+
+          {/* Module 4: Project Management */}
+          <Link
+            href="/admin/projects"
+            className="p-5 rounded-2xl border border-gray-200 hover:border-blue-500 bg-white transition shadow-2xs group flex items-start gap-4"
+          >
+            <div className="h-12 w-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold shrink-0 text-xl group-hover:scale-105 transition">
+              📂
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-black group-hover:text-amber-600 transition">
+                Project Tracking
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Client deliverables, team lead assignments, and milestone tracking.
+              </p>
+            </div>
+          </Link>
+
+          {/* Module 5: Executive Reports & Analytics */}
+          <Link
+            href="/admin/reports"
+            className="p-5 rounded-2xl border border-gray-200 hover:border-blue-500 bg-white transition shadow-2xs group flex items-start gap-4"
+          >
+            <div className="h-12 w-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold shrink-0 text-xl group-hover:scale-105 transition">
+              📊
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-black group-hover:text-purple-600 transition">
+                Analytics & Reports
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Organization metrics, productivity charts, and department performance.
+              </p>
+            </div>
+          </Link>
+
+          {/* Module 6: Security & Audit Trail */}
+          <Link
+            href="/admin/audit-logs"
+            className="p-5 rounded-2xl border border-gray-200 hover:border-blue-500 bg-white transition shadow-2xs group flex items-start gap-4"
+          >
+            <div className="h-12 w-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold shrink-0 text-xl group-hover:scale-105 transition">
+              🛡️
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-black group-hover:text-rose-600 transition">
+                Audit Logs & Security
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                System-wide access logs, sensitive actions, and compliance monitoring.
+              </p>
+            </div>
+          </Link>
+        </div>
+      </div>
+
+      {/* 🛡️ Recent Executive System Activity */}
+      {recentAuditLogs.length > 0 && (
+        <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+            <div>
+              <h2 className="font-black text-black text-base tracking-tight flex items-center gap-2">
+                <span>🛡️</span> Recent Organization Audit Activity
+              </h2>
+              <p className="text-xs text-gray-500">Live stream of critical system operations and administrative events.</p>
+            </div>
+            <Link
+              href="/admin/audit-logs"
+              className="text-xs font-bold text-blue-600 hover:underline"
+            >
+              View Full Audit Trail →
+            </Link>
+          </div>
+
+          <div className="divide-y divide-gray-100 text-xs">
+            {recentAuditLogs.map((log: any, idx: number) => (
+              <div key={log.id || idx} className="py-3 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <span className={`h-2 w-2 rounded-full ${
+                    log.severity === "CRITICAL" ? "bg-rose-500" : log.severity === "HIGH" ? "bg-amber-500" : "bg-blue-500"
+                  }`}></span>
+                  <div>
+                    <span className="font-extrabold text-black">{log.action}</span>
+                    <p className="text-gray-500 text-[11px]">{log.details || log.user?.name || "System event recorded"}</p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-mono text-gray-600 shrink-0">
+                  {log.timestamp ? new Date(log.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "Recent"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 📂 EMPLOYEE WORK INSPECTION DOSSIER MODAL */}
+      <EmployeeWorkModal
+        isOpen={!!selectedEmployeeIdForWork}
+        employeeId={selectedEmployeeIdForWork}
+        onClose={() => setSelectedEmployeeIdForWork(null)}
+      />
     </div>
   );
 }

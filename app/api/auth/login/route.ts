@@ -4,7 +4,7 @@ import { queryDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
+const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR", "ADMIN"];
 
 export async function POST(request: NextRequest) {
   try {
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
     // 4. Verify Account Existence
     if (!dbUser) {
       return NextResponse.json(
-        { success: false, error: "Invalid email/employee ID or password" },
+        { success: false, error: "Invalid ID or Password" },
         { status: 401 }
       );
     }
@@ -84,13 +84,13 @@ export async function POST(request: NextRequest) {
     const passwordMatches = await comparePassword(inputPassword, dbUser.password);
     if (!passwordMatches) {
       return NextResponse.json(
-        { success: false, error: "Invalid email/employee ID or password" },
+        { success: false, error: "Invalid ID or Password" },
         { status: 401 }
       );
     }
 
     // 6. Verify Active Account Status
-    if (!dbUser.isActive) {
+    if (dbUser.isActive === false || dbUser.isActive === 0 || dbUser.isResigned) {
       return NextResponse.json(
         { success: false, error: "Account deactivated: Please contact HR administrator." },
         { status: 403 }
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     const isAdmin = ADMIN_ROLES.includes(userRole);
     const redirectTo = isAdmin ? "/admin" : "/employee";
 
-    // 8. Construct Safe Authenticated User Object
+    // 8. Construct Safe Authenticated User Object (Never expose password hash)
     const authenticatedUser = {
       id: dbUser.id,
       employeeId: dbUser.employeeId,
@@ -110,6 +110,7 @@ export async function POST(request: NextRequest) {
       email: dbUser.email,
       role: dbUser.role,
       department: dbUser.department?.name || dbUser.departmentName || "Operations",
+      avatarUrl: dbUser.avatarUrl || null,
     };
 
     // 9. Generate JWT Session Token
@@ -119,7 +120,7 @@ export async function POST(request: NextRequest) {
       role: authenticatedUser.role,
     });
 
-    // 10. Construct Response & Set HTTP-Only Cookie
+    // 10. Construct Response & Set Secure HTTP-Only Cookie
     const response = NextResponse.json({
       success: true,
       message: `✓ Welcome back, ${authenticatedUser.name}!`,
@@ -137,14 +138,14 @@ export async function POST(request: NextRequest) {
       maxAge: 7 * 24 * 60 * 60, // 7 Days
     });
 
-    // Async Audit Logging (non-blocking) on TiDB
+    // Async Audit Logging
     queryDb(
       "INSERT INTO auditlog (id, userId, action, details, ipAddress, timestamp) VALUES (?, ?, ?, ?, ?, NOW())",
       [
         `AUD-${Date.now()}`,
         dbUser.id,
         "USER_LOGIN",
-        `User ${dbUser.name} (${dbUser.email} / ${dbUser.employeeId}) logged in successfully as ${dbUser.role} on TiDB Cloud`,
+        `User ${dbUser.name} (${dbUser.email} / ${dbUser.employeeId}) logged in successfully as ${dbUser.role}`,
         request.headers.get("x-forwarded-for") || "127.0.0.1",
       ]
     ).catch(() => {});

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { getCurrentUserContext } from "@/utils/userContextStore";
+import { setCurrentUserContext } from "@/utils/userContextStore";
 
 export default function EmployeeLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -10,28 +10,33 @@ export default function EmployeeLayout({ children }: { children: React.ReactNode
   const [authorized, setAuthorized] = useState<boolean | null>(null);
 
   useEffect(() => {
-    // 1. Client Context Check
-    const user = getCurrentUserContext();
-
-    // 2. Server Session Verification
     fetch("/api/auth/me")
       .then((res) => res.json())
       .then((json) => {
         if (!json.success || !json.user) {
-          // Unauthenticated visitor -> redirect cleanly to /login
+          // Unauthenticated visitor -> redirect immediately to /login
           setAuthorized(false);
-          router.replace("/login");
-        } else {
-          setAuthorized(true);
+          router.replace(`/login?redirect=${encodeURIComponent(pathname || "/employee")}`);
+          return;
         }
+
+        // Authenticated Employee or Admin
+        setCurrentUserContext({
+          id: json.user.id,
+          employeeId: json.user.employeeId || json.user.id,
+          name: json.user.name,
+          email: json.user.email,
+          role: json.user.role,
+          department: json.user.department || "Development & Engineering",
+          avatarUrl: json.user.avatarUrl || null,
+          activeMode: "EMPLOYEE_USER",
+          assignedProjectTitle: "OMS Enterprise System",
+        });
+        setAuthorized(true);
       })
       .catch(() => {
-        if (user && user.id) {
-          setAuthorized(true);
-        } else {
-          setAuthorized(false);
-          router.replace("/login");
-        }
+        setAuthorized(false);
+        router.replace(`/login?redirect=${encodeURIComponent(pathname || "/employee")}`);
       });
   }, [pathname, router]);
 

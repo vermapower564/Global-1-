@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
+const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR", "ADMIN"];
 
 const PUBLIC_PATHS = [
   "/login",
@@ -59,9 +59,11 @@ export function proxy(request: NextRequest) {
   const session = token ? decodeSessionToken(token) : null;
   const isAuthenticated = !!(session && session.id);
   const userRole = (session?.role || "").toUpperCase();
-  const isAdmin = ADMIN_ROLES.includes(userRole);
+  const isAdmin = isAuthenticated && ADMIN_ROLES.includes(userRole);
 
-  // 3. ROOT PATH (/) -> REDIRECT TO APPROPRIATE WORKSPACE OR LOGIN
+  const isPublicPath = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+
+  // 3. ROOT PATH (/) -> REDIRECT TO DASHBOARD IF AUTHENTICATED, ELSE LOGIN
   if (pathname === "/") {
     if (isAuthenticated) {
       return NextResponse.redirect(new URL(isAdmin ? "/admin" : "/employee", request.url));
@@ -69,36 +71,35 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // 4. LOGIN PATH (/login, /auth/login) -> REDIRECT TO DASHBOARD IF ALREADY AUTHENTICATED
-  if ((pathname === "/login" || pathname === "/auth/login") && isAuthenticated) {
-    return NextResponse.redirect(new URL(isAdmin ? "/admin" : "/employee", request.url));
-  }
-
-  const isPublicPath = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-
-  // 5. Allow public auth routes without session checks
+  // 4. LOGIN / PUBLIC PATHS
   if (isPublicPath) {
+    // If already authenticated and trying to access /login, redirect to appropriate workspace
+    if ((pathname === "/login" || pathname === "/auth/login") && isAuthenticated) {
+      return NextResponse.redirect(new URL(isAdmin ? "/admin" : "/employee", request.url));
+    }
     return NextResponse.next();
   }
 
-  // 6. Enforce Authentication on Protected Page Routes
+  // 5. ENFORCE AUTHENTICATION ON ALL PROTECTED PAGE ROUTES
   if (!isAuthenticated) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  // 7. Enforce Role-Based Access Control on Admin Routes
+  // 6. ENFORCE ROLE-BASED ACCESS CONTROL (RBAC)
+  // Admin-only protected areas
   const isAdminRoute =
     pathname.startsWith("/admin") ||
     pathname.startsWith("/audit-logs") ||
     pathname.startsWith("/payroll");
 
   if (isAdminRoute && !isAdmin) {
+    // Authenticated non-admin attempting to access admin route -> redirect to employee dashboard
     return NextResponse.redirect(new URL("/employee", request.url));
   }
 
-  // 8. Default: Allow through
+  // 7. Default: Allow through
   return NextResponse.next();
 }
 
