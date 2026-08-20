@@ -540,17 +540,24 @@ export default function AdminTasksPage() {
                     </td>
 
                     <td className="py-4 px-5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-[10px]">
+                      <Link
+                        href={`/admin/employees/${encodeURIComponent(task.assignedToUser?.employeeId || task.assignedToUser?.id || "EMP001")}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center gap-2 group hover:bg-blue-50/80 p-1.5 rounded-xl transition border border-transparent hover:border-blue-200 inline-flex cursor-pointer"
+                        title={`View ${task.assignedToUser?.name || "Employee"} Profile`}
+                      >
+                        <div className="w-7 h-7 rounded-xl bg-blue-600 group-hover:bg-blue-700 text-white flex items-center justify-center font-black text-xs shadow-xs">
                           {(task.assignedToUser?.name || "U")[0]}
                         </div>
                         <div>
-                          <p className="font-bold text-xs text-black">{task.assignedToUser?.name || "Unassigned"}</p>
-                          <p className="text-[10px] text-gray-400 font-mono">
+                          <p className="font-black text-xs text-black group-hover:text-blue-600 group-hover:underline transition">
+                            {task.assignedToUser?.name || "Unassigned"}
+                          </p>
+                          <p className="text-[10px] text-blue-600 font-mono font-bold">
                             {task.assignedToUser?.employeeId || "—"}
                           </p>
                         </div>
-                      </div>
+                      </Link>
                     </td>
 
                     <td className="py-4 px-5 font-medium text-gray-700 max-w-[140px] truncate">

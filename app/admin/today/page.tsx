@@ -458,21 +458,25 @@ function AdminTodayContent() {
                         )}
                       </td>
 
-                      {/* Assigned User */}
+                      {/* Assigned User (Clickable link to full Employee Profile) */}
                       <td className="py-4 px-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <div className="h-7 w-7 rounded-lg bg-blue-600 text-white font-black text-xs flex items-center justify-center shrink-0">
+                        <Link
+                          href={`/admin/employees/${encodeURIComponent(task.assignedToUser?.employeeId || task.assignedToUser?.id || "EMP001")}`}
+                          className="flex items-center gap-2 group cursor-pointer hover:bg-blue-50/80 p-1.5 rounded-xl transition border border-transparent hover:border-blue-200 inline-flex"
+                          title={`View ${task.assignedToUser?.name || "Employee"} 360° Profile`}
+                        >
+                          <div className="h-8 w-8 rounded-xl bg-blue-600 group-hover:bg-blue-700 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs">
                             {task.assignedToUser?.name?.charAt(0) || "U"}
                           </div>
                           <div>
-                            <span className="font-bold text-black block text-xs">
+                            <span className="font-black text-black group-hover:text-blue-600 transition block text-xs underline-offset-2 group-hover:underline">
                               {task.assignedToUser?.name || "Unassigned"}
                             </span>
-                            <span className="text-[10px] font-mono text-gray-500">
+                            <span className="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200 group-hover:bg-blue-600 group-hover:text-white transition">
                               {task.assignedToUser?.employeeId || "EMP001"}
                             </span>
                           </div>
-                        </div>
+                        </Link>
                       </td>
 
                       {/* Project */}

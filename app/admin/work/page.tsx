@@ -197,14 +197,24 @@ export default function AdminWorkPage() {
             >
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-gray-100 pb-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-xs">
+                  <Link
+                    href={`/admin/employees/${encodeURIComponent(u.user?.employeeId || u.user?.id || u.userId || "EMP001")}`}
+                    className="w-9 h-9 rounded-xl bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center font-black text-xs shadow-xs transition cursor-pointer shrink-0"
+                    title={`View ${u.user?.name || "Employee"} Profile`}
+                  >
                     {(u.user?.name || "E")[0]}
-                  </div>
+                  </Link>
                   <div>
-                    <h3 className="font-black text-sm text-black">
-                      {u.user?.name || "Employee"} ({u.user?.employeeId || "EMP"})
-                    </h3>
-                    <p className="text-[11px] text-gray-500 font-mono">
+                    <Link
+                      href={`/admin/employees/${encodeURIComponent(u.user?.employeeId || u.user?.id || u.userId || "EMP001")}`}
+                      className="font-black text-sm text-black hover:text-blue-600 hover:underline transition flex items-center gap-1.5"
+                    >
+                      <span>{u.user?.name || "Employee"}</span>
+                      <span className="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
+                        {u.user?.employeeId || "EMP"}
+                      </span>
+                    </Link>
+                    <p className="text-[11px] text-gray-500 font-mono mt-0.5">
                       Shift Date: {u.date ? new Date(u.date).toLocaleDateString("en-IN") : "Today"} • {u.hoursWorked || 8} hrs logged
                     </p>
                   </div>

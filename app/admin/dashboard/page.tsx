@@ -329,15 +329,27 @@ export default function AdminDashboardPage() {
                         className="p-4 hover:bg-blue-50/50 transition flex items-center justify-between gap-3 text-xs"
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="h-10 w-10 rounded-xl bg-blue-600 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-xs">
+                          <Link
+                            href={`/admin/employees/${encodeURIComponent(emp.employeeId || emp.id)}`}
+                            className="h-10 w-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-xs transition cursor-pointer"
+                            title="View Employee Profile"
+                          >
                             {emp.name ? emp.name.charAt(0).toUpperCase() : "E"}
-                          </div>
+                          </Link>
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <span className="font-black text-black truncate text-sm">{emp.name}</span>
-                              <span className="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
+                              <Link
+                                href={`/admin/employees/${encodeURIComponent(emp.employeeId || emp.id)}`}
+                                className="font-black text-black hover:text-blue-600 truncate text-sm transition hover:underline"
+                              >
+                                {emp.name}
+                              </Link>
+                              <Link
+                                href={`/admin/employees/${encodeURIComponent(emp.employeeId || emp.id)}`}
+                                className="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 hover:bg-blue-600 hover:text-white px-2 py-0.5 rounded-md border border-blue-200 transition"
+                              >
                                 {emp.employeeId || emp.id}
-                              </span>
+                              </Link>
                             </div>
                             <p className="text-gray-500 text-[11px] truncate">
                               {emp.role || "Developer"} • {deptName} • {emp.email}
@@ -508,7 +520,15 @@ export default function AdminDashboardPage() {
                   {task.description || "Task has encountered dependency or resource blocker."}
                 </p>
                 <div className="pt-2 border-t border-rose-100 flex justify-between items-center text-[10px]">
-                  <span className="text-gray-500">Lead: {task.assignedToUser?.name || "Assigned Team"}</span>
+                  <span className="text-gray-500">
+                    Lead:{" "}
+                    <Link
+                      href={`/admin/employees/${encodeURIComponent(task.assignedToUser?.employeeId || task.assignedToUser?.id || "EMP001")}`}
+                      className="text-gray-900 font-bold hover:text-blue-600 hover:underline"
+                    >
+                      {task.assignedToUser?.name || "Assigned Team"}
+                    </Link>
+                  </span>
                   <Link
                     href={`/admin/tasks?taskId=${task.id}`}
                     className="font-bold text-rose-600 hover:underline"
@@ -575,7 +595,15 @@ export default function AdminDashboardPage() {
                 </div>
 
                 <div className="flex items-center justify-between text-[11px] pt-1 text-gray-500">
-                  <span>Lead: <strong className="text-gray-700">{project.teamLeader?.name || "Roushan Verma"}</strong></span>
+                  <span>
+                    Lead:{" "}
+                    <Link
+                      href={`/admin/employees/${encodeURIComponent(project.teamLeader?.employeeId || project.teamLeader?.id || "EMP-8595")}`}
+                      className="font-bold text-gray-800 hover:text-blue-600 hover:underline"
+                    >
+                      {project.teamLeader?.name || "Roushan Verma"}
+                    </Link>
+                  </span>
                   <Link
                     href={`/admin/projects`}
                     className="font-bold text-blue-600 hover:underline"

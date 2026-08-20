@@ -436,12 +436,26 @@ export default function AdminEmployeeDetailsPage() {
           <span className="text-black font-extrabold">{employee.name}</span>
         </div>
 
-        <Link
-          href="/admin/employees"
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-black hover:bg-slate-50 transition cursor-pointer shadow-2xs w-fit"
-        >
-          ← Back to Employees
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/admin/dashboard"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-black hover:bg-slate-50 transition cursor-pointer shadow-2xs"
+          >
+            ← Back to Dashboard
+          </Link>
+          <Link
+            href="/admin/today"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-blue-200 bg-blue-50 text-xs font-extrabold text-blue-700 hover:bg-blue-100 transition cursor-pointer shadow-2xs"
+          >
+            ← Back to Today
+          </Link>
+          <Link
+            href="/admin/employees"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-black hover:bg-slate-50 transition cursor-pointer shadow-2xs"
+          >
+            ← Back to Employees
+          </Link>
+        </div>
       </div>
 
       {/* Profile Header */}

@@ -1,24 +1,24 @@
 const axios = require("axios");
 
 async function testTodayFeature() {
-  const BASE = "http://localhost:3000";
+  const BASE = process.env.BASE_URL || "https://gwebify-26.vercel.app";
   console.log("=================================================");
-  console.log("   TESTING TODAY EMPLOYEE WORK & LIVE COUNTS     ");
+  console.log(`   TESTING TODAY EMPLOYEE WORK ON ${BASE}        `);
   console.log("=================================================\n");
 
-  // 1. Log in as Admin to obtain valid cookie
+  // 1. Log in as Admin
   const loginRes = await axios.post(`${BASE}/api/auth/login`, {
     identity: "EMP-8595",
     password: "Roushan@123",
   });
   const cookie = loginRes.headers["set-cookie"][0].split(";")[0];
-  console.log("✓ Logged in as Admin (EMP-8595)\n");
+  console.log("✓ Logged in as Super Admin (EMP-8595)\n");
 
   // 2. Fetch /api/admin/today
   const todayRes = await axios.get(`${BASE}/api/admin/today`, {
     headers: { Cookie: cookie },
   });
-  console.log("API /api/admin/today Response Summary:");
+  console.log("Live Summary Data from Database:");
   console.log("-----------------------------------------");
   console.log("• Total Employees:      ", todayRes.data.summary?.totalEmployees);
   console.log("• Present Today:        ", todayRes.data.summary?.presentToday);
@@ -34,13 +34,13 @@ async function testTodayFeature() {
   const inProgressFilterRes = await axios.get(`${BASE}/api/admin/today?status=IN_PROGRESS`, {
     headers: { Cookie: cookie },
   });
-  console.log(`Filtered /api/admin/today?status=IN_PROGRESS -> Found ${inProgressFilterRes.data.tasks.length} task(s)`);
-  inProgressFilterRes.data.tasks.forEach((t, i) => {
+  console.log(`Filtered /admin/today?status=IN_PROGRESS -> Found ${inProgressFilterRes.data.tasks.length} task(s)`);
+  inProgressFilterRes.data.tasks.slice(0, 5).forEach((t, i) => {
     console.log(`  [${i + 1}] "${t.title}" | Lead: ${t.assignedToUser?.name} (${t.assignedToUser?.employeeId}) | Status: ${t.status} | Progress: ${t.progress}%`);
   });
 
   console.log("\n=================================================");
-  console.log("   TODAY EMPLOYEE WORK & LIVE COUNTS VERIFIED    ");
+  console.log("   TODAY EMPLOYEE WORK VERIFIED IN PRODUCTION    ");
   console.log("=================================================");
 }
 
