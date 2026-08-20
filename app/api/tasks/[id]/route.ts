@@ -21,9 +21,9 @@ export async function GET(
     const rows = await queryDb<any[]>(
       `SELECT 
         t.*,
-        u.id AS user_id, u.name AS user_name, u.employeeId AS user_employeeId, u.email AS user_email, u.role AS user_role,
+        u.id AS user_id, u.name AS user_name, u.employeeId AS user_employeeId, u.email AS user_email, u.role AS user_role, u.avatarUrl AS user_avatarUrl,
         c.id AS creator_id, c.name AS creator_name, c.employeeId AS creator_employeeId,
-        p.id AS project_id, p.projectTitle AS project_title, p.clientCompany AS project_clientCompany
+        p.id AS project_id, p.projectTitle AS project_title, p.clientCompany AS project_clientCompany, p.teamLeaderId AS project_teamLeaderId
       FROM task t
       LEFT JOIN user u ON t.assignedToUserId = u.id
       LEFT JOIN user c ON t.createdById = c.id
@@ -38,10 +38,13 @@ export async function GET(
     }
 
     const t = rows[0];
+    const authUser = authResult.user;
+    const isAdmin = ADMIN_ROLES.includes(authUser.role);
+    const isTeamLeader = t.project_teamLeaderId === authUser.id;
+    const isAssignee = t.assignedToUserId === authUser.id;
 
-    // Ownership check: If worker role, can only view own assigned task
-    const isAdmin = ADMIN_ROLES.includes(authResult.user.role);
-    if (!isAdmin && t.assignedToUserId !== authResult.user.id) {
+    // Authorization check: Admin, Team Leader of this project, or the assigned employee can view
+    if (!isAdmin && !isTeamLeader && !isAssignee) {
       return NextResponse.json({ success: false, error: "Forbidden: You do not have permission to view this task." }, { status: 403 });
     }
 
@@ -59,6 +62,8 @@ export async function GET(
       id: t.id,
       title: t.title,
       description: t.description,
+      section: t.section || "General",
+      reviewNotes: t.reviewNotes,
       status: t.status,
       priority: t.priority,
       progress: t.progress || 0,
@@ -76,6 +81,7 @@ export async function GET(
         employeeId: t.user_employeeId,
         email: t.user_email,
         role: t.user_role,
+        avatarUrl: t.user_avatarUrl,
       },
       createdBy: t.creator_id ? {
         id: t.creator_id,
@@ -86,8 +92,9 @@ export async function GET(
         id: t.project_id,
         projectTitle: t.project_title,
         clientCompany: t.project_clientCompany,
+        teamLeaderId: t.project_teamLeaderId,
       } : null,
-      taskhistory: historyRows.map((h) => ({
+      taskhistory: (historyRows || []).map((h) => ({
         id: h.id,
         action: h.action,
         oldValue: h.oldValue,
@@ -96,15 +103,14 @@ export async function GET(
         createdAt: h.createdAt,
         user: { name: h.user_name, employeeId: h.user_employeeId },
       })),
+      isUserTeamLeader: isTeamLeader,
+      isUserAssignee: isAssignee,
     };
 
     return NextResponse.json({ success: true, task });
   } catch (error: any) {
     console.error("Fetch task error:", error);
-    return NextResponse.json(
-      { success: false, error: "Unable to load task details right now. Please try again." },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: "Failed to load task details." }, { status: 500 });
   }
 }
 
@@ -120,18 +126,41 @@ export async function PATCH(
 
     const { id } = await params;
     const body = await request.json().catch(() => ({}));
-    const { status, progress, priority, blockerReason, actualHours, dueDate, assignedToUserId, action } = body;
+    const {
+      status,
+      progress,
+      priority,
+      section,
+      reviewNotes,
+      blockerReason,
+      actualHours,
+      dueDate,
+      assignedToUserId,
+      action,
+      notes,
+    } = body;
 
-    const existingRows = await queryDb<any[]>(`SELECT * FROM task WHERE id = ? LIMIT 1`, [id]);
+    const existingRows = await queryDb<any[]>(
+      `SELECT t.*, p.teamLeaderId AS project_teamLeaderId
+       FROM task t
+       LEFT JOIN project p ON t.projectId = p.id
+       WHERE t.id = ?
+       LIMIT 1`,
+      [id]
+    );
+
     if (!existingRows || existingRows.length === 0) {
       return NextResponse.json({ success: false, error: "Task not found." }, { status: 404 });
     }
 
     const existingTask = existingRows[0];
-    const isAdmin = ADMIN_ROLES.includes(authResult.user.role);
+    const authUser = authResult.user;
+    const isAdmin = ADMIN_ROLES.includes(authUser.role);
+    const isTeamLeader = existingTask.project_teamLeaderId === authUser.id;
+    const isAssignee = existingTask.assignedToUserId === authUser.id;
 
-    // Ownership check: Workers can only update their own assigned tasks
-    if (!isAdmin && existingTask.assignedToUserId !== authResult.user.id) {
+    // Authorization check: Must be Admin, Team Leader of this project, or the Assigned Employee
+    if (!isAdmin && !isTeamLeader && !isAssignee) {
       return NextResponse.json(
         { success: false, error: "Forbidden: You are not authorized to modify another employee's task." },
         { status: 403 }
@@ -142,128 +171,78 @@ export async function PATCH(
     let nextProgress = existingTask.progress || 0;
     let nextBlocker = existingTask.blockerReason;
     let nextCompletedAt = existingTask.completedAt;
-    let nextStartedAt = existingTask.startDate;
     let nextPriority = existingTask.priority;
+    let nextSection = existingTask.section;
+    let nextReviewNotes = existingTask.reviewNotes;
     let nextActualHours = existingTask.actualHours || 0;
     let nextDueDate = existingTask.dueDate;
     let nextAssignedTo = existingTask.assignedToUserId;
 
-    const historyItems: Array<{ action: string; oldVal: string; newVal: string; desc: string }> = [];
-
-    // 1. Handling "START_TASK" action or status transition to IN_PROGRESS
-    if (action === "START_TASK" || status === "IN_PROGRESS") {
-      if (existingTask.status === "ASSIGNED" || existingTask.status === "BACKLOG") {
-        nextStatus = "IN_PROGRESS";
-        nextStartedAt = new Date();
-        historyItems.push({
-          action: "START_TASK",
-          oldVal: existingTask.status,
-          newVal: "IN_PROGRESS",
-          desc: `Task started by ${(authResult.user as any).name || authResult.user.email || "Employee"} at ${new Date().toLocaleTimeString("en-IN")}.`,
-        });
-      }
-    }
-
-    // 2. Status change handling
-    if (status && status !== existingTask.status && action !== "START_TASK") {
-      if (status === "BLOCKED" && (!blockerReason || !blockerReason.trim()) && !existingTask.blockerReason) {
-        return NextResponse.json(
-          { success: false, error: "Blocker reason is required when marking a task as BLOCKED." },
-          { status: 400 }
-        );
-      }
-
-      nextStatus = status;
-      if (status === "COMPLETED") {
-        nextProgress = 100;
-        nextCompletedAt = new Date();
-      } else if (status === "IN_PROGRESS" && !existingTask.startDate) {
-        nextStartedAt = new Date();
-      }
-
-      if (blockerReason !== undefined) {
-        nextBlocker = blockerReason;
-      }
-
-      historyItems.push({
-        action: "STATUS_CHANGE",
-        oldVal: existingTask.status,
-        newVal: status,
-        desc: `Status updated from ${existingTask.status} to ${status}${status === "BLOCKED" ? ` (Blocker: ${blockerReason})` : ""}`,
-      });
-    }
-
-    // 3. Progress Update (Sanitized between 0 and 100)
-    if (typeof progress === "number" || typeof progress === "string") {
-      const parsedProg = parseInt(progress.toString(), 10);
-      if (!isNaN(parsedProg)) {
-        const validProg = Math.min(100, Math.max(0, parsedProg));
-        if (validProg !== existingTask.progress) {
-          nextProgress = validProg;
-          if (validProg === 100 && nextStatus !== "COMPLETED") {
-            nextStatus = "COMPLETED";
-            nextCompletedAt = new Date();
+    // Employee Actions: Status transition & progress updates
+    if (isAssignee && !isAdmin && !isTeamLeader) {
+      if (status) {
+        // Employees can move tasks between IN_PROGRESS, BLOCKED, IN_REVIEW
+        // Or if submitting completed work for Team Leader review -> IN_REVIEW or COMPLETED
+        nextStatus = status;
+        if (status === "COMPLETED") {
+          nextProgress = 100;
+          nextCompletedAt = new Date();
+        } else if (status === "IN_REVIEW") {
+          nextProgress = progress !== undefined ? Math.min(100, Math.max(0, parseInt(progress))) : 90;
+        } else if (status === "IN_PROGRESS") {
+          if (existingTask.status === "ASSIGNED" || existingTask.status === "PENDING") {
+            nextProgress = Math.max(nextProgress, 10);
           }
-          historyItems.push({
-            action: "PROGRESS_UPDATE",
-            oldVal: `${existingTask.progress}%`,
-            newVal: `${validProg}%`,
-            desc: `Progress updated to ${validProg}%${validProg === 100 ? " (Task marked as COMPLETED)" : ""}.`,
-          });
         }
       }
+      if (progress !== undefined) {
+        nextProgress = Math.min(100, Math.max(0, parseInt(progress)));
+        if (nextProgress === 100 && nextStatus !== "COMPLETED") {
+          nextStatus = "IN_REVIEW"; // Ready for TL review
+        }
+      }
+      if (blockerReason !== undefined) nextBlocker = blockerReason;
+      if (actualHours !== undefined) nextActualHours = parseFloat(actualHours);
     }
 
-    // 4. Admin-only updates (Priority, Reassignment, Due Date)
-    if (isAdmin) {
-      if (priority && priority !== existingTask.priority) {
-        nextPriority = priority;
-        historyItems.push({
-          action: "PRIORITY_CHANGE",
-          oldVal: existingTask.priority,
-          newVal: priority,
-          desc: `Priority changed to ${priority} by Admin.`,
-        });
+    // Team Leader or Admin Actions: Full management & Work Review
+    if (isAdmin || isTeamLeader) {
+      if (status) {
+        nextStatus = status;
+        if (status === "COMPLETED") {
+          nextProgress = 100;
+          nextCompletedAt = new Date();
+          nextBlocker = null;
+        } else if (status === "IN_PROGRESS" && existingTask.status === "IN_REVIEW") {
+          // TL requesting changes/revisions
+          nextProgress = progress !== undefined ? parseInt(progress) : 75;
+          nextCompletedAt = null;
+        }
       }
-      if (dueDate) {
-        nextDueDate = new Date(dueDate);
-      }
-      if (assignedToUserId && assignedToUserId !== existingTask.assignedToUserId) {
-        nextAssignedTo = assignedToUserId;
-        historyItems.push({
-          action: "REASSIGNED",
-          oldVal: existingTask.assignedToUserId,
-          newVal: assignedToUserId,
-          desc: `Task reassigned to user ${assignedToUserId}.`,
-        });
-      }
+      if (progress !== undefined) nextProgress = Math.min(100, Math.max(0, parseInt(progress)));
+      if (priority) nextPriority = priority;
+      if (section) nextSection = section;
+      if (reviewNotes !== undefined) nextReviewNotes = reviewNotes;
+      if (blockerReason !== undefined) nextBlocker = blockerReason;
+      if (actualHours !== undefined) nextActualHours = parseFloat(actualHours);
+      if (dueDate) nextDueDate = new Date(dueDate);
+      if (assignedToUserId) nextAssignedTo = assignedToUserId;
     }
 
-    if (actualHours !== undefined) {
-      nextActualHours = Number(actualHours);
-    }
-
-    // Execute Update in TiDB Cloud
     await queryDb(
-      `UPDATE task SET 
-        status = ?,
-        progress = ?,
-        priority = ?,
-        blockerReason = ?,
-        completedAt = ?,
-        startDate = ?,
-        actualHours = ?,
-        dueDate = ?,
-        assignedToUserId = ?,
+      `UPDATE task SET
+        status = ?, progress = ?, priority = ?, section = ?, reviewNotes = ?,
+        blockerReason = ?, completedAt = ?, actualHours = ?, dueDate = ?, assignedToUserId = ?,
         updatedAt = NOW()
        WHERE id = ?`,
       [
         nextStatus,
         nextProgress,
         nextPriority,
+        nextSection,
+        nextReviewNotes,
         nextBlocker,
         nextCompletedAt,
-        nextStartedAt,
         nextActualHours,
         nextDueDate,
         nextAssignedTo,
@@ -271,69 +250,55 @@ export async function PATCH(
       ]
     );
 
-    // Insert History Records
-    for (const h of historyItems) {
-      const histId = `TH-${id}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      await queryDb(
-        `INSERT INTO taskhistory (id, taskId, userId, action, oldValue, newValue, description, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
-        [histId, id, authResult.user.id, h.action, h.oldVal, h.newVal, h.desc]
-      );
-    }
+    // Audit log & task history
+    const historyAction =
+      isTeamLeader || isAdmin
+        ? nextStatus === "COMPLETED"
+          ? "WORK_APPROVED"
+          : "TASK_REVIEWED"
+        : nextStatus === "IN_REVIEW"
+        ? "WORK_SUBMITTED"
+        : "STATUS_UPDATED";
 
-    clearQueryCache("tasks");
+    const historyDesc =
+      notes ||
+      (nextStatus === "COMPLETED"
+        ? `Task approved and completed by ${(authUser as any).name || authUser.email}.`
+        : nextStatus === "IN_REVIEW"
+        ? `Work submitted for Team Leader review with ${nextProgress}% progress.`
+        : `Task updated from ${existingTask.status} to ${nextStatus} (${nextProgress}%).`);
 
-    await logAuditEvent(
-      authResult.user.id,
-      "TASK_UPDATED",
-      `Task "${existingTask.title}" updated: Status=${nextStatus}, Progress=${nextProgress}%.`
+    await queryDb(
+      `INSERT INTO taskhistory (id, taskId, userId, action, oldValue, newValue, description, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        `TH-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+        id,
+        authUser.id,
+        historyAction,
+        existingTask.status,
+        nextStatus,
+        historyDesc,
+      ]
     );
+
+    clearQueryCache("task");
+    clearQueryCache("project");
 
     return NextResponse.json({
       success: true,
-      message: `✓ Task updated successfully! Status: ${nextStatus} (${nextProgress}%).`,
+      message: `✓ Task updated to ${nextStatus}!`,
       task: {
         id,
         status: nextStatus,
         progress: nextProgress,
         priority: nextPriority,
-        completedAt: nextCompletedAt,
+        section: nextSection,
+        reviewNotes: nextReviewNotes,
       },
     });
   } catch (error: any) {
-    console.error("Update task error:", error);
-    return NextResponse.json(
-      { success: false, error: "Unable to update task. Please try again." },
-      { status: 500 }
-    );
-  }
-}
-
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const authResult = await authenticateRequest(request);
-    if (authResult.response || !authResult.user) {
-      return authResult.response || NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
-    }
-
-    const isAdmin = ADMIN_ROLES.includes(authResult.user.role);
-    if (!isAdmin) {
-      return NextResponse.json({ success: false, error: "Forbidden: Only administrators can delete tasks." }, { status: 403 });
-    }
-
-    const { id } = await params;
-    await queryDb(`DELETE FROM task WHERE id = ?`, [id]);
-
-    clearQueryCache("tasks");
-
-    await logAuditEvent(authResult.user.id, "TASK_DELETED", `Task ${id} deleted by Admin.`);
-
-    return NextResponse.json({ success: true, message: "Task deleted successfully." });
-  } catch (error: any) {
-    console.error("Delete task error:", error);
-    return NextResponse.json({ success: false, error: "Failed to delete task." }, { status: 500 });
+    console.error("PATCH /api/tasks/[id] error:", error);
+    return NextResponse.json({ success: false, error: error.message || "Failed to update task." }, { status: 500 });
   }
 }

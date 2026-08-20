@@ -312,6 +312,7 @@ model project {
   id                      String                   @id @default(cuid())
   clientId                String?
   projectTitle            String
+  description             String?                  @db.Text
   clientCompany           String
   clientContactPerson     String
   clientEmail             String
@@ -320,14 +321,17 @@ model project {
   endDate                 DateTime
   contractValue           Float
   status                  String                   @default("IN_PROGRESS")
+  teamLeaderId            String?
   createdAt               DateTime                 @default(now())
   client                  client?                  @relation(fields: [clientId], references: [id], map: "Project_clientId_fkey")
   completedprojecthistory completedprojecthistory?
   dailyworkupdate         dailyworkupdate[]
   user                    user[]                   @relation("assignedstaffprojects")
   tasks                   task[]
+  teamLeader              user?                    @relation("ProjectTeamLeader", fields: [teamLeaderId], references: [id], map: "Project_teamLeaderId_fkey")
 
   @@index([clientId], map: "Project_clientId_fkey")
+  @@index([teamLeaderId], map: "Project_teamLeaderId_fkey")
 }
 
 model resignation {
@@ -434,6 +438,7 @@ model user {
   manager            user?              @relation("ManagerEmployees", fields: [managerId], references: [id], map: "User_managerId_fkey")
   employees          user[]             @relation("ManagerEmployees")
   project            project[]          @relation("assignedstaffprojects")
+  ledProjects        project[]          @relation("ProjectTeamLeader")
 
   @@index([departmentId], map: "User_departmentId_fkey")
   @@index([managerId], map: "User_managerId_fkey")
@@ -461,6 +466,8 @@ model task {
   title            String
   description      String?       @db.Text
   projectId        String?
+  section          String?
+  reviewNotes      String?       @db.Text
   assignedToUserId String
   createdById      String?
   status           String        @default("ASSIGNED")
