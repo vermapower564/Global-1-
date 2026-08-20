@@ -69,6 +69,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       title: "ADMIN COMMAND",
       items: [
         { name: "Command Dashboard", href: ROUTES.ADMIN_DASHBOARD, icon: IconDashboard },
+        { name: "Today's Live Work", href: "/admin/today", icon: IconCalendar },
         { name: "Workforce Directory", href: ROUTES.ADMIN_EMPLOYEES, icon: IconUsers },
         { name: "Organization Tasks", href: ROUTES.ADMIN_TASKS, icon: IconClipboardList },
         { name: "Project Health", href: ROUTES.ADMIN_PROJECTS, icon: IconFolder },

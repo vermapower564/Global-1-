@@ -266,14 +266,30 @@ export default function AdminTasksPage() {
           <p className="text-[10px] font-extrabold uppercase text-gray-500">Total Tasks</p>
           <p className="mt-1 text-2xl font-black text-black font-mono">{summary?.total || tasks.length}</p>
         </div>
-        <div className="bg-white p-4 rounded-2xl border border-blue-200 shadow-2xs">
-          <p className="text-[10px] font-extrabold uppercase text-blue-600">In Progress</p>
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === "IN_PROGRESS" ? "ALL" : "IN_PROGRESS")}
+          className={`p-4 rounded-2xl border text-left transition shadow-2xs cursor-pointer ${
+            statusFilter === "IN_PROGRESS"
+              ? "bg-blue-50/80 border-blue-600 ring-2 ring-blue-600/20"
+              : "bg-white border-blue-200 hover:border-blue-500"
+          }`}
+        >
+          <p className="text-[10px] font-extrabold uppercase text-blue-600">[ IN PROGRESS {summary?.inProgress || 0} ]</p>
           <p className="mt-1 text-2xl font-black text-blue-600 font-mono">{summary?.inProgress || 0}</p>
-        </div>
-        <div className="bg-white p-4 rounded-2xl border border-emerald-200 shadow-2xs">
+        </button>
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === "COMPLETED" ? "ALL" : "COMPLETED")}
+          className={`p-4 rounded-2xl border text-left transition shadow-2xs cursor-pointer ${
+            statusFilter === "COMPLETED"
+              ? "bg-emerald-50/80 border-emerald-600 ring-2 ring-emerald-600/20"
+              : "bg-white border-emerald-200 hover:border-emerald-500"
+          }`}
+        >
           <p className="text-[10px] font-extrabold uppercase text-emerald-600">Completed</p>
           <p className="mt-1 text-2xl font-black text-emerald-600 font-mono">{summary?.completed || 0}</p>
-        </div>
+        </button>
         <div className="bg-white p-4 rounded-2xl border border-purple-200 shadow-2xs">
           <p className="text-[10px] font-extrabold uppercase text-purple-600">In Review</p>
           <p className="mt-1 text-2xl font-black text-purple-600 font-mono">{summary?.inReview || 0}</p>

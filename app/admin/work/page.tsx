@@ -113,6 +113,12 @@ export default function AdminWorkPage() {
 
         <div className="flex items-center gap-3">
           <Link
+            href="/admin/today"
+            className="bg-gray-100 hover:bg-gray-200 text-black font-black text-xs px-4 py-2.5 rounded-xl border border-gray-300 transition shadow-2xs"
+          >
+            Today's Live Tasks →
+          </Link>
+          <Link
             href="/admin/tasks"
             className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs px-4 py-2.5 rounded-xl shadow-md transition"
           >
