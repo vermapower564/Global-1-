@@ -297,7 +297,15 @@ export default function TeamLeaderDashboardPage() {
                     </span>
                     <h4 className="text-xs font-black text-slate-900 mt-1">{t.title}</h4>
                     <p className="text-[11px] text-slate-500 font-medium">
-                      Submitted by: <strong className="text-slate-800">{t.assignedToUser?.name}</strong> ({t.assignedToUser?.employeeId})
+                      Submitted by:{" "}
+                      <Link
+                        href={`/admin/employees/${encodeURIComponent(t.assignedToUser?.employeeId || t.assignedToUser?.id || "EMP001")}`}
+                        className="text-slate-800 hover:text-purple-700 font-bold hover:underline"
+                        title={`View ${t.assignedToUser?.name} Profile`}
+                      >
+                        {t.assignedToUser?.name}
+                      </Link>{" "}
+                      ({t.assignedToUser?.employeeId})
                     </p>
                   </div>
                   <span className="text-xs font-mono font-black text-emerald-600">{t.progress}%</span>
@@ -356,7 +364,14 @@ export default function TeamLeaderDashboardPage() {
                 return (
                   <tr key={m.id} className="hover:bg-slate-50 transition">
                     <td className="p-3 font-bold text-slate-900">
-                      {m.name} <span className="text-[10px] font-mono text-slate-400">({m.employeeId})</span>
+                      <Link
+                        href={`/admin/employees/${encodeURIComponent(m.employeeId || m.id)}`}
+                        title={`View ${m.name} Profile`}
+                        className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                      >
+                        {m.name}
+                      </Link>{" "}
+                      <span className="text-[10px] font-mono text-slate-400 font-normal">({m.employeeId})</span>
                     </td>
                     <td className="p-3 text-slate-600">{m.role}</td>
                     <td className="p-3 text-center font-mono font-bold">{m.activeTaskCount}</td>

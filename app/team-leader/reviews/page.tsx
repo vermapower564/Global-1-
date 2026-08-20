@@ -161,7 +161,13 @@ export default function TeamLeaderReviewsPage() {
                       {t.assignedToUser?.name?.slice(0, 2).toUpperCase()}
                     </div>
                     <div>
-                      <div className="font-extrabold text-slate-900">{t.assignedToUser?.name}</div>
+                      <Link
+                        href={`/admin/employees/${encodeURIComponent(t.assignedToUser?.employeeId || t.assignedToUser?.id || "EMP001")}`}
+                        title={`View ${t.assignedToUser?.name} Profile`}
+                        className="font-extrabold text-slate-900 hover:text-purple-700 hover:underline block"
+                      >
+                        {t.assignedToUser?.name}
+                      </Link>
                       <div className="text-[10px] text-slate-500 font-mono">{t.assignedToUser?.employeeId} • {t.assignedToUser?.role}</div>
                     </div>
                   </div>

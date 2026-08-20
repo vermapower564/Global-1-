@@ -321,9 +321,13 @@ export default function AdminProjectsPage() {
                       <span className="text-slate-500 font-bold">Team Leader:</span>
                       {leader ? (
                         <div className="flex items-center gap-2">
-                          <span className="font-extrabold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                          <Link
+                            href={`/admin/employees/${encodeURIComponent(leader.employeeId || leader.id)}`}
+                            title={`View ${leader.name} Profile`}
+                            className="font-extrabold text-blue-700 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-md border border-blue-200 hover:underline inline-flex items-center gap-1 transition"
+                          >
                             👑 {leader.name} ({leader.employeeId})
-                          </span>
+                          </Link>
                         </div>
                       ) : (
                         <span className="text-rose-600 font-bold">⚠️ No Team Leader Assigned</span>
@@ -334,13 +338,14 @@ export default function AdminProjectsPage() {
                       <span className="text-slate-500 font-bold">Project Members ({members.length}):</span>
                       <div className="flex items-center gap-1.5 flex-wrap justify-end">
                         {members.slice(0, 4).map((m: any) => (
-                          <span
+                          <Link
                             key={m.id}
-                            title={`${m.name} (${m.role})`}
-                            className="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[11px] font-bold text-slate-700"
+                            href={`/admin/employees/${encodeURIComponent(m.employeeId || m.id)}`}
+                            title={`View ${m.name} (${m.role}) Profile`}
+                            className="px-2 py-0.5 rounded-md bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-[11px] font-bold text-slate-700 hover:text-blue-700 hover:underline transition"
                           >
                             {m.name.split(" ")[0]}
-                          </span>
+                          </Link>
                         ))}
                         {members.length > 4 && (
                           <span className="text-[10px] font-extrabold text-slate-500">
@@ -743,7 +748,14 @@ export default function AdminProjectsPage() {
                     {(selectedProject.employeeProgress || []).map((ep: any) => (
                       <tr key={ep.id} className="hover:bg-slate-50">
                         <td className="p-3 font-bold text-slate-900">
-                          {ep.name} <span className="text-[10px] font-mono text-slate-400">({ep.employeeId})</span>
+                          <Link
+                            href={`/admin/employees/${encodeURIComponent(ep.employeeId || ep.id)}`}
+                            title={`View ${ep.name} Profile`}
+                            className="text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <span>{ep.name}</span>
+                            <span className="text-[10px] font-mono text-slate-400 font-normal">({ep.employeeId})</span>
+                          </Link>
                         </td>
                         <td className="p-3 text-slate-600">
                           <span className="px-2 py-0.5 rounded bg-slate-100 text-[10px] font-bold">

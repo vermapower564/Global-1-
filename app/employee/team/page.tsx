@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 
 function getInitials(name: string): string {
   if (!name || !name.trim()) return "U";
@@ -115,8 +116,20 @@ export default function EmployeeTeamPage() {
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-black text-black text-base truncate">{t.name}</h3>
-                    <p className="text-xs font-mono font-bold text-blue-600 truncate">{t.employeeId || t.id}</p>
+                    <Link
+                      href={`/admin/employees/${encodeURIComponent(t.employeeId || t.id)}`}
+                      title={`View ${t.name} Profile`}
+                      className="font-black text-black hover:text-blue-600 hover:underline text-base truncate block"
+                    >
+                      {t.name}
+                    </Link>
+                    <Link
+                      href={`/admin/employees/${encodeURIComponent(t.employeeId || t.id)}`}
+                      title={`View ${t.name} Profile`}
+                      className="text-xs font-mono font-bold text-blue-600 hover:underline truncate block"
+                    >
+                      {t.employeeId || t.id}
+                    </Link>
                     <p className="text-[11px] text-gray-500 truncate">{t.email}</p>
                   </div>
                 </div>

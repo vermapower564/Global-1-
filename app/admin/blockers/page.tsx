@@ -126,9 +126,17 @@ export default function AdminBlockersPage() {
                 </div>
 
                 <div className="text-right">
-                  <span className="text-xs font-bold text-gray-700 block">
-                    Owner: {t.assignedToUser?.name || "Assigned Engineer"} ({t.assignedToUser?.employeeId || "EMP"})
-                  </span>
+                  <div className="text-xs font-bold text-gray-700">
+                    Owner:{" "}
+                    <Link
+                      href={`/admin/employees/${encodeURIComponent(t.assignedToUser?.employeeId || t.assignedToUser?.id || "EMP001")}`}
+                      title={`View ${t.assignedToUser?.name} Profile`}
+                      className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {t.assignedToUser?.name || "Assigned Engineer"}
+                    </Link>{" "}
+                    <span className="font-mono text-[10px] text-gray-400">({t.assignedToUser?.employeeId || "EMP"})</span>
+                  </div>
                   <span className="text-[11px] text-gray-500 font-mono">
                     Project: {t.project?.name || "OMS Enterprise"}
                   </span>

@@ -145,7 +145,13 @@ export default function TeamLeaderProgressPage() {
                   return (
                     <tr key={t.id} className="hover:bg-slate-50 transition">
                       <td className="p-3.5 font-bold text-slate-900 whitespace-nowrap">
-                        <div>{t.assignedToUser?.name || "Unassigned"}</div>
+                        <Link
+                          href={`/admin/employees/${encodeURIComponent(t.assignedToUser?.employeeId || t.assignedToUser?.id || "EMP001")}`}
+                          title={`View ${t.assignedToUser?.name} Profile`}
+                          className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer block"
+                        >
+                          {t.assignedToUser?.name || "Unassigned"}
+                        </Link>
                         <div className="text-[10px] font-mono text-slate-400">{t.assignedToUser?.employeeId}</div>
                       </td>
 

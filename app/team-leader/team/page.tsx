@@ -130,7 +130,13 @@ export default function TeamLeaderMembersPage() {
                             {m.name.slice(0, 2).toUpperCase()}
                           </div>
                           <div>
-                            <div>{m.name}</div>
+                            <Link
+                              href={`/admin/employees/${encodeURIComponent(m.employeeId || m.id)}`}
+                              title={`View ${m.name} Profile`}
+                              className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer block"
+                            >
+                              {m.name}
+                            </Link>
                             <div className="text-[10px] font-mono text-slate-400">{m.employeeId}</div>
                           </div>
                         </div>

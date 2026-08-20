@@ -319,7 +319,17 @@ export default function EmployeeProjectDetailPage() {
 
           <div className="space-y-1">
             <span className="text-slate-400 font-bold uppercase text-[10px]">Team Leader</span>
-            <p className="font-extrabold text-blue-600">👑 {leader?.name || "Unassigned"}</p>
+            {leader ? (
+              <Link
+                href={`/admin/employees/${encodeURIComponent(leader.employeeId || leader.id)}`}
+                title={`View ${leader.name} Profile`}
+                className="font-extrabold text-blue-600 hover:text-blue-800 hover:underline block"
+              >
+                👑 {leader.name} ({leader.employeeId})
+              </Link>
+            ) : (
+              <p className="font-extrabold text-slate-400">Unassigned</p>
+            )}
           </div>
 
           <div className="space-y-1">
@@ -354,7 +364,13 @@ export default function EmployeeProjectDetailPage() {
                       {m.avatar || m.name.slice(0, 2).toUpperCase()}
                     </div>
                     <div>
-                      <div className="font-extrabold text-slate-900">{m.name}</div>
+                      <Link
+                        href={`/admin/employees/${encodeURIComponent(m.employeeId || m.id)}`}
+                        title={`View ${m.name} Profile`}
+                        className="font-extrabold text-slate-900 hover:text-blue-600 hover:underline cursor-pointer block"
+                      >
+                        {m.name}
+                      </Link>
                       <div className="text-[10px] text-slate-400 font-mono">{m.employeeId} • {m.role}</div>
                     </div>
                   </div>
@@ -480,7 +496,13 @@ export default function EmployeeProjectDetailPage() {
 
                       {isTeamLeader && (
                         <td className="p-3.5">
-                          <div className="font-bold text-slate-900">{t.assignedToUser?.name || "Unassigned"}</div>
+                          <Link
+                            href={`/admin/employees/${encodeURIComponent(t.assignedToUser?.employeeId || t.assignedToUser?.id || "EMP001")}`}
+                            title={`View ${t.assignedToUser?.name} Profile`}
+                            className="font-bold text-slate-900 hover:text-blue-600 hover:underline cursor-pointer block"
+                          >
+                            {t.assignedToUser?.name || "Unassigned"}
+                          </Link>
                           <div className="text-[10px] font-mono text-slate-400">{t.assignedToUser?.employeeId}</div>
                         </td>
                       )}
