@@ -224,37 +224,37 @@ export default function EmployeesPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {/* 🌟 1. SPECIAL MASTER FOLDER: ALL EMPLOYEES (USER REQUIREMENT) */}
+              {/* 🌟 1. SPECIAL MASTER FOLDER: ALL EMPLOYEES */}
               <div
                 onClick={() => setActiveFolder("ALL_EMPLOYEES")}
-                className="bg-gradient-to-br from-blue-900 via-indigo-900 to-slate-900 text-white p-6 rounded-3xl border border-blue-700/50 shadow-md hover:shadow-xl hover:scale-[1.02] transition-all cursor-pointer group flex flex-col justify-between space-y-4"
+                className="bg-gradient-to-r from-blue-50/90 via-indigo-50/50 to-white text-black p-6 rounded-3xl border border-blue-200 shadow-xs hover:border-blue-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between space-y-4"
               >
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <div className="h-12 w-12 rounded-2xl bg-white/10 text-white flex items-center justify-center text-2xl shadow-sm group-hover:scale-110 transition-transform">
+                    <div className="h-12 w-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center text-2xl shadow-xs group-hover:scale-110 transition-transform">
                       🗂️
                     </div>
-                    <span className="px-3 py-1 rounded-full bg-blue-500/30 border border-blue-400/40 text-blue-200 font-mono text-[11px] font-black">
+                    <span className="px-3 py-1 rounded-full bg-blue-100 border border-blue-200 text-blue-800 font-mono text-[11px] font-black">
                       {employees.length} Total Staff
                     </span>
                   </div>
 
-                  <span className="text-[10px] font-black uppercase tracking-widest text-blue-300 block">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-blue-600 block">
                     Master Workforce Directory
                   </span>
-                  <h3 className="font-black text-white text-lg group-hover:text-blue-300 transition">
+                  <h3 className="font-black text-black text-lg group-hover:text-blue-600 transition">
                     All Employees Folder
                   </h3>
-                  <p className="text-xs text-slate-300 mt-1 font-medium leading-relaxed">
+                  <p className="text-xs text-gray-600 mt-1 font-medium leading-relaxed">
                     Access all {employees.length} organization employees across every department in one unified workspace.
                   </p>
                 </div>
 
-                <div className="pt-3 border-t border-white/10 flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-slate-300">
+                <div className="pt-3 border-t border-blue-100 flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-gray-500">
                     Full Staff Ledger & Statuses
                   </span>
-                  <span className="text-xs font-black text-blue-300 group-hover:translate-x-1 transition-transform flex items-center gap-1">
+                  <span className="text-xs font-black text-blue-600 group-hover:translate-x-1 transition-transform flex items-center gap-1">
                     <span>Open Master Folder</span>
                     <span>→</span>
                   </span>
