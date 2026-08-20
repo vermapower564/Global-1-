@@ -468,6 +468,8 @@ model task {
   projectId        String?
   section          String?
   reviewNotes      String?       @db.Text
+  isMainTask       Boolean       @default(false)
+  parentTaskId     String?
   assignedToUserId String
   createdById      String?
   status           String        @default("ASSIGNED")
@@ -484,12 +486,15 @@ model task {
   assignedToUser   user          @relation("AssignedTasks", fields: [assignedToUserId], references: [id], map: "Task_assignedToUserId_fkey")
   createdBy        user?         @relation("CreatedTasks", fields: [createdById], references: [id], map: "Task_createdById_fkey")
   project          project?      @relation(fields: [projectId], references: [id], map: "Task_projectId_fkey")
+  parentTask       task?         @relation("MainTaskSubtasks", fields: [parentTaskId], references: [id], onDelete: SetNull, map: "Task_parentTaskId_fkey")
+  subtasks         task[]        @relation("MainTaskSubtasks")
   taskhistory      taskhistory[]
   taskcomment      taskcomment[]
 
   @@index([assignedToUserId], map: "Task_assignedToUserId_fkey")
   @@index([createdById], map: "Task_createdById_fkey")
   @@index([projectId], map: "Task_projectId_fkey")
+  @@index([parentTaskId], map: "Task_parentTaskId_fkey")
 }
 
 model taskhistory {

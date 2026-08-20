@@ -42,6 +42,8 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const [user, setUser] = useState<any>(null);
   const [imgError, setImgError] = useState(false);
 
+  const [isTeamLeader, setIsTeamLeader] = useState(false);
+
   useEffect(() => {
     // 1. Initial User Context Load
     const u = getCurrentUserContext();
@@ -50,7 +52,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     const adminCheck = ADMIN_ROLES.includes(roleUpper) || u.activeMode === "ADMIN_HR";
     setIsAdmin(adminCheck);
 
-    // 2. Server-side Session Verification
+    // 2. Server-side Session Verification & TL status check
     fetch("/api/auth/me")
       .then((res) => res.json())
       .then((json) => {
@@ -61,7 +63,30 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
         }
       })
       .catch(() => {});
+
+    // Check if user is a Team Leader
+    fetch("/api/team-leader/summary")
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.success && json.isTeamLeader) {
+          setIsTeamLeader(true);
+        }
+      })
+      .catch(() => {});
   }, [pathname]);
+
+  // Team Leader Navigation Section
+  const teamLeaderSection = {
+    title: "TEAM LEADER COMMAND",
+    items: [
+      { name: "TL Dashboard", href: "/team-leader", icon: IconDashboard },
+      { name: "New Tasks (Admin)", href: "/team-leader/tasks", icon: IconClipboardList },
+      { name: "Team Capacity", href: "/team-leader/team", icon: IconUsers },
+      { name: "Assign Work", href: "/team-leader/assign-work", icon: IconFileEdit },
+      { name: "Team Progress", href: "/team-leader/progress", icon: IconHistory },
+      { name: "Work Reviews", href: "/team-leader/reviews", icon: IconUserCheck },
+    ],
+  };
 
   // Admin Multi-Dashboard Navigation Sections
   const adminSections = [
@@ -76,6 +101,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
         { name: "Blocker Resolution", href: ROUTES.ADMIN_BLOCKERS, icon: IconUserCheck },
       ],
     },
+    teamLeaderSection,
     {
       title: "OPERATIONS & RECORDS",
       items: [
@@ -92,6 +118,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
 
   // Employee Multi-Dashboard Navigation Sections
   const employeeSections = [
+    ...(isTeamLeader ? [teamLeaderSection] : []),
     {
       title: "WORKSPACE",
       items: [
