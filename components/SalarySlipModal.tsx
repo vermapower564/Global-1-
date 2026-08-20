@@ -74,22 +74,40 @@ export default function SalarySlipModal({
     window.print();
   };
 
+  // Keyboard shortcut: ESC to Cut / Close slip
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    if (isOpen) {
+      window.addEventListener("keydown", handleKeyDown);
+    }
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 font-sans print:p-0 print:bg-white">
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 font-sans print:p-0 print:bg-white"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="bg-white text-black rounded-3xl border border-gray-200 shadow-2xl max-w-2xl w-full overflow-hidden animate-in fade-in duration-200 print:border-none print:shadow-none print:max-w-full">
         {/* Top Control Bar (Hidden when Printing) */}
-        <div className="p-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between print:hidden">
+        <div className="p-4 bg-slate-900 text-white border-b border-slate-800 flex items-center justify-between print:hidden">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold uppercase text-gray-500">
+            <span className="text-xs font-bold uppercase text-slate-300">
               Salary Slip • {slip.salaryMonth}
             </span>
             <span
               className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
                 slip.paymentStatus === "PAID"
-                  ? "bg-emerald-100 text-emerald-800"
+                  ? "bg-emerald-500 text-white"
                   : slip.paymentStatus === "SCHEDULED"
-                  ? "bg-blue-100 text-blue-800"
-                  : "bg-amber-100 text-amber-800"
+                  ? "bg-blue-500 text-white"
+                  : "bg-amber-500 text-black"
               }`}
             >
               ● {slip.paymentStatus}
@@ -99,16 +117,18 @@ export default function SalarySlipModal({
           <div className="flex items-center gap-2">
             <button
               onClick={handlePrint}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2 rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer"
+              className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-3.5 py-2 rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer"
             >
               <span>🖨️</span>
-              <span>Download / Print PDF</span>
+              <span>Print / Download PDF</span>
             </button>
             <button
               onClick={onClose}
-              className="h-8 w-8 rounded-xl bg-gray-200 hover:bg-gray-300 text-gray-700 font-black text-xs flex items-center justify-center transition cursor-pointer"
+              title="Cut / Close Salary Slip (ESC)"
+              className="bg-rose-600 hover:bg-rose-700 text-white font-black text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md"
             >
-              ✕
+              <span>✂️ Cut / Close</span>
+              <span>✕</span>
             </button>
           </div>
         </div>
@@ -325,6 +345,36 @@ export default function SalarySlipModal({
               <p className="font-extrabold text-black">Authorized Signatory</p>
               <p className="text-[10px]">Accounts & HR Finance Dept</p>
             </div>
+          </div>
+
+          {/* Perforated Cut / Tear Line Indicator */}
+          <div className="pt-4 border-t-2 border-dashed border-gray-300 flex items-center justify-center gap-2 text-[10px] font-mono text-gray-400 uppercase tracking-widest print:hidden">
+            <span>- - - - - - - - - - - -</span>
+            <span className="flex items-center gap-1 text-gray-600 font-bold bg-gray-50 px-2 py-0.5 rounded-full border border-gray-200">
+              ✂️ CUT / CLOSE SLIP
+            </span>
+            <span>- - - - - - - - - - - -</span>
+          </div>
+
+          {/* Bottom Action Controls (Hidden on Print) */}
+          <div className="pt-2 flex gap-3 print:hidden">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-3 rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 font-black text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+            >
+              <span>✂️</span>
+              <span>Cut / Close Salary Slip</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="flex-1 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>🖨️</span>
+              <span>Print / Download Slip</span>
+            </button>
           </div>
         </div>
       </div>
