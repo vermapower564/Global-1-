@@ -1,41 +1,68 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { authenticateRequest, logAuditEvent } from "@/lib/authMiddleware";
 import { getStoredLeaveRequests, addStoredLeaveRequest, updateLeaveStatus } from "@/utils/leaveStore";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
+
+export async function GET(request: NextRequest) {
   try {
-    const { prisma } = await import("@/lib/prisma");
-    const dbLeaves = await prisma.leaverequest.findMany({
-      include: {
-        user: { select: { name: true, department: { select: { name: true } } } },
-      },
-      orderBy: { appliedAt: "desc" },
-    });
-
-    if (dbLeaves.length > 0) {
-      return NextResponse.json({ success: true, total: dbLeaves.length, data: dbLeaves });
+    const authResult = await authenticateRequest(request);
+    if (authResult.response || !authResult.user) {
+      return authResult.response || NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
     }
-  } catch (dbErr: any) {
-    console.warn("Prisma query fallback:", dbErr.message);
-  }
 
-  const requests = getStoredLeaveRequests();
-  return NextResponse.json({
-    success: true,
-    total: requests.length,
-    data: requests,
-  });
+    const authUser = authResult.user;
+    const isAdmin = ADMIN_ROLES.includes(authUser.role);
+
+    try {
+      const { prisma } = await import("@/lib/prisma");
+      
+      const whereCondition = isAdmin ? {} : { userId: authUser.id };
+      
+      const dbLeaves = await prisma.leaverequest.findMany({
+        where: whereCondition,
+        include: {
+          user: { select: { name: true, employeeId: true, department: { select: { name: true } } } },
+        },
+        orderBy: { appliedAt: "desc" },
+      });
+
+      if (dbLeaves.length > 0) {
+        return NextResponse.json({ success: true, total: dbLeaves.length, data: dbLeaves });
+      }
+    } catch (dbErr: any) {
+      console.warn("Prisma query fallback:", dbErr.message);
+    }
+
+    const requests = getStoredLeaveRequests();
+    const filtered = isAdmin ? requests : requests.filter((r: any) => r.userId === authUser.id);
+
+    return NextResponse.json({
+      success: true,
+      total: filtered.length,
+      data: filtered,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: "Failed to fetch leave requests." }, { status: 500 });
+  }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { userId, employeeName, department, leaveType, startDate, endDate, totalDays, reason, contactPhone } = body;
+    const authResult = await authenticateRequest(request);
+    if (authResult.response || !authResult.user) {
+      return authResult.response || NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
+    }
 
-    if (!employeeName && !reason) {
+    const authUser = authResult.user;
+    const body = await request.json().catch(() => ({}));
+    const { leaveType, startDate, endDate, totalDays, reason } = body;
+
+    if (!reason) {
       return NextResponse.json(
-        { success: false, error: "Employee Name and Reason are required." },
+        { success: false, error: "Leave reason is required." },
         { status: 400 }
       );
     }
@@ -43,28 +70,10 @@ export async function POST(request: Request) {
     let createdRecord;
     try {
       const { prisma } = await import("@/lib/prisma");
-      
-      // Auto-find or create User record for Foreign Key constraint in XAMPP MySQL
-      let user = userId 
-        ? await prisma.user.findUnique({ where: { id: userId } })
-        : await prisma.user.findFirst();
-
-      if (!user) {
-        user = await prisma.user.create({
-          data: {
-            employeeId: `EMP-${Math.floor(1000 + Math.random() * 9000)}`,
-            name: employeeName || "Employee Applicant",
-            email: `${(employeeName || "applicant").toLowerCase().replace(/\s+/g, ".")}@oms.com`,
-            password: "hashed_secure_password_123",
-            role: "DEVELOPER",
-            joiningDate: new Date(),
-          },
-        });
-      }
 
       createdRecord = await prisma.leaverequest.create({
         data: {
-          userId: user.id,
+          userId: authUser.id, // Strictly use authenticated user ID
           leaveType: leaveType || "Casual Leave",
           startDate: new Date(startDate || Date.now()),
           endDate: new Date(endDate || Date.now()),
@@ -78,73 +87,70 @@ export async function POST(request: Request) {
     }
 
     const newReq = addStoredLeaveRequest({
-      employeeName: employeeName || "Employee",
-      department: department || "Engineering",
+      employeeName: (authUser as any).name || authUser.email,
+      department: "Operations",
       leaveType: leaveType || "Casual Leave",
       startDate: startDate || new Date().toISOString().split("T")[0],
       endDate: endDate || new Date().toISOString().split("T")[0],
-      totalDays: totalDays || 1,
+      totalDays: parseInt(totalDays) || 1,
       reason: reason || "Personal Leave",
-      contactPhone,
-    });
+      status: "PENDING",
+    } as any);
+
+    logAuditEvent(
+      authUser.id,
+      "LEAVE_APPLICATION_SUBMITTED",
+      `Submitted leave request for ${totalDays || 1} day(s) (${leaveType || "Casual Leave"})`,
+      request.headers.get("x-forwarded-for") || "127.0.0.1"
+    );
 
     return NextResponse.json(
-      {
-        success: true,
-        message: "✓ Leave application saved to XAMPP MySQL (leaverequest table) via Prisma!",
-        data: createdRecord || newReq,
-      },
+      { success: true, message: "Leave request submitted successfully.", data: createdRecord || newReq },
       { status: 201 }
     );
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to process request." },
+      { success: false, error: "Failed to submit leave request." },
       { status: 500 }
     );
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { id, status } = body;
-
-    if (!id || !["Approved", "Rejected", "APPROVED", "REJECTED"].includes(status)) {
-      return NextResponse.json(
-        { success: false, error: "Valid ID and status ('Approved' or 'Rejected') are required." },
-        { status: 400 }
-      );
+    const authResult = await authenticateRequest(request);
+    if (authResult.response || !authResult.user) {
+      return authResult.response || NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
     }
 
-    const enumStatus = status.toUpperCase() === "APPROVED" ? "APPROVED" : "REJECTED";
+    const authUser = authResult.user;
+    const isAdmin = ADMIN_ROLES.includes(authUser.role);
+
+    if (!isAdmin) {
+      return NextResponse.json({ success: false, error: "Forbidden: Admin approval authorization required." }, { status: 403 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const { id, status, hrRemarks } = body;
+
+    if (!id || !status) {
+      return NextResponse.json({ success: false, error: "Missing leave ID or status." }, { status: 400 });
+    }
 
     try {
       const { prisma } = await import("@/lib/prisma");
       await prisma.leaverequest.update({
         where: { id },
-        data: { status: enumStatus as any },
+        data: { status, hrRemarks },
       });
     } catch (dbErr: any) {
-      console.warn("Prisma update fallback:", dbErr.message);
+      console.warn("Prisma leave status update fallback:", dbErr.message);
     }
 
-    const updated = updateLeaveStatus(id, status);
-    const item = updated.find((r) => r.id === id);
+    const updated = updateLeaveStatus(id, status as any);
 
-    return NextResponse.json({
-      success: true,
-      message: `Leave application ${id} ${status.toLowerCase()} and email notice dispatched.`,
-      emailDispatched: {
-        to: `${item?.employeeName.toLowerCase().replace(/\s+/g, ".")}@oms.com`,
-        subject: `[OMS HR Notice] Leave Application #${id} - ${status.toUpperCase()}`,
-        status: 200,
-      },
-      data: item,
-    });
+    return NextResponse.json({ success: true, data: updated });
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || "Failed to update status." },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: "Failed to update leave status." }, { status: 500 });
   }
 }

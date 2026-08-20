@@ -188,17 +188,23 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
+    const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
+    const isAdmin = ADMIN_ROLES.includes(authResult.user.role);
     let targetUserId = authResult.user.id;
 
-    // Support punch by employee ID / input identity if provided
-    const lookupKey = (body.employeeId || body.userId || body.identity || "").toString().trim();
-    if (lookupKey) {
-      const uRows = await queryDb<any[]>(
-        `SELECT id, employeeId, name FROM user WHERE id = ? OR employeeId = ? OR LOWER(email) = LOWER(?) LIMIT 1`,
-        [lookupKey, lookupKey, lookupKey]
-      );
-      if (uRows && uRows.length > 0) {
-        targetUserId = uRows[0].id;
+    // If not admin, strictly enforce targetUserId = authResult.user.id (IDOR Prevention)
+    if (!isAdmin) {
+      targetUserId = authResult.user.id;
+    } else {
+      const lookupKey = (body.employeeId || body.userId || body.identity || "").toString().trim();
+      if (lookupKey) {
+        const uRows = await queryDb<any[]>(
+          `SELECT id, employeeId, name FROM user WHERE id = ? OR employeeId = ? OR LOWER(email) = LOWER(?) LIMIT 1`,
+          [lookupKey, lookupKey, lookupKey]
+        );
+        if (uRows && uRows.length > 0) {
+          targetUserId = uRows[0].id;
+        }
       }
     }
 
@@ -234,27 +240,27 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const punchId = `ATT-${targetUserId}-${todayStr}-${Date.now()}`;
+    const punchId = `ATT-${targetUserId}-${Date.now()}`;
 
     await queryDb(
-      `INSERT INTO attendance (id, userId, date, checkInTime, checkOutTime, hoursWorked, status, createdAt)
-       VALUES (?, ?, NOW(), NOW(), NULL, 0, 'PRESENT', NOW())`,
+      `INSERT INTO attendance (id, userId, date, checkInTime, status, createdAt)
+       VALUES (?, ?, NOW(), NOW(), 'PRESENT', NOW())`,
       [punchId, targetUserId]
     );
 
     clearQueryCache("attendance");
 
-    await logAuditEvent(
+    logAuditEvent(
       authResult.user.id,
       "ATTENDANCE_PUNCH_IN",
-      `Punch-In recorded at ${now.toLocaleTimeString("en-IN")}`
+      `Biometric punch-in recorded successfully for user ID ${targetUserId}`,
+      req.headers.get("x-forwarded-for") || "127.0.0.1"
     );
 
     return NextResponse.json(
       {
         success: true,
-        message: `✓ Punch-In recorded in TiDB Cloud at ${now.toLocaleTimeString("en-IN")}! (Shift Active)`,
-        punchId,
+        message: "⚡ Check-in registered! Shift timer started.",
         checkInTime: now.toISOString(),
       },
       { status: 201 }
@@ -279,14 +285,22 @@ export async function PUT(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     let targetUserId = authResult.user.id;
 
-    const lookupKey = (body.employeeId || body.userId || body.identity || "").toString().trim();
-    if (lookupKey) {
-      const uRows = await queryDb<any[]>(
-        `SELECT id, employeeId, name FROM user WHERE id = ? OR employeeId = ? OR LOWER(email) = LOWER(?) LIMIT 1`,
-        [lookupKey, lookupKey, lookupKey]
-      );
-      if (uRows && uRows.length > 0) {
-        targetUserId = uRows[0].id;
+    const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
+    const isAdmin = ADMIN_ROLES.includes(authResult.user.role);
+
+    // If not admin, strictly enforce targetUserId = authResult.user.id (IDOR Prevention)
+    if (!isAdmin) {
+      targetUserId = authResult.user.id;
+    } else {
+      const lookupKey = (body.employeeId || body.userId || body.identity || "").toString().trim();
+      if (lookupKey) {
+        const uRows = await queryDb<any[]>(
+          `SELECT id, employeeId, name FROM user WHERE id = ? OR employeeId = ? OR LOWER(email) = LOWER(?) LIMIT 1`,
+          [lookupKey, lookupKey, lookupKey]
+        );
+        if (uRows && uRows.length > 0) {
+          targetUserId = uRows[0].id;
+        }
       }
     }
 

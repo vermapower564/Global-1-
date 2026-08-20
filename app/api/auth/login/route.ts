@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
     // 4. Verify Account Existence
     if (!dbUser) {
       return NextResponse.json(
-        { success: false, error: "Invalid ID or Password" },
+        { success: false, error: "Invalid Employee ID or password." },
         { status: 401 }
       );
     }
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
     const passwordMatches = await comparePassword(inputPassword, dbUser.password);
     if (!passwordMatches) {
       return NextResponse.json(
-        { success: false, error: "Invalid ID or Password" },
+        { success: false, error: "Invalid Employee ID or password." },
         { status: 401 }
       );
     }

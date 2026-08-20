@@ -24,10 +24,15 @@ export async function GET(request: NextRequest) {
         d.name AS department_name
       FROM resignation r
       LEFT JOIN user u ON (r.userId = u.id OR r.employeeId = u.employeeId)
-      LEFT JOIN department d ON u.departmentId = d.id
       WHERE 1=1
     `;
     const params: any[] = [];
+    const isAdmin = ADMIN_ROLES.includes(authResult.user.role);
+
+    if (!isAdmin) {
+      sql += ` AND (r.userId = ? OR r.employeeId = ?)`;
+      params.push(authResult.user.id, (authResult.user as any).employeeId || authResult.user.id);
+    }
 
     if (statusFilter && statusFilter !== "ALL") {
       sql += ` AND r.status = ?`;

@@ -80,7 +80,7 @@ function LoginForm() {
           window.location.href = destination;
         }, 150);
       } else {
-        setErrorMessage(data.error || "Invalid ID or Password");
+        setErrorMessage(data.error || "Invalid Employee ID or password.");
       }
     } catch (err: any) {
       setErrorMessage("Unable to connect to the authentication service. Please try again.");
