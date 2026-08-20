@@ -147,20 +147,33 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-3 pt-2">
+        <div className="space-y-2 pt-2">
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="flex-1 py-3 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-extrabold text-xs transition cursor-pointer shadow-2xs"
+            >
+              Close
+            </button>
+            <Link
+              href={isEmployeePath ? "/employee/profile" : (isAdminRole ? "/admin/employees" : "/employee/profile")}
+              onClick={onClose}
+              className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs transition shadow-md text-center"
+            >
+              View Full Profile →
+            </Link>
+          </div>
           <button
-            onClick={onClose}
-            className="flex-1 py-3 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-extrabold text-xs transition cursor-pointer"
+            onClick={async () => {
+              try {
+                await fetch("/api/auth/logout", { method: "POST" });
+              } catch {}
+              window.location.href = "/login";
+            }}
+            className="w-full py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-2"
           >
-            Close
+            <span>🚪 Sign Out of OMS</span>
           </button>
-          <Link
-            href={isEmployeePath ? "/employee/profile" : (isAdminRole ? "/admin/employees" : "/employee/profile")}
-            onClick={onClose}
-            className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs transition shadow-md shadow-blue-600/20 text-center"
-          >
-            View Full Profile →
-          </Link>
         </div>
       </div>
     </div>

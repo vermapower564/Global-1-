@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyToken } from "@/lib/authService";
+import { verifyToken, generateToken } from "@/lib/authService";
 import { getRolePermissions, Role } from "@/lib/rbac";
 import { getEmployeeAvatarUrl } from "@/lib/avatarHelper";
 import { queryDbCached } from "@/lib/db";
@@ -27,10 +27,19 @@ export async function GET(req: NextRequest) {
 
     const decoded = verifyToken(token);
     if (!decoded || !decoded.id) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized: Invalid or expired session token." },
+      // Clear expired cookie
+      const res = NextResponse.json(
+        { success: false, error: "Unauthorized: Session has expired due to 1 hour of inactivity." },
         { status: 401 }
       );
+      res.cookies.set("oms_session", "", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 0,
+      });
+      return res;
     }
 
     // Verify user exists and is active in TiDB Database (cached for 15s)
@@ -69,7 +78,14 @@ export async function GET(req: NextRequest) {
     const permissions = getRolePermissions(userRole);
     const avatarUrl = getEmployeeAvatarUrl(dbUser);
 
-    return NextResponse.json({
+    // Sliding Window: Generate refreshed token extending active session by 1 hour
+    const renewedToken = generateToken({
+      id: dbUser.id,
+      email: dbUser.email,
+      role: userRole,
+    });
+
+    const response = NextResponse.json({
       success: true,
       user: {
         id: dbUser.id,
@@ -86,7 +102,19 @@ export async function GET(req: NextRequest) {
         documentsVerified: Boolean(dbUser.documentsVerified),
       },
       permissions,
+      token: renewedToken,
     });
+
+    // Refresh HttpOnly session cookie with renewed 1-hour window
+    response.cookies.set("oms_session", renewedToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60, // 1 Hour Inactivity Sliding Window
+    });
+
+    return response;
   } catch (error: any) {
     console.error("Auth /api/auth/me error:", error);
     return NextResponse.json(

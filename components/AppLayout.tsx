@@ -6,6 +6,7 @@ import Navbar from "@/components/navbar";
 import Sidebar from "@/components/Sidebar";
 import Footer from "@/components/footer";
 import AICopilot from "@/components/AICopilot";
+import InactivityTracker from "@/components/InactivityTracker";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -24,6 +25,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="bg-slate-50 text-slate-900 font-sans min-h-screen flex antialiased relative overflow-x-hidden">
+      {/* 1-Hour Inactivity Tracker & Sliding Heartbeat */}
+      <InactivityTracker />
+
       {/* Mobile Backdrop Overlay */}
       {isSidebarOpen && (
         <div
