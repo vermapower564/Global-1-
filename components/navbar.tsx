@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import FeatureRequestModal from "./FeatureRequestModal";
 import NotificationPopover from "./NotificationPopover";
 import ProfileModal, { ProfileUser } from "./ProfileModal";
 import GlobalSearchModal from "./GlobalSearchModal";
@@ -28,6 +29,7 @@ export default function Navbar({ onToggleSidebar }: NavbarProps) {
   const [imgError, setImgError] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [isFeatureModalOpen, setIsFeatureModalOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -156,6 +158,16 @@ export default function Navbar({ onToggleSidebar }: NavbarProps) {
               </kbd>
             </button>
 
+            {/* Request a Feature & Suggest Improvement Button */}
+            <button
+              onClick={() => setIsFeatureModalOpen(true)}
+              title="Request a Feature or Suggest Improvement"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 text-amber-800 dark:text-amber-300 font-extrabold text-xs transition shadow-2xs cursor-pointer"
+            >
+              <span>💡</span>
+              <span className="hidden lg:inline">Suggest Feature</span>
+            </button>
+
             <NotificationPopover />
 
             <div className="h-5 w-px bg-slate-200 dark:bg-slate-800"></div>
@@ -209,6 +221,13 @@ export default function Navbar({ onToggleSidebar }: NavbarProps) {
       <GlobalSearchModal
         isOpen={isSearchModalOpen}
         onClose={() => setIsSearchModalOpen(false)}
+      />
+
+      <FeatureRequestModal
+        isOpen={isFeatureModalOpen}
+        onClose={() => setIsFeatureModalOpen(false)}
+        userRole={user?.role || "EMPLOYEE"}
+        userName={user?.name || "User"}
       />
     </>
   );

@@ -364,8 +364,18 @@ export default function SalarySlipModal({
               className="flex-1 py-3 rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 font-black text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
             >
               <span>✂️</span>
-              <span>Cut / Close Salary Slip</span>
+              <span>Cut / Close Slip</span>
             </button>
+
+            <a
+              href={`/api/salary-slips/${slip.id || slip.monthKey}/pdf`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex-1 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs transition shadow-md flex items-center justify-center gap-2 cursor-pointer text-center"
+            >
+              <span>📄</span>
+              <span>Download Official PDF</span>
+            </a>
 
             <button
               type="button"
@@ -373,7 +383,7 @@ export default function SalarySlipModal({
               className="flex-1 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
             >
               <span>🖨️</span>
-              <span>Print / Download Slip</span>
+              <span>Print Slip</span>
             </button>
           </div>
         </div>

@@ -32,13 +32,14 @@ export async function GET(
 
     const user = userRows[0];
 
-    // Authorization check: Privileged roles (HR/Finance/Super Admin) only
+    // Authorization check: Owner or Privileged roles (HR/Finance/Super Admin) only
     const privilegedRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR"];
+    const isOwner = authResult.user && (authResult.user.id === user.id || authResult.user.email.toLowerCase() === user.email.toLowerCase());
     const isPrivileged = authResult.user && privilegedRoles.includes(authResult.user.role);
 
-    if (!isPrivileged) {
+    if (!isOwner && !isPrivileged) {
       return NextResponse.json(
-        { success: false, error: "Forbidden: Unauthorized access to salary records. HR/Finance/Executive access required." },
+        { success: false, error: "Forbidden: You are not authorized to access another employee's confidential salary slips." },
         { status: 403 }
       );
     }

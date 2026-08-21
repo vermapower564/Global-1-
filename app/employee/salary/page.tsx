@@ -19,16 +19,10 @@ export default function EmployeeSalaryPage() {
     fetch("/api/auth/me")
       .then((res) => res.json())
       .then(async (json) => {
-        const privileged = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR"];
         if (json.authenticated && json.user) {
-          if (!privileged.includes(json.user.role)) {
-            setAccessDenied(true);
-            setLoading(false);
-            return;
-          }
           setCurrentUser(json.user);
 
-          // 2. Fetch salary slips
+          // 2. Fetch salary slips for current authenticated user
           const resSlips = await fetch(
             `/api/admin/employees/${encodeURIComponent(json.user.employeeId || json.user.id)}/salary-slips`
           );
@@ -212,15 +206,15 @@ export default function EmployeeSalaryPage() {
                       >
                         View Slip
                       </button>
-                      <button
-                        onClick={() => {
-                          setSelectedSlip(slip);
-                          setShowSlipModal(true);
-                        }}
-                        className="bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-600 hover:text-white font-bold text-[11px] px-2.5 py-1 rounded-lg transition cursor-pointer"
+                      <a
+                        href={`/api/salary-slips/${slip.id || slip.monthKey}/pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-600 hover:text-white font-extrabold text-[11px] px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1"
                       >
-                        PDF
-                      </button>
+                        <span>📥</span>
+                        <span>PDF</span>
+                      </a>
                     </div>
                   </td>
                 </tr>

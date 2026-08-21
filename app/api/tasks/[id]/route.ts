@@ -179,6 +179,24 @@ export async function PATCH(
       );
     }
 
+    // Security Rule: Admin cannot modify operational progress reports directly
+    const isPureAdmin = ["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR", "HR", "FINANCE"].includes(authUser.role);
+    if (isPureAdmin && !isTeamLeader && !isAssignee && (progress !== undefined || status)) {
+      await logAuditEvent(
+        authUser.id,
+        "PROGRESS_UPDATE_REJECTED",
+        `Rejected progress modification attempt by Admin (${authUser.email}) on Task (${existingTask.title}). Operational progress reports are protected.`,
+        request.headers.get("x-forwarded-for") || "127.0.0.1"
+      );
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Forbidden: Administrators have read-only access to operational progress reports. Progress must be updated directly by the responsible Project Manager, Team Leader, or Assignee.",
+        },
+        { status: 403 }
+      );
+    }
+
     let nextStatus = existingTask.status;
     let nextProgress = existingTask.progress || 0;
     let nextBlocker = existingTask.blockerReason;

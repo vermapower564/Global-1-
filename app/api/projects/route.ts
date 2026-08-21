@@ -221,6 +221,7 @@ export async function GET(request: NextRequest) {
         createdAt: p.createdAt,
         teamLeader: tl,
         teamLeaderId: p.teamLeaderId,
+        projectManagerId: p.projectManagerId,
         teamMembers: projectMembers,
         memberCount: projectMembers.length,
         sections,
@@ -241,10 +242,20 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Scoping: Admin sees all projects. Non-admin sees projects where they are Team Leader OR Member
-    const accessibleProjects = isAdmin
-      ? enriched
-      : enriched.filter((p) => p.isUserMember || p.isUserTeamLeader);
+    // Scoping:
+    // 1. Admin sees all projects (including drafts).
+    // 2. Project Manager sees active projects they belong to/lead + their OWN private drafts.
+    // 3. Team Leaders and Employees see only active projects they belong to (NEVER unfinalized drafts).
+    const isPM = authUser.role === "PROJECT_MANAGER";
+    const accessibleProjects = enriched.filter((p) => {
+      if (p.status === "DRAFT") {
+        if (isAdmin) return true;
+        if (isPM && (p.projectManagerId === authUser.id || !p.projectManagerId)) return true;
+        return false; // TL and employees cannot see drafts
+      }
+      if (isAdmin || isPM) return true;
+      return p.isUserMember || p.isUserTeamLeader;
+    });
 
     const totalRevenue = accessibleProjects.reduce((acc, p) => acc + (Number(p.contractValue) || 0), 0);
 
@@ -261,7 +272,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST: Project Manager or Admin creates a new project with Team Leader and Skill specifications
+// POST: Project Manager or Admin creates a new project or saves a draft with Team Leader and Skill specifications
 export async function POST(req: NextRequest) {
   try {
     const authResult = await authenticateRequest(req);
@@ -270,7 +281,7 @@ export async function POST(req: NextRequest) {
     }
 
     const authUser = authResult.user;
-    const canCreateProject = ["SUPER_ADMIN", "DIRECTOR", "PROJECT_MANAGER"].includes((authUser.role || "").toUpperCase());
+    const canCreateProject = ["SUPER_ADMIN", "DIRECTOR", "PROJECT_MANAGER", "ADMIN_HR"].includes((authUser.role || "").toUpperCase());
 
     if (!canCreateProject) {
       return NextResponse.json(
@@ -291,7 +302,8 @@ export async function POST(req: NextRequest) {
       startDate,
       endDate,
       contractValue,
-      status = "ACTIVE",
+      status: requestedStatus,
+      isDraft,
       priority = "MEDIUM",
       projectType = "WEB_APPLICATION",
       requiredSkills = "React, Next.js, Node.js, MySQL, UI/UX",
@@ -301,6 +313,8 @@ export async function POST(req: NextRequest) {
       teamLeaderId,
       memberUserIds = [],
     } = body;
+
+    const status = isDraft || requestedStatus === "DRAFT" ? "DRAFT" : (requestedStatus || "ACTIVE");
 
     if (!projectTitle || !projectTitle.trim()) {
       return NextResponse.json({ success: false, error: "Project title is required." }, { status: 400 });
@@ -355,17 +369,23 @@ export async function POST(req: NextRequest) {
 
     clearQueryCache("project");
 
-    logAuditEvent(
+    const auditAction = status === "DRAFT" ? "PROJECT_DRAFT_CREATED" : "PROJECT_CREATED";
+    const auditDetail =
+      status === "DRAFT"
+        ? `Project Manager ${authUser.email} saved project draft '${projectTitle.trim()}' (Code: ${projectId})`
+        : `Project Manager ${authUser.email} created and published project '${projectTitle.trim()}' (Code: ${projectId}) with Team Leader ${teamLeaderId || "unassigned"}`;
+
+    await logAuditEvent(
       authUser.id,
-      "PROJECT_CREATED",
-      `Project Manager ${(authUser as any).name || authUser.email} created project '${projectTitle.trim()}' (Code: ${projectId}) with Team Leader ${teamLeaderId || "unassigned"}`,
+      auditAction,
+      auditDetail,
       req.headers.get("x-forwarded-for") || "127.0.0.1"
     );
 
     return NextResponse.json(
       {
         success: true,
-        message: "✓ Project created successfully!",
+        message: status === "DRAFT" ? "✓ Project draft saved successfully!" : "✓ Project created successfully!",
         project: {
           id: projectId,
           projectCode: projectId,
@@ -384,7 +404,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PUT / PATCH: Admin updates project details, Team Leader, or Member assignments
+// PUT: Update Project or Publish Draft
 export async function PUT(req: NextRequest) {
   try {
     const authResult = await authenticateRequest(req);
@@ -393,15 +413,6 @@ export async function PUT(req: NextRequest) {
     }
 
     const authUser = authResult.user;
-    const isAdmin = ADMIN_ROLES.includes(authUser.role);
-
-    if (!isAdmin) {
-      return NextResponse.json(
-        { success: false, error: "Forbidden: Only Administrators can modify project details." },
-        { status: 403 }
-      );
-    }
-
     const body = await req.json();
     const {
       id,
@@ -415,12 +426,35 @@ export async function PUT(req: NextRequest) {
       endDate,
       contractValue,
       status,
+      priority,
+      projectType,
+      requiredSkills,
+      requiredRoles,
+      techStack,
+      expectedTeamSize,
       teamLeaderId,
       memberUserIds,
     } = body;
 
     if (!id) {
       return NextResponse.json({ success: false, error: "Project ID is required." }, { status: 400 });
+    }
+
+    // Verify existing project & ownership
+    const existing = await queryDb<any[]>(`SELECT * FROM project WHERE id = ? LIMIT 1`, [id]);
+    if (!existing || existing.length === 0) {
+      return NextResponse.json({ success: false, error: "Project not found." }, { status: 404 });
+    }
+
+    const proj = existing[0];
+    const isAdmin = ["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR"].includes(authUser.role.toUpperCase());
+    const isOwnerPM = proj.projectManagerId === authUser.id || authUser.role === "PROJECT_MANAGER";
+
+    if (!isAdmin && !isOwnerPM) {
+      return NextResponse.json(
+        { success: false, error: "Forbidden: You are not authorized to modify this project." },
+        { status: 403 }
+      );
     }
 
     const updates: string[] = [];
@@ -432,7 +466,7 @@ export async function PUT(req: NextRequest) {
     }
     if (description !== undefined) {
       updates.push("description = ?");
-      values.push(description);
+      values.push(description.trim());
     }
     if (clientCompany) {
       updates.push("clientCompany = ?");
@@ -466,6 +500,30 @@ export async function PUT(req: NextRequest) {
       updates.push("status = ?");
       values.push(status);
     }
+    if (priority) {
+      updates.push("priority = ?");
+      values.push(priority);
+    }
+    if (projectType) {
+      updates.push("projectType = ?");
+      values.push(projectType);
+    }
+    if (requiredSkills !== undefined) {
+      updates.push("requiredSkills = ?");
+      values.push(requiredSkills);
+    }
+    if (requiredRoles !== undefined) {
+      updates.push("requiredRoles = ?");
+      values.push(requiredRoles);
+    }
+    if (techStack !== undefined) {
+      updates.push("techStack = ?");
+      values.push(techStack);
+    }
+    if (expectedTeamSize !== undefined) {
+      updates.push("expectedTeamSize = ?");
+      values.push(parseInt(expectedTeamSize) || 5);
+    }
     if (teamLeaderId !== undefined) {
       updates.push("teamLeaderId = ?");
       values.push(teamLeaderId || null);
@@ -493,19 +551,87 @@ export async function PUT(req: NextRequest) {
 
     clearQueryCache("project");
 
-    logAuditEvent(
+    let auditAction = "PROJECT_UPDATED";
+    let auditDetail = `Updated project ${id} configuration`;
+
+    if (proj.status === "DRAFT" && status && status !== "DRAFT") {
+      auditAction = "PROJECT_DRAFT_PUBLISHED";
+      auditDetail = `Project Manager ${authUser.email} published draft project '${proj.projectTitle}' (ID: ${id}) to status ${status}`;
+    } else if (proj.status === "DRAFT") {
+      auditAction = "PROJECT_DRAFT_UPDATED";
+      auditDetail = `Project Manager ${authUser.email} updated saved draft project '${proj.projectTitle}' (ID: ${id})`;
+    }
+
+    await logAuditEvent(
       authUser.id,
-      "PROJECT_UPDATED",
-      `Updated project ${id} configuration`,
+      auditAction,
+      auditDetail,
       req.headers.get("x-forwarded-for") || "127.0.0.1"
     );
 
     return NextResponse.json({
       success: true,
-      message: "✓ Project successfully updated!",
+      message: auditAction === "PROJECT_DRAFT_PUBLISHED" ? "✓ Project draft successfully published & activated!" : "✓ Project successfully updated!",
     });
   } catch (error: any) {
     console.error("Projects PUT Error:", error);
     return NextResponse.json({ success: false, error: error.message || "Failed to update project" }, { status: 500 });
+  }
+}
+
+// DELETE: Delete Project or Draft
+export async function DELETE(req: NextRequest) {
+  try {
+    const authResult = await authenticateRequest(req);
+    if (authResult.response || !authResult.user) {
+      return authResult.response || NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ success: false, error: "Project ID is required." }, { status: 400 });
+    }
+
+    const existing = await queryDb<any[]>(`SELECT * FROM project WHERE id = ? LIMIT 1`, [id]);
+    if (!existing || existing.length === 0) {
+      return NextResponse.json({ success: false, error: "Project not found." }, { status: 404 });
+    }
+
+    const proj = existing[0];
+    const authUser = authResult.user;
+    const isAdmin = ["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR"].includes(authUser.role.toUpperCase());
+    const isOwnerPM = proj.projectManagerId === authUser.id || (authUser.role === "PROJECT_MANAGER" && proj.status === "DRAFT");
+
+    if (!isAdmin && !isOwnerPM) {
+      return NextResponse.json(
+        { success: false, error: "Forbidden: You do not have permission to delete this project." },
+        { status: 403 }
+      );
+    }
+
+    // Delete mappings & tasks
+    await queryDb(`DELETE FROM _assignedstaffprojects WHERE A = ?`, [id]);
+    await queryDb(`DELETE FROM task WHERE projectId = ?`, [id]);
+    await queryDb(`DELETE FROM project WHERE id = ?`, [id]);
+
+    clearQueryCache("project");
+
+    const auditAction = proj.status === "DRAFT" ? "PROJECT_DRAFT_DELETED" : "PROJECT_DELETED";
+    await logAuditEvent(
+      authUser.id,
+      auditAction,
+      `User ${authUser.email} deleted ${proj.status === "DRAFT" ? "draft" : "project"} '${proj.projectTitle}' (ID: ${id})`,
+      req.headers.get("x-forwarded-for") || "127.0.0.1"
+    );
+
+    return NextResponse.json({
+      success: true,
+      message: `✓ Project ${proj.status === "DRAFT" ? "draft" : ""} successfully deleted.`,
+    });
+  } catch (error: any) {
+    console.error("Projects DELETE Error:", error);
+    return NextResponse.json({ success: false, error: error.message || "Failed to delete project." }, { status: 500 });
   }
 }

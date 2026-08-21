@@ -7,7 +7,7 @@ import { getCurrentUserContext, CurrentUser } from "@/utils/userContextStore";
 import { exportToCSV } from "@/utils/exportEngine";
 
 export default function ProjectsPage() {
-  const [viewMode, setViewMode] = useState<"portfolio" | "kanban" | "gantt">("portfolio");
+  const [viewMode, setViewMode] = useState<"portfolio" | "kanban" | "gantt" | "drafts">("portfolio");
   const [projectsList, setProjectsList] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -62,6 +62,43 @@ export default function ProjectsPage() {
     } catch (err) {
       console.error("Failed to update project status", err);
       fetchProjects();
+    }
+  };
+
+  const handleDeleteDraft = async (projectId: string) => {
+    if (!confirm("Are you sure you want to permanently delete this project draft?")) return;
+    try {
+      const res = await fetch(`/api/projects?id=${projectId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setSaveSuccess("✓ Project draft successfully deleted.");
+        setTimeout(() => setSaveSuccess(""), 4000);
+        fetchProjects();
+      } else {
+        alert(data.error || "Failed to delete draft.");
+      }
+    } catch (err: any) {
+      alert("Error deleting draft: " + err.message);
+    }
+  };
+
+  const handlePublishDraft = async (projectId: string) => {
+    try {
+      const res = await fetch("/api/projects", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: projectId, status: "ACTIVE" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSaveSuccess("✓ Draft project successfully published & activated!");
+        setTimeout(() => setSaveSuccess(""), 4000);
+        fetchProjects();
+      } else {
+        alert(data.error || "Failed to publish draft.");
+      }
+    } catch (err) {
+      alert("Failed to publish draft.");
     }
   };
 
@@ -271,14 +308,18 @@ export default function ProjectsPage() {
             📋 Stage Kanban Board
           </button>
           <button
-            onClick={() => setViewMode("gantt")}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition ${
-              viewMode === "gantt"
-                ? "bg-slate-900 text-white shadow-md"
+            onClick={() => {
+              setViewMode("drafts");
+              setStatusFilter("DRAFT");
+            }}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+              viewMode === "drafts"
+                ? "bg-indigo-900 text-white shadow-md font-extrabold"
                 : "bg-slate-100 text-slate-600 hover:bg-slate-200"
             }`}
           >
-            📅 Gantt Timeline & Phases
+            <span>📝</span>
+            <span>PM Drafts ({projectsList.filter((p) => p.status === "DRAFT").length})</span>
           </button>
         </div>
 
@@ -293,12 +334,17 @@ export default function ProjectsPage() {
 
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              if (e.target.value === "DRAFT") setViewMode("drafts");
+              else if (viewMode === "drafts") setViewMode("portfolio");
+            }}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-800 font-semibold focus:border-red-600 focus:outline-none"
           >
             <option value="ALL">All Statuses</option>
             <option value="ACTIVE">ACTIVE</option>
             <option value="IN_PROGRESS">IN PROGRESS</option>
+            <option value="DRAFT">DRAFT (PM Only)</option>
             <option value="COMPLETED">COMPLETED</option>
           </select>
         </div>
@@ -423,26 +469,95 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {/* View 3: Gantt Timeline */}
-      {viewMode === "gantt" && (
-        <div className="pro-card p-6 space-y-6">
-          <h2 className="font-bold text-slate-900 text-base border-b border-slate-100 pb-3">
-            Gantt Deliverable Milestones & Phase Progress
-          </h2>
-          <div className="space-y-4">
-            {ganttPhases.map((phase) => (
-              <div key={phase.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-extrabold text-slate-900">{phase.title}</span>
-                  <span className="font-mono text-emerald-700 font-bold">{phase.progress}% Completed</span>
-                </div>
-                <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
-                  <div className="bg-emerald-600 h-full rounded-full" style={{ width: `${phase.progress}%` }}></div>
-                </div>
-                <p className="text-xs text-slate-500">{phase.description}</p>
-              </div>
-            ))}
-          </div>
+      {/* View 4: PM Draft Projects */}
+      {viewMode === "drafts" && (
+        <div className="space-y-4">
+          {projectsList.filter((p) => p.status === "DRAFT").length === 0 ? (
+            <div className="p-12 text-center bg-slate-50 border border-slate-200 rounded-3xl space-y-4">
+              <div className="text-4xl">📝</div>
+              <h3 className="text-base font-black text-slate-900">No Draft Projects Found</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                You do not have any saved draft projects. You can create a new project in draft mode to plan deliverables and allocate teams before publishing.
+              </p>
+              <Link
+                href="/project-manager/create-project"
+                className="inline-block px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition cursor-pointer"
+              >
+                + Create Project Draft
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {projectsList
+                .filter((p) => p.status === "DRAFT")
+                .map((draft) => (
+                  <div
+                    key={draft.id}
+                    className="p-6 bg-white rounded-3xl border-2 border-dashed border-indigo-200 shadow-sm space-y-4 hover:border-indigo-400 transition"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        ● DRAFT (Planning Mode)
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400">
+                        ID: {draft.id?.slice(0, 8)}
+                      </span>
+                    </div>
+
+                    <div>
+                      <h3 className="font-extrabold text-slate-900 text-base leading-snug">
+                        {draft.projectTitle}
+                      </h3>
+                      <p className="text-xs font-semibold text-slate-500 mt-1">
+                        Client: {draft.clientCompany || "Enterprise Client"}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5 text-xs text-slate-600 pt-3 border-t border-slate-100">
+                      <div className="flex justify-between">
+                        <span>Target Deadline:</span>
+                        <span className="font-mono font-bold text-slate-800">
+                          {draft.endDate ? new Date(draft.endDate).toLocaleDateString("en-IN") : "TBD"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Assigned TL:</span>
+                        <span className="font-bold text-slate-800">
+                          {draft.teamLeader?.name || "Unassigned"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                      <Link
+                        href={`/project-manager/create-project?draftId=${draft.id}`}
+                        className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-black rounded-xl transition cursor-pointer flex items-center gap-1"
+                      >
+                        <span>✏️</span> Continue Editing
+                      </Link>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handlePublishDraft(draft.id)}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1"
+                        >
+                          <span>🚀</span> Publish
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDraft(draft.id)}
+                          className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 text-[11px] font-bold rounded-xl transition cursor-pointer"
+                          title="Delete Draft"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       )}
 
