@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   getStoredCompanyProfile,
   saveCompanyProfile,
@@ -94,6 +95,33 @@ export default function SettingsPage() {
           <button onClick={() => setToastMsg(null)} className="text-zinc-400 hover:text-white font-bold">✕</button>
         </div>
       )}
+
+      {/* 👤 My Profile Quick Access Card */}
+      <div className="bg-gradient-to-r from-blue-950/60 via-slate-900 to-indigo-950/60 p-5 rounded-2xl border border-blue-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg">
+        <div className="flex items-center gap-3.5">
+          <div className="h-11 w-11 rounded-2xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 font-black text-xl shadow-inner shrink-0">
+            👤
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-black text-white">My User Profile</h2>
+              <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-extrabold border border-blue-500/30">
+                Personal Settings
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 mt-0.5">
+              Manage your personal details, emergency contacts, banking credentials, security password, and avatar.
+            </p>
+          </div>
+        </div>
+        <Link
+          href="/employee/profile"
+          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black rounded-xl shadow-md transition flex items-center gap-1.5 self-start sm:self-auto shrink-0 cursor-pointer"
+        >
+          <span>Open My Profile</span>
+          <span>→</span>
+        </Link>
+      </div>
 
       {/* 🖤 Unique Header Banner - Obsidian Carbon & Platinum Slate Mix Theme */}
       <div className="bg-gradient-to-r from-slate-950 via-stone-900 to-zinc-950 p-6 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl border border-zinc-800/60 text-zinc-50">
