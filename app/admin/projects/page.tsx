@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 
 export default function AdminProjectsPage() {
@@ -26,6 +26,7 @@ export default function AdminProjectsPage() {
   const [formEndDate, setFormEndDate] = useState("");
   const [formContractValue, setFormContractValue] = useState("250000");
   const [formStatus, setFormStatus] = useState("IN_PROGRESS");
+  const [formProjectManagerId, setFormProjectManagerId] = useState("");
   const [formTeamLeaderId, setFormTeamLeaderId] = useState("");
   const [formMemberIds, setFormMemberIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -59,6 +60,48 @@ export default function AdminProjectsPage() {
     fetchData();
   }, []);
 
+  // Eligible Project Managers (Strictly exclude HR, Finance, and non-PM roles)
+  const eligibleProjectManagers = useMemo(() => {
+    return employees.filter((e) => {
+      const roleUpper = (e.role || "").toUpperCase();
+      const deptUpper = (e.department || e.departmentName || "").toUpperCase();
+      if (roleUpper === "HR" || deptUpper.includes("HUMAN RESOURCES") || deptUpper === "HR" || roleUpper === "FINANCE") {
+        return false;
+      }
+      return roleUpper === "PROJECT_MANAGER" || roleUpper === "SUPER_ADMIN" || roleUpper === "DIRECTOR" || roleUpper === "ADMIN_HR";
+    });
+  }, [employees]);
+
+  // Compute Team Leader workloads and sort by freest first (Strictly exclude HR, Finance)
+  const teamLeadersWithWorkload = useMemo(() => {
+    const tls = employees.filter((e) => {
+      const roleUpper = (e.role || "").toUpperCase();
+      const deptUpper = (e.department || e.departmentName || "").toUpperCase();
+      if (roleUpper === "HR" || deptUpper.includes("HUMAN RESOURCES") || deptUpper === "HR" || roleUpper === "FINANCE") {
+        return false;
+      }
+      return roleUpper === "TEAM_LEADER" || roleUpper === "DEVELOPER" || roleUpper === "UI_UX_DESIGNER";
+    });
+    const mapped = tls.map((tl) => {
+      const activeCount = projects.filter(
+        (p) => (p.teamLeaderId === tl.id || p.teamLeader?.id === tl.id) && p.status !== "COMPLETED" && p.status !== "DRAFT"
+      ).length;
+      return { ...tl, activeCount };
+    });
+    // Sort ascending: 0 active projects, 1 active project, etc.
+    mapped.sort((a, b) => a.activeCount - b.activeCount);
+    return mapped;
+  }, [employees, projects]);
+
+  // Eligible Project Members (Strictly exclude HR from project execution allocation)
+  const eligibleProjectMembers = useMemo(() => {
+    return employees.filter((e) => {
+      const roleUpper = (e.role || "").toUpperCase();
+      const deptUpper = (e.department || e.departmentName || "").toUpperCase();
+      return roleUpper !== "HR" && !deptUpper.includes("HUMAN RESOURCES") && deptUpper !== "HR";
+    });
+  }, [employees]);
+
   const openCreateModal = () => {
     setIsEditMode(false);
     setFormTitle("");
@@ -71,7 +114,11 @@ export default function AdminProjectsPage() {
     setFormEndDate(new Date(Date.now() + 60 * 24 * 3600 * 1000).toISOString().split("T")[0]);
     setFormContractValue("500000");
     setFormStatus("IN_PROGRESS");
-    setFormTeamLeaderId(employees[0]?.id || "");
+    const defaultPM = eligibleProjectManagers[0];
+    setFormProjectManagerId(defaultPM?.id || "");
+    // Pre-select the freest Team Leader (0 or 1 active project)
+    const freestTL = teamLeadersWithWorkload[0];
+    setFormTeamLeaderId(freestTL?.id || "");
     setFormMemberIds([]);
     setFormError("");
     setFormSuccess("");
@@ -91,6 +138,7 @@ export default function AdminProjectsPage() {
     setFormEndDate(proj.endDate ? new Date(proj.endDate).toISOString().split("T")[0] : "");
     setFormContractValue(proj.contractValue?.toString() || "250000");
     setFormStatus(proj.status || "IN_PROGRESS");
+    setFormProjectManagerId(proj.projectManagerId || proj.projectManager?.id || "");
     setFormTeamLeaderId(proj.teamLeaderId || proj.teamLeader?.id || "");
     setFormMemberIds(proj.teamMembers ? proj.teamMembers.map((m: any) => m.id) : []);
     setFormError("");
@@ -126,8 +174,9 @@ export default function AdminProjectsPage() {
         clientPhone: formClientPhone.trim() || "+91 98765 00000",
         startDate: formStartDate,
         endDate: formEndDate,
-        contractValue: parseFloat(formContractValue) || 250000,
+        contractValue: formContractValue,
         status: formStatus,
+        projectManagerId: formProjectManagerId || undefined,
         teamLeaderId: formTeamLeaderId,
         memberUserIds: formMemberIds,
       };
@@ -140,7 +189,7 @@ export default function AdminProjectsPage() {
       const data = await res.json();
 
       if (res.ok && data.success) {
-        setFormSuccess(isEditMode ? "✓ Project successfully updated!" : "✓ Project created with Team Leader & members!");
+        setFormSuccess(isEditMode ? "✓ Project successfully updated!" : "✓ Project created with Project Manager & Team Leader!");
         setTimeout(() => {
           setIsCreateModalOpen(false);
           fetchData();
@@ -542,13 +591,35 @@ export default function AdminProjectsPage() {
                 </div>
               </div>
 
+              {/* PROJECT MANAGER SELECTION */}
+              <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200 space-y-2">
+                <label className="block font-black text-indigo-950">
+                  👔 Select Project Manager *
+                </label>
+                <p className="text-[11px] text-indigo-700 font-medium">
+                  Authorized project management personnel responsible for overall deliverable execution.
+                </p>
+                <select
+                  value={formProjectManagerId}
+                  onChange={(e) => setFormProjectManagerId(e.target.value)}
+                  className="w-full rounded-xl border border-indigo-300 bg-white px-3.5 py-2 text-xs font-black text-slate-900 focus:border-indigo-600 focus:outline-none cursor-pointer"
+                >
+                  <option value="">-- Choose Project Manager --</option>
+                  {eligibleProjectManagers.map((pm: any) => (
+                    <option key={pm.id} value={pm.id}>
+                      {pm.name} ({pm.employeeId || "EMP"}) — {pm.role?.replace(/_/g, " ")}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* TEAM LEADER SELECTION */}
               <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200 space-y-2">
                 <label className="block font-black text-blue-900">
                   👑 Select Project Team Leader *
                 </label>
                 <p className="text-[11px] text-blue-700 font-medium">
-                  The selected Team Leader will manage sections, create tasks, and assign work to members.
+                  Auto-sorted by lowest workload. Freest Team Leader (0 or 1 project) is recommended and pre-selected.
                 </p>
                 <select
                   required
@@ -557,9 +628,9 @@ export default function AdminProjectsPage() {
                   className="w-full rounded-xl border border-blue-300 bg-white px-3.5 py-2 text-xs font-black text-slate-900 focus:border-blue-600 focus:outline-none cursor-pointer"
                 >
                   <option value="">-- Choose Team Leader --</option>
-                  {employees.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name} ({emp.employeeId || "EMP"}) • {emp.role?.replace(/_/g, " ")}
+                  {teamLeadersWithWorkload.map((tl: any) => (
+                    <option key={tl.id} value={tl.id}>
+                      {tl.name} ({tl.employeeId || "EMP"}) • {tl.activeCount} Active Project{tl.activeCount === 1 ? "" : "s"} {tl.activeCount === 0 ? "— 🟢 Available (0 Projects)" : tl.activeCount === 1 ? "— 🟡 Optimal (1 Project)" : "— 🔴 Busy"}
                     </option>
                   ))}
                 </select>
@@ -577,7 +648,7 @@ export default function AdminProjectsPage() {
                 </div>
 
                 <div className="max-h-40 overflow-y-auto rounded-2xl border border-slate-200 p-2 space-y-1 bg-slate-50">
-                  {employees.map((emp) => {
+                  {eligibleProjectMembers.map((emp) => {
                     const isSelected = formMemberIds.includes(emp.id);
                     const isLeader = formTeamLeaderId === emp.id;
 
@@ -602,7 +673,7 @@ export default function AdminProjectsPage() {
                             {emp.name} ({emp.employeeId})
                           </span>
                         </div>
-                        <span className="text-[10px] font-mono text-slate-500">
+                        <span className="text-[10px] font-semibold text-slate-500 uppercase">
                           {isLeader ? "👑 Team Leader" : emp.role?.replace(/_/g, " ")}
                         </span>
                       </label>

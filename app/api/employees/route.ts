@@ -21,19 +21,38 @@ export async function GET(request: Request) {
     const roleUpper = (authUser.role || "").toUpperCase();
     const isFullAdmin = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR"].includes(roleUpper);
 
+    const url = new URL(request.url);
+    const roleParam = url.searchParams.get("role") || url.searchParams.get("roles");
+    const isTaskAssignees = url.searchParams.get("taskAssignees") === "true";
+
+    let targetRoles: string[] = [];
+    if (isTaskAssignees) {
+      targetRoles = ["PROJECT_MANAGER", "TEAM_LEADER"];
+    } else if (roleParam) {
+      targetRoles = roleParam
+        .split(",")
+        .map((r) => r.trim().toUpperCase())
+        .filter(Boolean);
+    }
+
     const now = new Date();
 
     // 1. Fetch Users, Departments, Bank Details & Reviews directly from TiDB Cloud
-    const users: any[] = await queryDbCached(
-      `SELECT u.*, d.name AS departmentName, d.code AS departmentCode,
+    let usersQuery = `SELECT u.*, d.name AS departmentName, d.code AS departmentCode,
               b.accountHolderName, b.bankName, b.accountNumber, b.ifscCode, b.branchName, b.accountType
        FROM user u
        LEFT JOIN department d ON u.departmentId = d.id
-       LEFT JOIN bankdetail b ON u.id = b.userId
-       ORDER BY u.createdAt DESC`,
-      [],
-      15
-    );
+       LEFT JOIN bankdetail b ON u.id = b.userId`;
+    const queryParams: any[] = [];
+
+    if (targetRoles.length > 0) {
+      usersQuery += ` WHERE u.role IN (${targetRoles.map(() => "?").join(",")})`;
+      queryParams.push(...targetRoles);
+    }
+
+    usersQuery += ` ORDER BY u.employeeId ASC, u.name ASC`;
+
+    const users: any[] = await queryDb(usersQuery, queryParams);
 
     // 2. Fetch Tasks and Reviews in parallel (cached)
     const allTasks: any[] = await queryDbCached("SELECT id, title, status, dueDate, assignedToUserId, projectId FROM task", [], 15);
@@ -269,10 +288,22 @@ export async function POST(request: Request) {
 
     try {
       const newUserId = `usr_${Date.now()}`;
+
+      let resolvedDeptId: string | null = null;
+      if (department) {
+        const deptRows = await queryDb<any[]>(
+          `SELECT id FROM department WHERE id = ? OR name = ? OR code = ? LIMIT 1`,
+          [department, department, department]
+        );
+        if (deptRows && deptRows.length > 0) {
+          resolvedDeptId = deptRows[0].id;
+        }
+      }
+
       await queryDb(
         `INSERT INTO user (
-          id, employeeId, name, email, password, phone, role, salary, isActive, createdAt, updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+          id, employeeId, name, email, password, phone, role, departmentId, salary, isActive, createdAt, updatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
         [
           newUserId,
           employeeId,
@@ -281,6 +312,7 @@ export async function POST(request: Request) {
           hashedPassword,
           phone || "+91 98765 00000",
           requestedRole,
+          resolvedDeptId,
           Number(salary) || 0,
           isActive !== false ? 1 : 0,
         ]
@@ -307,17 +339,18 @@ export async function POST(request: Request) {
         );
       }
 
-      await logAuditEvent(request, "CREATE_EMPLOYEE", {
-        employeeId,
-        email: normalizedEmail,
-        name,
-        role,
-      });
+      const auditAction = requestedRole === "HR" ? "HR_USER_CREATED" : "EMPLOYEE_USER_CREATED";
+      await logAuditEvent(
+        authResult.user?.id || null,
+        auditAction,
+        `Admin created ${requestedRole} user ${name.trim()} (${employeeId}). Role: ${requestedRole}`,
+        request.headers.get("x-forwarded-for") || "127.0.0.1"
+      );
 
       return NextResponse.json({
         success: true,
-        message: "Employee registered successfully on TiDB Cloud.",
-        data: { id: newUserId, employeeId, name, email: normalizedEmail, role },
+        message: `${requestedRole === "HR" ? "HR" : "Employee"} user registered successfully on TiDB Cloud.`,
+        data: { id: newUserId, employeeId, name: name.trim(), email: normalizedEmail, role: requestedRole },
       });
     } catch (dbErr: any) {
       console.warn("DB insert error:", dbErr.message);

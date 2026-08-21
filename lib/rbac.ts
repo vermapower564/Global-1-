@@ -1,11 +1,13 @@
 export type Role =
   | "SUPER_ADMIN"
   | "DIRECTOR"
+  | "ADMIN_HR"
   | "HR"
   | "FINANCE"
   | "SALES_MANAGER"
   | "SALES_EXECUTIVE"
   | "PROJECT_MANAGER"
+  | "TEAM_LEADER"
   | "DEVELOPER"
   | "UI_UX_DESIGNER"
   | "GRAPHIC_DESIGNER"
@@ -31,6 +33,7 @@ export function getRolePermissions(role: Role): UserPermission {
   switch (role) {
     case "SUPER_ADMIN":
     case "DIRECTOR":
+    case "ADMIN_HR":
       return {
         canApproveEOD: true,
         canManageFinance: true,
@@ -76,6 +79,7 @@ export function getRolePermissions(role: Role): UserPermission {
       };
 
     case "PROJECT_MANAGER":
+    case "TEAM_LEADER":
       return {
         canApproveEOD: true,
         canManageFinance: false,

@@ -30,11 +30,12 @@ export default function AdminAttendancePage() {
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // Filters
+  // Filters (Defaults to today's punches)
+  const todayStr = new Date().toISOString().split("T")[0];
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [departmentFilter, setDepartmentFilter] = useState("ALL");
-  const [dateFilter, setDateFilter] = useState("");
+  const [dateFilter, setDateFilter] = useState(todayStr);
 
   const fetchAttendance = async () => {
     try {
@@ -235,6 +236,45 @@ export default function AdminAttendancePage() {
                 ))}
               </select>
 
+              <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setDateFilter(todayStr)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition cursor-pointer ${
+                    dateFilter === todayStr
+                      ? "bg-blue-600 text-white shadow-2xs"
+                      : "text-gray-600 hover:text-black"
+                  }`}
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const yest = new Date(Date.now() - 24 * 3600 * 1000).toISOString().split("T")[0];
+                    setDateFilter(yest);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition cursor-pointer ${
+                    dateFilter === new Date(Date.now() - 24 * 3600 * 1000).toISOString().split("T")[0]
+                      ? "bg-blue-600 text-white shadow-2xs"
+                      : "text-gray-600 hover:text-black"
+                  }`}
+                >
+                  Yesterday
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDateFilter("")}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition cursor-pointer ${
+                    dateFilter === ""
+                      ? "bg-blue-600 text-white shadow-2xs"
+                      : "text-gray-600 hover:text-black"
+                  }`}
+                >
+                  All History
+                </button>
+              </div>
+
               <input
                 type="date"
                 value={dateFilter}
@@ -242,17 +282,17 @@ export default function AdminAttendancePage() {
                 className="rounded-xl border border-gray-300 bg-white px-3 py-1.5 text-xs font-bold text-black focus:border-blue-600 focus:outline-none cursor-pointer"
               />
 
-              {(searchQuery || statusFilter !== "ALL" || departmentFilter !== "ALL" || dateFilter) && (
+              {(searchQuery || statusFilter !== "ALL" || departmentFilter !== "ALL" || dateFilter !== todayStr) && (
                 <button
                   onClick={() => {
                     setSearchQuery("");
                     setStatusFilter("ALL");
                     setDepartmentFilter("ALL");
-                    setDateFilter("");
+                    setDateFilter(todayStr);
                   }}
                   className="text-xs text-rose-600 font-bold hover:underline cursor-pointer"
                 >
-                  Clear Filters
+                  Reset to Today
                 </button>
               )}
             </div>

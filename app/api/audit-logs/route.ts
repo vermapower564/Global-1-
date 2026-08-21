@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { authenticateRequest } from "@/lib/authMiddleware";
 import { queryDb, queryDbCached } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +21,20 @@ function getActionCategory(action: string): string {
   return "SECURITY_SHIELD";
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const authResult = await authenticateRequest(request);
+    if (authResult.response || !authResult.user) {
+      return authResult.response || NextResponse.json({ success: false, error: "Unauthorized access." }, { status: 401 });
+    }
+
+    const authUser = authResult.user;
+    if (!["SUPER_ADMIN", "ADMIN_HR", "DIRECTOR"].includes(authUser.role)) {
+      return NextResponse.json(
+        { success: false, error: "Forbidden: Super Admin or Executive authorization required to access system audit logs." },
+        { status: 403 }
+      );
+    }
     const rows: any = await queryDbCached(
       `SELECT a.*, u.name AS userName, u.employeeId AS userEmployeeId, u.email AS userEmail, u.role AS userRole
        FROM auditlog a

@@ -15,15 +15,14 @@ import {
 } from "@/utils/onboardingEmail";
 
 const SYSTEM_ROLES = [
+  { value: "HR", label: "HR (Human Resources Manager)" },
+  { value: "PROJECT_MANAGER", label: "Project Manager" },
+  { value: "TEAM_LEADER", label: "Team Leader" },
+  { value: "EMPLOYEE", label: "Employee (General Staff)" },
   { value: "DEVELOPER", label: "Developer (Software Engineer)" },
-  { value: "PROJECT_MANAGER", label: "Project Manager (Team Lead)" },
-  { value: "HR", label: "HR Manager" },
-  { value: "FINANCE", label: "Finance / Payroll Manager" },
-  { value: "SALES_MANAGER", label: "Sales Manager" },
+  { value: "FINANCE", label: "Finance / Accounts Manager" },
   { value: "SALES_EXECUTIVE", label: "Sales Executive" },
   { value: "DIGITAL_MARKETING_MANAGER", label: "Marketing Manager" },
-  { value: "SEO_EXECUTIVE", label: "SEO Executive" },
-  { value: "CONTENT_WRITER", label: "Content Writer" },
   { value: "DIRECTOR", label: "Director (Executive Level)" },
 ];
 
@@ -147,7 +146,8 @@ export default function AddEmployeePage() {
     setIsSubmitting(true);
     setStatusMsg("Saving employee account & banking records into MySQL...");
 
-    const generatedEmpId = `EMP-${Math.floor(1000 + Math.random() * 9000)}`;
+    const prefix = formData.role === "HR" ? "HR" : formData.role === "PROJECT_MANAGER" ? "PM" : formData.role === "TEAM_LEADER" ? "TL" : "EMP";
+    const generatedEmpId = `${prefix}-${Math.floor(1000 + Math.random() * 9000)}`;
     const formattedPhone = formatIndianPhone(formData.phone);
     const payload = {
       id: generatedEmpId,

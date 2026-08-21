@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequest } from "@/lib/authMiddleware";
-import { queryDb, clearQueryCache } from "@/lib/db";
+import { queryDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ employeeId: string }> }
+  context: { params: Promise<{ employeeId: string }> | { employeeId: string } }
 ) {
   try {
     const authResult = await authenticateRequest(request);
-    const { employeeId } = await params;
-    const cleanId = decodeURIComponent(employeeId || "").trim();
+    const resolvedParams = await Promise.resolve(context?.params);
+    const cleanId = decodeURIComponent(resolvedParams?.employeeId || "").trim();
 
     // 1. Find employee in TiDB Cloud
     const userRows = await queryDb<any[]>(
@@ -34,7 +34,11 @@ export async function GET(
 
     // Authorization check: Owner or Privileged roles (HR/Finance/Super Admin) only
     const privilegedRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR"];
-    const isOwner = authResult.user && (authResult.user.id === user.id || authResult.user.email.toLowerCase() === user.email.toLowerCase());
+    const isOwner =
+      authResult.user &&
+      (authResult.user.id === user.id ||
+        authResult.user.id === user.employeeId ||
+        authResult.user.email.toLowerCase() === user.email.toLowerCase());
     const isPrivileged = authResult.user && privilegedRoles.includes(authResult.user.role);
 
     if (!isOwner && !isPrivileged) {
@@ -44,80 +48,18 @@ export async function GET(
       );
     }
 
-    // 2. Fetch existing salary slips from TiDB
-    let slips = await queryDb<any[]>(
-      `SELECT * FROM salaryslip WHERE userId = ? OR employeeId = ? ORDER BY monthKey DESC`,
-      [user.id, user.employeeId]
-    );
+    // 2. Fetch real existing salary slips from TiDB
+    let sql = `SELECT * FROM salaryslip WHERE (userId = ? OR employeeId = ?)`;
+    const params: any[] = [user.id, user.employeeId];
 
-    // If no slips exist yet, auto-seed 3 months of verified slips for this employee
-    if (!slips || slips.length === 0) {
-      const baseMonthly = user.salary > 0 ? Math.round(user.salary / 12) : 65000;
-      const basic = Math.round(baseMonthly * 0.5);
-      const hra = Math.round(baseMonthly * 0.3);
-      const allowances = baseMonthly - basic - hra;
-      const gross = baseMonthly;
-      const pf = Math.round(basic * 0.12);
-      const tax = Math.round(baseMonthly * 0.05);
-      const other = 200;
-      const totalDed = pf + tax + other;
-      const net = gross - totalDed;
-
-      const seedMonths = [
-        { name: "August 2026", key: "2026-08", payDay: "2026-08-31" },
-        { name: "July 2026", key: "2026-07", payDay: "2026-07-31" },
-        { name: "June 2026", key: "2026-06", payDay: "2026-06-30" },
-      ];
-
-      for (const m of seedMonths) {
-        const slipId = `SLIP-${user.employeeId}-${m.key}`;
-        const txnRef = `TXN-${m.key.replace("-", "")}-${user.employeeId}-${Date.now().toString().slice(-4)}`;
-
-        await queryDb(
-          `INSERT INTO salaryslip (
-            id, userId, employeeId, employeeName, salaryMonth, monthKey,
-            basicSalary, hra, allowances, bonus, overtime, grossSalary,
-            pfDeduction, taxDeduction, otherDeductions, totalDeductions, netSalary,
-            paymentDate, paymentStatus, paymentMethod, transactionReference, notes,
-            accountHolderName, accountNumberMasked, bankName, ifscCode,
-            generatedAt, updatedAt
-          ) VALUES (
-            ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, 0, 0, ?,
-            ?, ?, ?, ?, ?,
-            ?, 'PAID', 'Direct Bank Transfer / NEFT', ?, ?,
-            ?, '••••••••6543', 'State Bank of India', 'SBIN0001234',
-            NOW(), NOW()
-          ) ON DUPLICATE KEY UPDATE employeeName = VALUES(employeeName)`,
-          [
-            slipId,
-            user.id,
-            user.employeeId,
-            user.name || "Employee",
-            m.name,
-            m.key,
-            basic,
-            hra,
-            allowances,
-            gross,
-            pf,
-            tax,
-            other,
-            totalDed,
-            net,
-            m.payDay,
-            txnRef,
-            `Verified regular monthly salary slip for ${m.name}.`,
-            user.name || "Employee",
-          ]
-        );
-      }
-
-      slips = await queryDb<any[]>(
-        `SELECT * FROM salaryslip WHERE userId = ? OR employeeId = ? ORDER BY monthKey DESC`,
-        [user.id, user.employeeId]
-      );
+    // Non-privileged employee can only view PUBLISHED or PAID salary slips (DRAFT hidden)
+    if (!isPrivileged) {
+      sql += ` AND paymentStatus IN ('PUBLISHED', 'PAID')`;
     }
+
+    sql += ` ORDER BY monthKey DESC, generatedAt DESC`;
+
+    const slips = await queryDb<any[]>(sql, params);
 
     const totalDisbursed = (slips || []).reduce((sum, s) => sum + (s.netSalary || 0), 0);
     const totalGross = (slips || []).reduce((sum, s) => sum + (s.grossSalary || 0), 0);
@@ -131,73 +73,31 @@ export async function GET(
       totalDeductions,
       paidCount,
       pendingCount,
-      totalSlips: slips.length,
+      totalSlips: (slips || []).length,
     };
 
     return NextResponse.json({
       success: true,
+      total: (slips || []).length,
+      data: slips || [],
+      slips: slips || [],
       employee: {
         id: user.id,
         employeeId: user.employeeId,
         name: user.name,
         email: user.email,
         role: user.role,
-        department: user.department_name ? { name: user.department_name } : null,
+        department: user.department_name,
+        salary: user.salary,
+        paymentScheduleDay: user.paymentScheduleDay,
       },
-      slips: slips || [],
-      data: slips || [],
       summary,
       metrics: summary,
     });
   } catch (error: any) {
     console.error("Fetch employee salary slips error:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to fetch salary slips." },
-      { status: 500 }
-    );
-  }
-}
-
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ employeeId: string }> }
-) {
-  try {
-    const authResult = await authenticateRequest(request);
-    const adminRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
-
-    if (!authResult.user || !adminRoles.includes(authResult.user.role)) {
-      return NextResponse.json(
-        { success: false, error: "Forbidden: Admin authorization required." },
-        { status: 403 }
-      );
-    }
-
-    const body = await request.json();
-    const { slipId, paymentStatus } = body;
-
-    if (!slipId || !paymentStatus) {
-      return NextResponse.json(
-        { success: false, error: "Slip ID and payment status are required." },
-        { status: 400 }
-      );
-    }
-
-    await queryDb(
-      `UPDATE salaryslip SET paymentStatus = ?, updatedAt = NOW() WHERE id = ?`,
-      [paymentStatus, slipId]
-    );
-
-    clearQueryCache("salaryslip");
-
-    return NextResponse.json({
-      success: true,
-      message: `✓ Salary slip marked as ${paymentStatus}!`,
-    });
-  } catch (error: any) {
-    console.error("Update slip status error:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to update salary slip." },
+      { success: false, error: error.message || "Failed to load employee salary records." },
       { status: 500 }
     );
   }

@@ -223,24 +223,79 @@ export default function TaskDetailDrawer({ taskId, onClose, onTaskUpdated }: Tas
         <div className="p-6 flex-1 overflow-y-auto space-y-5 text-xs">
           {activeTab === "DETAILS" && (
             <div className="space-y-5">
-              {/* Quick Action Start Button if ASSIGNED */}
-              {(task?.status === "ASSIGNED" || task?.status === "BACKLOG") && (
-                <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-between">
-                  <div>
-                    <h4 className="font-black text-blue-900 text-sm">Ready to begin this task?</h4>
-                    <p className="text-[11px] text-blue-700 mt-0.5">
-                      Click start to change status to IN_PROGRESS and notify Admin.
-                    </p>
+              {/* If Admin / Observer -> Read-Only Execution Banner */}
+              {task?.isObserver || !task?.canStartTask ? (
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-black text-slate-900 text-sm">Task Execution</h4>
+                      <p className="text-[11px] text-slate-600 mt-0.5">
+                        This task is being managed and executed by the assigned Team Leader/Employee.
+                      </p>
+                    </div>
+                    <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-slate-200 text-slate-800 border border-slate-300">
+                      Read Only
+                    </span>
                   </div>
-                  <button
-                    onClick={handleStartTask}
-                    disabled={isSubmitting}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-black px-4 py-2 rounded-xl text-xs shadow-md transition cursor-pointer flex items-center gap-1.5"
-                  >
-                    <span>▶️</span>
-                    <span>START TASK</span>
-                  </button>
+
+                  {/* Visual Lifecycle Stepper */}
+                  <div className="pt-2 space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px] font-bold text-gray-500">
+                      <span className={task?.status === "ASSIGNED" ? "text-blue-600 font-black" : ""}>
+                        1. ASSIGNED {task?.status === "ASSIGNED" && "●"}
+                      </span>
+                      <span className={task?.status === "IN_PROGRESS" ? "text-amber-600 font-black" : ""}>
+                        2. IN PROGRESS {task?.status === "IN_PROGRESS" && "●"}
+                      </span>
+                      <span className={task?.status === "IN_REVIEW" ? "text-purple-600 font-black" : ""}>
+                        3. IN REVIEW {task?.status === "IN_REVIEW" && "●"}
+                      </span>
+                      <span className={task?.status === "COMPLETED" ? "text-emerald-600 font-black" : ""}>
+                        4. COMPLETED {task?.status === "COMPLETED" && "✓"}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden flex">
+                      <div
+                        className={`h-full transition-all duration-300 ${
+                          task?.status === "ASSIGNED"
+                            ? "w-1/4 bg-blue-500"
+                            : task?.status === "IN_PROGRESS"
+                            ? "w-2/4 bg-amber-500"
+                            : task?.status === "IN_REVIEW"
+                            ? "w-3/4 bg-purple-500"
+                            : task?.status === "COMPLETED"
+                            ? "w-full bg-emerald-500"
+                            : "w-1/4 bg-rose-500"
+                        }`}
+                      ></div>
+                    </div>
+                  </div>
                 </div>
+              ) : (
+                /* Assigned Employee / Team Leader Execution Controls */
+                (task?.status === "ASSIGNED" || task?.status === "BACKLOG") ? (
+                  <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-between">
+                    <div>
+                      <h4 className="font-black text-blue-900 text-sm">Ready to begin this task?</h4>
+                      <p className="text-[11px] text-blue-700 mt-0.5">
+                        Click start to change status to IN_PROGRESS and log your work.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleStartTask}
+                      disabled={isSubmitting}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-black px-4 py-2 rounded-xl text-xs shadow-md transition cursor-pointer flex items-center gap-1.5"
+                    >
+                      <span>▶️</span>
+                      <span>START TASK</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between text-amber-900 font-bold text-xs">
+                    <span>⚡ Task is currently {task?.status}</span>
+                    <span className="font-mono">{task?.progress || 0}% Complete</span>
+                  </div>
+                )
               )}
 
               {/* Info Badges */}
@@ -249,23 +304,43 @@ export default function TaskDetailDrawer({ taskId, onClose, onTaskUpdated }: Tas
                   <span className="text-[10px] font-bold text-gray-500 uppercase">Assigned To</span>
                   <p className="font-black text-black text-sm">{task?.assignedToUser?.name || "Unassigned"}</p>
                   <span className="text-[10px] text-gray-400 font-mono">
-                    {task?.assignedToUser?.employeeId || "EMP"}
+                    {task?.assignedToUser?.employeeId || "EMP"} — {task?.assignedToUser?.role || "Staff"}
                   </span>
                 </div>
+
+                <div>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase">Project</span>
+                  <p className="font-black text-black text-sm">
+                    {task?.project?.projectTitle || task?.manualProjectName || "General Task"}
+                  </p>
+                  <span className="text-[10px] text-blue-600 font-bold">
+                    {task?.project?.source || (task?.projectId ? "Existing Project" : (task?.manualProjectName ? "Manually Entered" : "General"))}
+                  </span>
+                </div>
+
                 <div>
                   <span className="text-[10px] font-bold text-gray-500 uppercase">Priority</span>
                   <p className="font-extrabold text-blue-600">{task?.priority}</p>
                 </div>
+
                 <div>
                   <span className="text-[10px] font-bold text-gray-500 uppercase">Due Date</span>
                   <p className="font-bold text-black font-mono">
                     {task?.dueDate ? new Date(task.dueDate).toLocaleDateString("en-IN") : "—"}
                   </p>
                 </div>
+
                 <div>
                   <span className="text-[10px] font-bold text-gray-500 uppercase">Estimated / Actual</span>
                   <p className="font-bold text-black font-mono">
                     {task?.estimatedHours || 8}h est. / {task?.actualHours || 0}h act.
+                  </p>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase">Progress</span>
+                  <p className="font-bold text-black font-mono text-base">
+                    {task?.progress || 0}%
                   </p>
                 </div>
               </div>
@@ -279,80 +354,100 @@ export default function TaskDetailDrawer({ taskId, onClose, onTaskUpdated }: Tas
                 </div>
               )}
 
-              {/* Form Update */}
-              <form onSubmit={handleUpdateTask} className="space-y-4 pt-3 border-t border-gray-100">
-                <h4 className="font-black text-black text-sm">Update Sprint Status & Progress</h4>
+              {/* Form Update for Authorized Executors */}
+              {(!task?.isObserver && task?.canEditProgress) ? (
+                <form onSubmit={handleUpdateTask} className="space-y-4 pt-3 border-t border-gray-100">
+                  <h4 className="font-black text-black text-sm">Update Sprint Status & Progress</h4>
 
-                <div>
-                  <label className="block font-bold mb-1 text-black">Lifecycle Status</label>
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value)}
-                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 font-bold text-black focus:border-blue-600 focus:outline-none cursor-pointer"
-                  >
-                    <option value="ASSIGNED">ASSIGNED (To Do)</option>
-                    <option value="IN_PROGRESS">IN_PROGRESS (Currently Working)</option>
-                    <option value="IN_REVIEW">IN_REVIEW (Ready for QA / Review)</option>
-                    <option value="BLOCKED">BLOCKED (Needs Support)</option>
-                    <option value="COMPLETED">COMPLETED (Finished & Verified)</option>
-                  </select>
-                </div>
-
-                {/* Progress Quick Jump Buttons */}
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="font-bold text-black">
-                      Completion Progress: <span className="font-mono text-blue-600 font-black">{progress}%</span>
-                    </label>
-                    <div className="flex gap-1">
-                      {[0, 25, 50, 75, 100].map((pct) => (
-                        <button
-                          key={pct}
-                          type="button"
-                          onClick={() => handleProgressQuickSet(pct)}
-                          className={`px-2 py-1 rounded-lg text-[10px] font-black transition cursor-pointer ${
-                            progress === pct
-                              ? "bg-blue-600 text-white"
-                              : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                          }`}
-                        >
-                          {pct === 100 ? "✓ 100%" : `${pct}%`}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={progress}
-                    onChange={(e) => handleProgressQuickSet(Number(e.target.value))}
-                    className="w-full accent-blue-600 cursor-pointer"
-                  />
-                </div>
-
-                {status === "BLOCKED" && (
                   <div>
-                    <label className="block font-bold mb-1 text-rose-600">Blocker Reason *</label>
-                    <textarea
-                      rows={2}
-                      required
-                      value={blockerReason}
-                      onChange={(e) => setBlockerReason(e.target.value)}
-                      placeholder="Specify technical blocker or required asset..."
-                      className="w-full rounded-xl border border-rose-300 bg-white p-2.5 text-black font-medium focus:border-rose-600 focus:outline-none"
+                    <label className="block font-bold mb-1 text-black">Lifecycle Status</label>
+                    <select
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value)}
+                      className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 font-bold text-black focus:border-blue-600 focus:outline-none cursor-pointer"
+                    >
+                      <option value="ASSIGNED">ASSIGNED (To Do)</option>
+                      <option value="IN_PROGRESS">IN_PROGRESS (Currently Working)</option>
+                      <option value="IN_REVIEW">IN_REVIEW (Ready for QA / Review)</option>
+                      <option value="BLOCKED">BLOCKED (Needs Support)</option>
+                      <option value="COMPLETED">COMPLETED (Finished & Verified)</option>
+                    </select>
+                  </div>
+
+                  {/* Progress Quick Jump Buttons */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="font-bold text-black">
+                        Completion Progress: <span className="font-mono text-blue-600 font-black">{progress}%</span>
+                      </label>
+                      <div className="flex gap-1">
+                        {[0, 25, 50, 75, 100].map((pct) => (
+                          <button
+                            key={pct}
+                            type="button"
+                            onClick={() => handleProgressQuickSet(pct)}
+                            className={`px-2 py-1 rounded-lg text-[10px] font-black transition cursor-pointer ${
+                              progress === pct
+                                ? "bg-blue-600 text-white"
+                                : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                            }`}
+                          >
+                            {pct === 100 ? "✓ 100%" : `${pct}%`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={progress}
+                      onChange={(e) => handleProgressQuickSet(Number(e.target.value))}
+                      className="w-full accent-blue-600 cursor-pointer"
                     />
                   </div>
-                )}
 
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-2.5 rounded-xl shadow-md transition cursor-pointer"
-                >
-                  {isSubmitting ? "Syncing with TiDB..." : "Save Status & Progress"}
-                </button>
-              </form>
+                  {status === "BLOCKED" && (
+                    <div>
+                      <label className="block font-bold mb-1 text-rose-600">Blocker Reason *</label>
+                      <textarea
+                        rows={2}
+                        required
+                        value={blockerReason}
+                        onChange={(e) => setBlockerReason(e.target.value)}
+                        placeholder="Specify technical blocker or required asset..."
+                        className="w-full rounded-xl border border-rose-300 bg-white p-2.5 text-black font-medium focus:border-rose-600 focus:outline-none"
+                      />
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-2.5 rounded-xl shadow-md transition cursor-pointer"
+                  >
+                    {isSubmitting ? "Syncing with TiDB..." : "Save Status & Progress"}
+                  </button>
+                </form>
+              ) : (
+                /* Read-Only Status & Progress Summary for Admin / Observers */
+                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-gray-700">Official Task Progress</span>
+                    <span className="font-mono font-black text-blue-600 text-base">{task?.progress || 0}%</span>
+                  </div>
+                  <div className="h-2.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${task?.progress === 100 ? "bg-emerald-500" : "bg-blue-600"}`}
+                      style={{ width: `${task?.progress || 0}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex justify-between items-center text-[11px] text-gray-500 pt-1">
+                    <span>Controlled by: <strong className="text-black font-bold">Team Leader / Assigned Staff</strong></span>
+                    <span className="font-bold text-gray-700">Current Status: <strong className="text-blue-600 font-black">{task?.status}</strong></span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

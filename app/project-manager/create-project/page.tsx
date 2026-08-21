@@ -62,48 +62,70 @@ function CreateProjectForm() {
       fetch("/api/projects").then((r) => r.json()),
     ])
       .then(([empRes, projRes]) => {
+        const allProjs = (projRes.success && Array.isArray(projRes.projects || projRes.data)) ? (projRes.projects || projRes.data) : [];
+        setExistingProjects(allProjs);
+
         if (empRes.success && Array.isArray(empRes.data)) {
-          const eligible = empRes.data.filter(
-            (e: any) =>
+          const eligible = empRes.data.filter((e: any) => {
+            const roleUpper = (e.role || "").toUpperCase();
+            const deptUpper = (e.department || e.departmentName || "").toUpperCase();
+            if (roleUpper === "HR" || deptUpper.includes("HUMAN RESOURCES") || deptUpper === "HR" || roleUpper === "FINANCE") {
+              return false;
+            }
+            return (
               e.role === "TEAM_LEADER" ||
               e.role === "DEVELOPER" ||
-              e.role === "PROJECT_MANAGER" ||
               e.role === "UI_UX_DESIGNER"
-          );
-          setTeamLeaders(eligible);
-        }
-        if (projRes.success && Array.isArray(projRes.projects || projRes.data)) {
-          const allProjs = projRes.projects || projRes.data || [];
-          setExistingProjects(allProjs);
+            );
+          });
 
-          // If draftId is present, load saved draft data
-          if (draftId) {
-            const foundDraft = allProjs.find((p: any) => p.id === draftId || p.projectCode === draftId);
-            if (foundDraft) {
-              setFormData({
-                id: foundDraft.id,
-                projectTitle: foundDraft.projectTitle || "",
-                projectCode: foundDraft.projectCode || foundDraft.id || "",
-                clientCompany: foundDraft.clientCompany || "",
-                clientContactPerson: foundDraft.clientContactPerson || "",
-                clientEmail: foundDraft.clientEmail || "",
-                clientPhone: foundDraft.clientPhone || "+91 98765 00000",
-                description: foundDraft.description || "",
-                startDate: foundDraft.startDate ? foundDraft.startDate.split("T")[0] : new Date().toISOString().split("T")[0],
-                endDate: foundDraft.endDate ? foundDraft.endDate.split("T")[0] : new Date(Date.now() + 60 * 24 * 3600 * 1000).toISOString().split("T")[0],
-                priority: foundDraft.priority || "HIGH",
-                projectType: foundDraft.projectType || "Web Application",
-                requiredSkills: foundDraft.requiredSkills || "React, Next.js, Node.js, MySQL, UI/UX",
-                requiredRoles: foundDraft.requiredRoles || "Developer, UI/UX Designer, QA Tester",
-                techStack: foundDraft.techStack || "React 19, Next.js 16, Tailwind CSS, MySQL",
-                expectedTeamSize: foundDraft.expectedTeamSize || 5,
-                teamLeaderId: foundDraft.teamLeaderId || foundDraft.teamLeader?.id || "",
-                deliveryNotes: "",
-                status: foundDraft.status || "DRAFT",
-                contractValue: foundDraft.contractValue || 250000,
-              });
-              setDeliveryMode(foundDraft.status === "DRAFT" ? "DRAFT" : "IMMEDIATE");
-            }
+          const mappedTLs = eligible.map((tl: any) => {
+            const activeCount = allProjs.filter(
+              (p: any) => (p.teamLeaderId === tl.id || p.teamLeader?.id === tl.id) && p.status !== "COMPLETED" && p.status !== "DRAFT"
+            ).length;
+            return { ...tl, activeCount };
+          });
+
+          // Sort freest first: 0 active projects, 1 active project, etc.
+          mappedTLs.sort((a: any, b: any) => a.activeCount - b.activeCount);
+          setTeamLeaders(mappedTLs);
+
+          // Auto-select freest Team Leader by default if not loading an existing draft
+          if (!draftId && mappedTLs.length > 0) {
+            setFormData((prev) => ({
+              ...prev,
+              teamLeaderId: prev.teamLeaderId || mappedTLs[0].id,
+            }));
+          }
+        }
+
+        // If draftId is present, load saved draft data
+        if (draftId && allProjs.length > 0) {
+          const foundDraft = allProjs.find((p: any) => p.id === draftId || p.projectCode === draftId);
+          if (foundDraft) {
+            setFormData({
+              id: foundDraft.id,
+              projectTitle: foundDraft.projectTitle || "",
+              projectCode: foundDraft.projectCode || foundDraft.id || "",
+              clientCompany: foundDraft.clientCompany || "",
+              clientContactPerson: foundDraft.clientContactPerson || "",
+              clientEmail: foundDraft.clientEmail || "",
+              clientPhone: foundDraft.clientPhone || "+91 98765 00000",
+              description: foundDraft.description || "",
+              startDate: foundDraft.startDate ? foundDraft.startDate.split("T")[0] : new Date().toISOString().split("T")[0],
+              endDate: foundDraft.endDate ? foundDraft.endDate.split("T")[0] : new Date(Date.now() + 60 * 24 * 3600 * 1000).toISOString().split("T")[0],
+              priority: foundDraft.priority || "HIGH",
+              projectType: foundDraft.projectType || "Web Application",
+              requiredSkills: foundDraft.requiredSkills || "React, Next.js, Node.js, MySQL, UI/UX",
+              requiredRoles: foundDraft.requiredRoles || "Developer, UI/UX Designer, QA Tester",
+              techStack: foundDraft.techStack || "React 19, Next.js 16, Tailwind CSS, MySQL",
+              expectedTeamSize: foundDraft.expectedTeamSize || 5,
+              teamLeaderId: foundDraft.teamLeaderId || foundDraft.teamLeader?.id || "",
+              deliveryNotes: "",
+              status: foundDraft.status || "DRAFT",
+              contractValue: foundDraft.contractValue || 250000,
+            });
+            setDeliveryMode(foundDraft.status === "DRAFT" ? "DRAFT" : "IMMEDIATE");
           }
         }
       })
@@ -498,7 +520,7 @@ function CreateProjectForm() {
                   <option value="">-- Choose Team Leader for Delivery --</option>
                   {teamLeaders.map((tl) => (
                     <option key={tl.id} value={tl.id}>
-                      {tl.name} ({tl.employeeId}) — {tl.role}
+                      {tl.name} ({tl.employeeId}) • {tl.activeCount ?? 0} Active Project{(tl.activeCount ?? 0) === 1 ? "" : "s"} {(tl.activeCount ?? 0) === 0 ? "— 🟢 Available (0 Projects)" : (tl.activeCount ?? 0) === 1 ? "— 🟡 Optimal (1 Project)" : "— 🔴 Busy"}
                     </option>
                   ))}
                 </select>

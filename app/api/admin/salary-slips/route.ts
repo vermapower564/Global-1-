@@ -110,11 +110,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const authResult = await authenticateRequest(request);
-    const adminRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
+    const privilegedRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR"];
 
-    if (!authResult.user || !adminRoles.includes(authResult.user.role)) {
+    if (!authResult.user || !privilegedRoles.includes(authResult.user.role)) {
       return NextResponse.json(
-        { success: false, error: "Forbidden: Admin authorization required." },
+        { success: false, error: "Forbidden: Salary slip generation requires HR, Finance, or Executive authorization." },
         { status: 403 }
       );
     }
@@ -132,6 +132,7 @@ export async function POST(request: NextRequest) {
       taxDeduction,
       otherDeductions,
       paymentMethod,
+      paymentStatus = "PUBLISHED",
       notes,
     } = body;
 
@@ -143,7 +144,7 @@ export async function POST(request: NextRequest) {
     }
 
     const uRows = await queryDb<any[]>(
-      `SELECT id, employeeId, name FROM user WHERE id = ? OR employeeId = ? LIMIT 1`,
+      `SELECT id, employeeId, name, role FROM user WHERE id = ? OR employeeId = ? LIMIT 1`,
       [employeeId, employeeId]
     );
 
@@ -166,7 +167,7 @@ export async function POST(request: NextRequest) {
     const net = Math.max(0, gross - totalDed);
 
     const monthKey = salaryMonth.replace(/\s+/g, "-").toLowerCase();
-    const slipId = `SLIP-${user.employeeId}-${monthKey}-${Date.now()}`;
+    const slipId = `SLIP-${user.employeeId}-${monthKey}`;
     const txnRef = `TXN-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     await queryDb(
@@ -180,9 +181,24 @@ export async function POST(request: NextRequest) {
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?,
-        NOW(), 'PAID', ?, ?, ?,
+        NOW(), ?, ?, ?, ?,
         NOW(), NOW()
-      )`,
+      ) ON DUPLICATE KEY UPDATE
+        id = VALUES(id),
+        basicSalary = VALUES(basicSalary),
+        hra = VALUES(hra),
+        allowances = VALUES(allowances),
+        bonus = VALUES(bonus),
+        overtime = VALUES(overtime),
+        grossSalary = VALUES(grossSalary),
+        pfDeduction = VALUES(pfDeduction),
+        taxDeduction = VALUES(taxDeduction),
+        otherDeductions = VALUES(otherDeductions),
+        totalDeductions = VALUES(totalDeductions),
+        netSalary = VALUES(netSalary),
+        paymentStatus = VALUES(paymentStatus),
+        notes = VALUES(notes),
+        updatedAt = NOW()`,
       [
         slipId,
         user.id,
@@ -201,6 +217,7 @@ export async function POST(request: NextRequest) {
         other,
         totalDed,
         net,
+        paymentStatus,
         paymentMethod || "Direct Bank Transfer / NEFT",
         txnRef,
         notes || `Generated salary slip for ${salaryMonth}`,

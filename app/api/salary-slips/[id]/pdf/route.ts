@@ -9,7 +9,7 @@ const PRIVILEGED_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR"
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
     const authResult = await authenticateRequest(request);
@@ -20,7 +20,8 @@ export async function GET(
       );
     }
 
-    const { id } = await params;
+    const resolvedParams = await Promise.resolve(context?.params);
+    const id = resolvedParams?.id;
     if (!id) {
       return NextResponse.json({ success: false, error: "Salary slip ID required." }, { status: 400 });
     }
@@ -46,8 +47,15 @@ export async function GET(
 
     const slip = slipRows[0];
     const authUser = authResult.user;
-    const isOwner = slip.userId === authUser.id;
-    const isPrivileged = PRIVILEGED_ROLES.includes(authUser.role.toUpperCase());
+    const slipUserId = slip.userId || slip.userid;
+    const slipEmpId = slip.employeeId || slip.employeeid;
+    const slipEmail = slip.user_email || slip.email;
+
+    const isOwner =
+      slipUserId === authUser.id ||
+      slipEmpId === authUser.id ||
+      (slipEmail && slipEmail.toLowerCase() === (authUser.email || "").toLowerCase());
+    const isPrivileged = PRIVILEGED_ROLES.includes((authUser.role || "").toUpperCase());
 
     // Strict Ownership / Authorization Verification
     if (!isOwner && !isPrivileged) {
@@ -60,13 +68,15 @@ export async function GET(
       );
     }
 
-    // Log sensitive download audit event
-    await logAuditEvent(
-      authUser.id,
-      "SALARY_SLIP_DOWNLOADED",
-      `User ${authUser.email} downloaded official salary slip (${slip.salaryMonth}) for employee ${slip.employeeName || slip.user_name} (${slip.employeeId || slip.user_employeeId})`,
-      request.headers.get("x-forwarded-for") || "127.0.0.1"
-    );
+    // Log sensitive download audit event safely
+    try {
+      await logAuditEvent(
+        authUser.id,
+        "SALARY_SLIP_DOWNLOADED",
+        `User ${authUser.email} downloaded official salary slip (${slip.salaryMonth}) for employee ${slip.employeeName || slip.user_name} (${slipEmpId || slip.user_employeeId})`,
+        request.headers.get("x-forwarded-for") || "127.0.0.1"
+      );
+    } catch (e) {}
 
     const empName = slip.employeeName || slip.user_name || "Employee";
     const empId = slip.employeeId || slip.user_employeeId || "EMP";

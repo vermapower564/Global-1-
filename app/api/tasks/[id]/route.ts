@@ -70,6 +70,10 @@ export async function GET(
       [id]
     );
 
+    const isPureAdmin = ["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR", "HR", "FINANCE"].includes(authUser.role);
+    const canStartTask = (isAssignee || isTeamLeader) && !isPureAdmin && authUser.role !== "PROJECT_MANAGER";
+    const canEditProgress = (isAssignee || isTeamLeader) && !isPureAdmin && authUser.role !== "PROJECT_MANAGER";
+
     const task = {
       id: t.id,
       title: t.title,
@@ -87,6 +91,8 @@ export async function GET(
       blockerReason: t.blockerReason,
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
+      manualProjectName: t.manualProjectName || null,
+      projectSource: t.project_id ? "Existing Project" : (t.manualProjectName ? "Manually Entered" : "None"),
       assignedToUser: {
         id: t.user_id,
         name: t.user_name,
@@ -105,7 +111,12 @@ export async function GET(
         projectTitle: t.project_title,
         clientCompany: t.project_clientCompany,
         teamLeaderId: t.project_teamLeaderId,
-      } : null,
+        source: "Existing Project",
+      } : (t.manualProjectName ? {
+        id: null,
+        projectTitle: t.manualProjectName,
+        source: "Manually Entered",
+      } : null),
       taskhistory: (historyRows || []).map((h) => ({
         id: h.id,
         action: h.action,
@@ -117,6 +128,9 @@ export async function GET(
       })),
       isUserTeamLeader: isTeamLeader,
       isUserAssignee: isAssignee,
+      canStartTask,
+      canEditProgress,
+      isObserver: isPureAdmin || authUser.role === "PROJECT_MANAGER",
     };
 
     return NextResponse.json({ success: true, task });
@@ -137,6 +151,10 @@ export async function PATCH(
     }
 
     const { id } = await params;
+    if (!id || id === "undefined") {
+      return NextResponse.json({ success: false, error: "Task ID is required." }, { status: 400 });
+    }
+
     const body = await request.json().catch(() => ({}));
     const {
       status,
@@ -153,7 +171,7 @@ export async function PATCH(
     } = body;
 
     const existingRows = await queryDb<any[]>(
-      `SELECT t.*, p.teamLeaderId AS project_teamLeaderId
+      `SELECT t.*, p.teamLeaderId AS project_teamLeaderId, p.projectManagerId AS project_projectManagerId
        FROM task t
        LEFT JOIN project p ON t.projectId = p.id
        WHERE t.id = ?
@@ -167,31 +185,71 @@ export async function PATCH(
 
     const existingTask = existingRows[0];
     const authUser = authResult.user;
-    const isAdmin = ADMIN_ROLES.includes(authUser.role);
-    const isTeamLeader = existingTask.project_teamLeaderId === authUser.id;
-    const isAssignee = existingTask.assignedToUserId === authUser.id;
 
-    // Authorization check: Must be Admin, Team Leader of this project, or the Assigned Employee
-    if (!isAdmin && !isTeamLeader && !isAssignee) {
+    const authUserRows = await queryDb<any[]>(
+      `SELECT id, employeeId, role FROM user WHERE id = ? OR employeeId = ? OR email = ? LIMIT 1`,
+      [authUser.id, authUser.id, authUser.email]
+    );
+    const resolvedAuth = authUserRows && authUserRows.length > 0 ? authUserRows[0] : authUser;
+
+    const isAdmin = ADMIN_ROLES.includes(resolvedAuth.role || authUser.role);
+    const isTeamLeader =
+      existingTask.project_teamLeaderId === authUser.id ||
+      existingTask.project_teamLeaderId === resolvedAuth.id ||
+      existingTask.project_teamLeaderId === resolvedAuth.employeeId ||
+      existingTask.createdById === authUser.id ||
+      existingTask.createdById === resolvedAuth.id ||
+      resolvedAuth.role === "TEAM_LEADER";
+    const isProjectManager =
+      existingTask.project_projectManagerId === authUser.id ||
+      existingTask.project_projectManagerId === resolvedAuth.id ||
+      resolvedAuth.role === "PROJECT_MANAGER";
+    const isAssignee =
+      existingTask.assignedToUserId === authUser.id ||
+      existingTask.assignedToUserId === resolvedAuth.id ||
+      existingTask.assignedToUserId === resolvedAuth.employeeId;
+
+    // Authorization check: Must be Admin, Team Leader, Project Manager, or the Assigned Employee
+    if (!isAdmin && !isTeamLeader && !isProjectManager && !isAssignee) {
       return NextResponse.json(
         { success: false, error: "Forbidden: You are not authorized to modify another employee's task." },
         { status: 403 }
       );
     }
 
-    // Security Rule: Admin cannot modify operational progress reports directly
+    // Security Rule: Admin and PM cannot execute or modify operational progress/status directly
     const isPureAdmin = ["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR", "HR", "FINANCE"].includes(authUser.role);
-    if (isPureAdmin && !isTeamLeader && !isAssignee && (progress !== undefined || status)) {
+    const isProjectManagerObserver = authUser.role === "PROJECT_MANAGER" && !isAssignee && !isTeamLeader;
+
+    if (action === "START_TASK") {
+      if (isPureAdmin || isProjectManagerObserver) {
+        await logAuditEvent(
+          authUser.id,
+          "START_TASK_REJECTED",
+          `Rejected attempt to start task (${existingTask.title}) by user with role ${authUser.role}. Only assigned Team Leaders and Employees can start tasks.`,
+          request.headers.get("x-forwarded-for") || "127.0.0.1"
+        );
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Forbidden: Administrators and Project Managers cannot execute or start operational tasks. Task execution is restricted to assigned Team Leaders and Employees.",
+          },
+          { status: 403 }
+        );
+      }
+    }
+
+    if ((isPureAdmin || isProjectManagerObserver) && (progress !== undefined || status !== undefined)) {
       await logAuditEvent(
         authUser.id,
         "PROGRESS_UPDATE_REJECTED",
-        `Rejected progress modification attempt by Admin (${authUser.email}) on Task (${existingTask.title}). Operational progress reports are protected.`,
+        `Rejected progress/status modification attempt by Admin/PM (${authUser.email}) on Task (${existingTask.title}). Operational progress reports are protected.`,
         request.headers.get("x-forwarded-for") || "127.0.0.1"
       );
       return NextResponse.json(
         {
           success: false,
-          error: "Forbidden: Administrators have read-only access to operational progress reports. Progress must be updated directly by the responsible Project Manager, Team Leader, or Assignee.",
+          error: "Forbidden: Administrators and Project Managers have read-only observer access to operational task execution. Progress and status must be updated directly by the responsible Team Leader or assigned Employee.",
         },
         { status: 403 }
       );
@@ -207,12 +265,32 @@ export async function PATCH(
     let nextActualHours = existingTask.actualHours || 0;
     let nextDueDate = existingTask.dueDate;
     let nextAssignedTo = existingTask.assignedToUserId;
+    let nextProjectId = existingTask.projectId;
+    let nextManualProjectName = existingTask.manualProjectName;
+
+    // Handle START_TASK action for assigned Employee or Team Leader
+    if (action === "START_TASK") {
+      nextStatus = "IN_PROGRESS";
+      if (nextProgress === 0) nextProgress = 10;
+    }
+
+    // Handle manual vs existing project updates
+    if (body.projectId !== undefined || body.manualProjectName !== undefined) {
+      if (body.projectId === "__MANUAL__" || (!body.projectId && body.manualProjectName)) {
+        if (!body.manualProjectName || !body.manualProjectName.trim()) {
+          return NextResponse.json({ success: false, error: "Please enter a project name." }, { status: 400 });
+        }
+        nextProjectId = null;
+        nextManualProjectName = body.manualProjectName.trim();
+      } else if (body.projectId && body.projectId !== "__MANUAL__") {
+        nextProjectId = body.projectId;
+        nextManualProjectName = null;
+      }
+    }
 
     // Employee Actions: Status transition & progress updates
     if (isAssignee && !isAdmin && !isTeamLeader) {
       if (status) {
-        // Employees can move tasks between IN_PROGRESS, BLOCKED, IN_REVIEW
-        // Or if submitting completed work for Team Leader review -> IN_REVIEW or COMPLETED
         nextStatus = status;
         if (status === "COMPLETED") {
           nextProgress = 100;
@@ -228,15 +306,15 @@ export async function PATCH(
       if (progress !== undefined) {
         nextProgress = Math.min(100, Math.max(0, parseInt(progress)));
         if (nextProgress === 100 && nextStatus !== "COMPLETED") {
-          nextStatus = "IN_REVIEW"; // Ready for TL review
+          nextStatus = "IN_REVIEW";
         }
       }
       if (blockerReason !== undefined) nextBlocker = blockerReason;
       if (actualHours !== undefined) nextActualHours = parseFloat(actualHours);
     }
 
-    // Team Leader or Admin Actions: Full management & Work Review
-    if (isAdmin || isTeamLeader) {
+    // Team Leader Actions: Full execution & Work Review
+    if (isTeamLeader && !isPureAdmin) {
       if (status) {
         nextStatus = status;
         if (status === "COMPLETED") {
@@ -244,7 +322,6 @@ export async function PATCH(
           nextCompletedAt = new Date();
           nextBlocker = null;
         } else if (status === "IN_PROGRESS" && existingTask.status === "IN_REVIEW") {
-          // TL requesting changes/revisions
           nextProgress = progress !== undefined ? parseInt(progress) : 75;
           nextCompletedAt = null;
         }
@@ -256,13 +333,30 @@ export async function PATCH(
       if (blockerReason !== undefined) nextBlocker = blockerReason;
       if (actualHours !== undefined) nextActualHours = parseFloat(actualHours);
       if (dueDate) nextDueDate = new Date(dueDate);
-      if (assignedToUserId) nextAssignedTo = assignedToUserId;
+    }
+
+    // Administrative metadata updates (priority, dates, reassignment)
+    if (isAdmin || isProjectManager) {
+      if (priority) nextPriority = priority;
+      if (section) nextSection = section;
+      if (dueDate) nextDueDate = new Date(dueDate);
+      if (assignedToUserId && assignedToUserId !== existingTask.assignedToUserId) {
+        const uRows = await queryDb<any[]>(`SELECT id, role FROM user WHERE id = ? OR employeeId = ? LIMIT 1`, [assignedToUserId, assignedToUserId]);
+        if (!uRows || uRows.length === 0) {
+          return NextResponse.json({ success: false, error: "Target assignee not found." }, { status: 404 });
+        }
+        if (isAdmin && !["PROJECT_MANAGER", "TEAM_LEADER"].includes(uRows[0].role)) {
+          return NextResponse.json({ success: false, error: "Invalid Assignee: Tasks can only be assigned to a Project Manager or Team Leader." }, { status: 400 });
+        }
+        nextAssignedTo = uRows[0].id;
+      }
     }
 
     await queryDb(
       `UPDATE task SET
         status = ?, progress = ?, priority = ?, section = ?, reviewNotes = ?,
         blockerReason = ?, completedAt = ?, actualHours = ?, dueDate = ?, assignedToUserId = ?,
+        projectId = ?, manualProjectName = ?,
         updatedAt = NOW()
        WHERE id = ?`,
       [
@@ -276,40 +370,80 @@ export async function PATCH(
         nextActualHours,
         nextDueDate,
         nextAssignedTo,
+        nextProjectId,
+        nextManualProjectName,
         id,
       ]
     );
 
+    const userLookupRows = await queryDb<any[]>(
+      `SELECT id, name, employeeId, role FROM user WHERE id = ? OR employeeId = ? OR email = ? LIMIT 1`,
+      [authUser.id, authUser.id, authUser.email]
+    );
+    const resolvedUser = userLookupRows && userLookupRows.length > 0 ? userLookupRows[0] : {
+      id: authUser.id,
+      name: authUser.email.split("@")[0],
+      employeeId: authUser.id,
+      role: authUser.role,
+    };
+
+    const formatRole = (r: string) => {
+      const u = (r || "").toUpperCase();
+      if (u === "SUPER_ADMIN") return "Super Admin";
+      if (u === "ADMIN_HR") return "Admin";
+      if (u === "PROJECT_MANAGER") return "Project Manager";
+      if (u === "TEAM_LEADER") return "Team Leader";
+      if (u === "DEVELOPER") return "Developer";
+      if (u === "EMPLOYEE") return "Employee";
+      if (u === "HR") return "HR";
+      return r.replace(/_/g, " ");
+    };
+    const formattedUserWithRole = `${resolvedUser.name} (${formatRole(resolvedUser.role)})`;
+
     // Audit log & task history
-    const historyAction =
-      isTeamLeader || isAdmin
-        ? nextStatus === "COMPLETED"
-          ? "WORK_APPROVED"
-          : "TASK_REVIEWED"
-        : nextStatus === "IN_REVIEW"
-        ? "WORK_SUBMITTED"
-        : "STATUS_UPDATED";
+    const isProgressChange = nextProgress !== existingTask.progress;
+    const historyAction = isProgressChange
+      ? "PROGRESS_UPDATED"
+      : isTeamLeader || isAdmin
+      ? nextStatus === "COMPLETED"
+        ? "WORK_APPROVED"
+        : "TASK_REVIEWED"
+      : nextStatus === "IN_REVIEW"
+      ? "WORK_SUBMITTED"
+      : "STATUS_UPDATED";
 
     const historyDesc =
       notes ||
-      (nextStatus === "COMPLETED"
-        ? `Task approved and completed by ${(authUser as any).name || authUser.email}.`
+      (isProgressChange
+        ? `${formattedUserWithRole} updated progress: ${existingTask.progress}% → ${nextProgress}%.`
+        : nextStatus === "COMPLETED"
+        ? `Task approved and completed by ${formattedUserWithRole}.`
         : nextStatus === "IN_REVIEW"
         ? `Work submitted for Team Leader review with ${nextProgress}% progress.`
         : `Task updated from ${existingTask.status} to ${nextStatus} (${nextProgress}%).`);
 
     await queryDb(
       `INSERT INTO taskhistory (id, taskId, userId, action, oldValue, newValue, description, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, NOW(3))`,
       [
-        `TH-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+        `TH-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`.toUpperCase(),
         id,
-        authUser.id,
+        resolvedUser.id,
         historyAction,
-        existingTask.status,
-        nextStatus,
+        isProgressChange ? `${existingTask.progress}%` : existingTask.status,
+        isProgressChange ? `${nextProgress}%` : nextStatus,
         historyDesc,
       ]
+    );
+
+    // Record in immutable auditlog
+    await logAuditEvent(
+      resolvedUser.id,
+      isProgressChange ? "PROGRESS_UPDATED" : historyAction,
+      isProgressChange
+        ? `${formattedUserWithRole} updated task "${existingTask.title}" progress: ${existingTask.progress}% → ${nextProgress}% (Project: ${existingTask.projectId || existingTask.manualProjectName || "Standalone"})`
+        : `${formattedUserWithRole} updated task "${existingTask.title}" status to ${nextStatus}`,
+      request.headers.get("x-forwarded-for") || "127.0.0.1"
     );
 
     clearQueryCache("task");

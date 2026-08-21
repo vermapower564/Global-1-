@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Time Slide / Period Filtering
+    // Time Slide / Period Filtering (Defaults to today's punches)
     if (filterPeriod === "today") {
       sql += ` AND DATE(a.date) = CURDATE()`;
     } else if (filterPeriod === "yesterday") {
@@ -71,6 +71,8 @@ export async function GET(request: NextRequest) {
       const targetYear = filterYear || new Date().getFullYear().toString();
       sql += ` AND YEAR(a.date) = ?`;
       params.push(targetYear);
+    } else if (filterPeriod === "all" || searchParams.get("all") === "true") {
+      // Show all historical records without date bounds
     } else {
       // Fallbacks if direct date/month/year params provided
       if (filterDate) {
@@ -82,6 +84,9 @@ export async function GET(request: NextRequest) {
       } else if (filterYear) {
         sql += ` AND YEAR(a.date) = ?`;
         params.push(filterYear);
+      } else {
+        // Default to today's punches
+        sql += ` AND DATE(a.date) = CURDATE()`;
       }
     }
 
@@ -106,7 +111,7 @@ export async function GET(request: NextRequest) {
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
 
-    sql += ` ORDER BY a.date DESC, a.checkInTime DESC`;
+    sql += ` ORDER BY a.date DESC, a.checkInTime DESC, a.createdAt DESC, a.id DESC`;
 
     const rawRows = await queryDbCached<any[]>(sql, params, 5);
 

@@ -15,8 +15,11 @@ interface TaskItem {
   estimatedHours: number;
   actualHours: number;
   blockerReason?: string;
+  manualProjectName?: string;
+  projectSource?: string;
+  projectId?: string | null;
   assignedToUser?: { id: string; name: string; employeeId: string; email?: string; role?: string };
-  project?: { id: string; projectTitle: string };
+  project?: { id: string | null; projectTitle: string; source?: string };
 }
 
 interface EmployeeOption {
@@ -57,6 +60,7 @@ export default function AdminTasksPage() {
   const [description, setDescription] = useState("");
   const [assignedToUserId, setAssignedToUserId] = useState("");
   const [projectId, setProjectId] = useState("");
+  const [manualProjectName, setManualProjectName] = useState("");
   const [priority, setPriority] = useState("MEDIUM");
   const [dueDate, setDueDate] = useState("");
   const [estimatedHours, setEstimatedHours] = useState("8");
@@ -88,8 +92,9 @@ export default function AdminTasksPage() {
 
   const fetchFormOptions = async () => {
     try {
+      // Strictly query only PROJECT_MANAGER and TEAM_LEADER roles from the backend
       const [empRes, projRes] = await Promise.all([
-        fetch("/api/employees"),
+        fetch("/api/employees?role=PROJECT_MANAGER,TEAM_LEADER"),
         fetch("/api/projects"),
       ]);
       const empJson = await empRes.json();
@@ -136,6 +141,12 @@ export default function AdminTasksPage() {
     e.preventDefault();
     setCreateErrorMsg("");
     setCreateSuccessMsg("");
+
+    if (projectId === "__MANUAL__" && !manualProjectName.trim()) {
+      setCreateErrorMsg("Please enter a project name.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -146,7 +157,8 @@ export default function AdminTasksPage() {
           title,
           description,
           assignedToUserId,
-          projectId: projectId || undefined,
+          projectId: projectId === "__MANUAL__" ? undefined : (projectId || undefined),
+          manualProjectName: projectId === "__MANUAL__" ? manualProjectName.trim() : undefined,
           priority,
           dueDate: dueDate || new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString(),
           estimatedHours: parseFloat(estimatedHours) || 8,
@@ -160,6 +172,7 @@ export default function AdminTasksPage() {
         setDescription("");
         setAssignedToUserId("");
         setProjectId("");
+        setManualProjectName("");
         setPriority("MEDIUM");
         setDueDate("");
         setEstimatedHours("8");
@@ -180,9 +193,9 @@ export default function AdminTasksPage() {
 
   const kanbanColumns = [
     {
-      key: "ASSIGNED",
-      title: "📋 To Do / Assigned",
-      filterFn: (t: TaskItem) => t.status === "ASSIGNED" || t.status === "PENDING" || t.status === "BACKLOG",
+      key: "PENDING",
+      title: "📋 To Do / Pending",
+      filterFn: (t: TaskItem) => t.status === "ASSIGNED" || t.status === "PENDING" || t.status === "BACKLOG" || t.status === "NEW",
       color: "bg-blue-50 text-blue-700 border-blue-200",
     },
     {
@@ -192,9 +205,15 @@ export default function AdminTasksPage() {
       color: "bg-amber-50 text-amber-700 border-amber-200",
     },
     {
+      key: "BLOCKED",
+      title: "🛑 Blocked",
+      filterFn: (t: TaskItem) => t.status === "BLOCKED",
+      color: "bg-rose-50 text-rose-700 border-rose-200",
+    },
+    {
       key: "IN_REVIEW",
-      title: "🔍 In Review / Blocked",
-      filterFn: (t: TaskItem) => t.status === "IN_REVIEW" || t.status === "BLOCKED",
+      title: "🔍 In Review",
+      filterFn: (t: TaskItem) => t.status === "IN_REVIEW",
       color: "bg-purple-50 text-purple-700 border-purple-200",
     },
     {
@@ -465,7 +484,7 @@ export default function AdminTasksPage() {
               </div>
             ) : viewMode === "BOARD" ? (
               /* VISUAL BOARD VIEW */
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 {kanbanColumns.map((col) => {
                   const colTasks = tasks.filter(col.filterFn);
 
@@ -587,7 +606,21 @@ export default function AdminTasksPage() {
                           </td>
 
                           <td className="py-4 px-5 font-bold text-gray-700">
-                            {task.project?.projectTitle || "—"}
+                            {task.project?.projectTitle ? (
+                              <div className="flex flex-col">
+                                <span className="text-black font-extrabold">{task.project.projectTitle}</span>
+                                <span className="text-[10px] text-gray-400 font-normal">
+                                  {task.project.source || (task.projectId ? "Existing Project" : "Manually Entered")}
+                                </span>
+                              </div>
+                            ) : task.manualProjectName ? (
+                              <div className="flex flex-col">
+                                <span className="text-black font-extrabold">{task.manualProjectName}</span>
+                                <span className="text-[10px] text-amber-600 font-bold">Manually Entered</span>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 italic">General Task</span>
+                            )}
                           </td>
 
                           <td className="py-4 px-5">
@@ -672,8 +705,8 @@ export default function AdminTasksPage() {
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-gray-200 space-y-5 animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center border-b border-gray-100 pb-3">
               <div>
-                <h3 className="text-lg font-black text-black">Assign New Task</h3>
-                <p className="text-xs text-gray-500">Create a task and assign it to any employee.</p>
+                <h3 className="text-lg font-black text-black">Assign Task</h3>
+                <p className="text-xs text-gray-500">Create a task and assign it to a Project Manager or Team Leader.</p>
               </div>
               <button
                 onClick={() => setIsCreateModalOpen(false)}
@@ -708,30 +741,14 @@ export default function AdminTasksPage() {
               </div>
 
               <div>
-                <label className="block font-bold text-black mb-1">Project (Optional / Recommended)</label>
-                <select
-                  value={projectId}
-                  onChange={(e) => setProjectId(e.target.value)}
-                  className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2 font-bold text-black focus:border-blue-600 focus:outline-none cursor-pointer"
-                >
-                  <option value="">-- No Project / General Task --</option>
-                  {projects.map((proj) => (
-                    <option key={proj.id} value={proj.id}>
-                      {proj.projectTitle}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-black mb-1">Assign to Project Manager / Employee *</label>
+                <label className="block font-bold text-black mb-1">Choose Project Manager / Team Leader *</label>
                 <select
                   required
                   value={assignedToUserId}
                   onChange={(e) => setAssignedToUserId(e.target.value)}
                   className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2 font-bold text-black focus:border-blue-600 focus:outline-none cursor-pointer"
                 >
-                  <option value="">-- Choose Project Manager / Employee --</option>
+                  <option value="">-- Choose Project Manager / Team Leader --</option>
                   {employees.map((emp) => (
                     <option key={emp.id} value={emp.id}>
                       {emp.name} ({emp.employeeId}) — {emp.role}
@@ -739,6 +756,37 @@ export default function AdminTasksPage() {
                   ))}
                 </select>
               </div>
+
+              <div>
+                <label className="block font-bold text-black mb-1">Project</label>
+                <select
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2 font-bold text-black focus:border-blue-600 focus:outline-none cursor-pointer"
+                >
+                  <option value="">-- Select Existing Project --</option>
+                  {projects.map((proj) => (
+                    <option key={proj.id} value={proj.id}>
+                      {proj.projectTitle}
+                    </option>
+                  ))}
+                  <option value="__MANUAL__">-- No Existing Project / Enter Manually --</option>
+                </select>
+              </div>
+
+              {projectId === "__MANUAL__" && (
+                <div className="animate-in fade-in duration-200">
+                  <label className="block font-bold text-black mb-1">Project Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={manualProjectName}
+                    onChange={(e) => setManualProjectName(e.target.value)}
+                    placeholder="Enter project name"
+                    className="w-full rounded-xl border border-blue-400 bg-blue-50/20 px-3.5 py-2 font-medium text-black focus:border-blue-600 focus:outline-none"
+                  />
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

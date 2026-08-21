@@ -18,7 +18,7 @@ export async function GET() {
     const { prisma } = await import("@/lib/prisma");
     let depts = await prisma.department.findMany({
       include: { user: { select: { id: true, name: true, employeeId: true } } },
-      orderBy: { createdAt: "asc" },
+      orderBy: { name: "asc" },
     });
 
     if (depts.length === 0) {
@@ -29,7 +29,7 @@ export async function GET() {
       }
       depts = await prisma.department.findMany({
         include: { user: { select: { id: true, name: true, employeeId: true } } },
-        orderBy: { createdAt: "asc" },
+        orderBy: { name: "asc" },
       });
     }
 

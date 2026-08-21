@@ -451,6 +451,12 @@ export default function AdminOrganisationPage() {
         </div>
         <div className="flex items-center gap-2">
           <Link
+            href="/employees/add"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5"
+          >
+            <span>+ Add Employee / HR</span>
+          </Link>
+          <Link
             href="/admin/dashboard"
             className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl transition"
           >
@@ -1710,8 +1716,20 @@ export default function AdminOrganisationPage() {
                               </td>
 
                               <td className="py-3.5 px-4">
-                                <div className="font-bold text-slate-900">{emp.role}</div>
-                                <div className="text-[10px] text-slate-500">{emp.department}</div>
+                                <div>
+                                  <span className={`inline-block px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border ${
+                                    emp.role === "HR"
+                                      ? "bg-amber-50 text-amber-800 border-amber-300"
+                                      : emp.role === "PROJECT_MANAGER"
+                                      ? "bg-purple-50 text-purple-800 border-purple-300"
+                                      : emp.role === "TEAM_LEADER"
+                                      ? "bg-blue-50 text-blue-800 border-blue-300"
+                                      : "bg-slate-100 text-slate-800 border-slate-300"
+                                  }`}>
+                                    {emp.role}
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-slate-500 mt-0.5 font-medium">{emp.department}</div>
                               </td>
 
                               <td className="py-3.5 px-4 font-bold text-slate-900 line-clamp-1">

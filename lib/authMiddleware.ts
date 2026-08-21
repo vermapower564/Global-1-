@@ -90,7 +90,16 @@ export async function logAuditEvent(
 ) {
   try {
     const { queryDb } = await import("@/lib/db");
-    const userId = typeof userIdOrReq === "string" ? userIdOrReq : null;
+    let validUserId: string | null = null;
+    if (typeof userIdOrReq === "string" && userIdOrReq) {
+      const uRows = await queryDb<any[]>(
+        `SELECT id FROM user WHERE id = ? OR employeeId = ? LIMIT 1`,
+        [userIdOrReq, userIdOrReq]
+      );
+      if (uRows && uRows.length > 0) {
+        validUserId = uRows[0].id;
+      }
+    }
     const detailStr = typeof details === "object" ? JSON.stringify(details) : String(details);
     const ip =
       ipAddress ||
@@ -100,7 +109,7 @@ export async function logAuditEvent(
 
     await queryDb(
       `INSERT INTO auditlog (id, userId, action, details, ipAddress, timestamp) VALUES (?, ?, ?, ?, ?, NOW())`,
-      [`AUD-${Date.now()}`, userId, action, detailStr, ip]
+      [`AUD-${Date.now()}`, validUserId, action, detailStr, ip]
     );
   } catch (err: any) {
     console.warn("Audit Log Auto-Record Fallback:", err.message);

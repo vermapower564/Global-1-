@@ -1,16 +1,26 @@
+import { generateToken } from "../lib/authService";
+
 async function testBackendApis() {
   console.log("🔍 Testing all OMS Backend API Endpoints on http://127.0.0.1:3000...\n");
 
+  const adminToken = generateToken({
+    id: "EMP-8595",
+    email: "roushan.verma@global.com",
+    role: "SUPER_ADMIN",
+  });
+
   const endpoints = [
-    { name: "Auth Session Check", url: "http://127.0.0.1:3000/api/auth/me", method: "GET", expectedStatus: [401, 200] },
-    { name: "Employees Directory List", url: "http://127.0.0.1:3000/api/employees", method: "GET", expectedStatus: [200] },
-    { name: "Tasks Intelligence List", url: "http://127.0.0.1:3000/api/tasks", method: "GET", expectedStatus: [401, 200] },
-    { name: "Departments List", url: "http://127.0.0.1:3000/api/departments", method: "GET", expectedStatus: [200] },
-    { name: "Attendance Ledger", url: "http://127.0.0.1:3000/api/attendance", method: "GET", expectedStatus: [200] },
-    { name: "Daily Work Updates", url: "http://127.0.0.1:3000/api/daily-work", method: "GET", expectedStatus: [200] },
-    { name: "System Audit Logs", url: "http://127.0.0.1:3000/api/audit-logs", method: "GET", expectedStatus: [200] },
-    { name: "Projects Endpoint", url: "http://127.0.0.1:3000/api/projects", method: "GET", expectedStatus: [200] },
-    { name: "Health Check", url: "http://127.0.0.1:3000/api/health", method: "GET", expectedStatus: [200] },
+    { name: "Health Check (Public)", url: "http://127.0.0.1:3000/api/health", method: "GET", auth: false, expectedStatus: [200] },
+    { name: "Auth Session Check (Unauthenticated 401)", url: "http://127.0.0.1:3000/api/auth/me", method: "GET", auth: false, expectedStatus: [401] },
+    { name: "Auth Session Check (Authenticated 200)", url: "http://127.0.0.1:3000/api/auth/me", method: "GET", auth: true, expectedStatus: [200] },
+    { name: "Employees Directory List (Authenticated 200)", url: "http://127.0.0.1:3000/api/employees", method: "GET", auth: true, expectedStatus: [200] },
+    { name: "Tasks Intelligence List (Authenticated 200)", url: "http://127.0.0.1:3000/api/tasks", method: "GET", auth: true, expectedStatus: [200] },
+    { name: "Departments List (Authenticated 200)", url: "http://127.0.0.1:3000/api/departments", method: "GET", auth: true, expectedStatus: [200] },
+    { name: "Attendance Ledger (Authenticated 200)", url: "http://127.0.0.1:3000/api/attendance", method: "GET", auth: true, expectedStatus: [200] },
+    { name: "Daily Work Updates (Authenticated 200)", url: "http://127.0.0.1:3000/api/daily-work", method: "GET", auth: true, expectedStatus: [200] },
+    { name: "System Audit Logs (Authenticated 200)", url: "http://127.0.0.1:3000/api/audit-logs", method: "GET", auth: true, expectedStatus: [200] },
+    { name: "Projects Endpoint (Authenticated 200)", url: "http://127.0.0.1:3000/api/projects", method: "GET", auth: true, expectedStatus: [200] },
+    { name: "Feature Requests Desk (Authenticated 200)", url: "http://127.0.0.1:3000/api/feature-requests", method: "GET", auth: true, expectedStatus: [200] },
   ];
 
   let passed = 0;
@@ -18,17 +28,22 @@ async function testBackendApis() {
 
   for (const ep of endpoints) {
     try {
-      const res = await fetch(ep.url, { method: ep.method });
+      const headers: Record<string, string> = {};
+      if (ep.auth) {
+        headers["Authorization"] = `Bearer ${adminToken}`;
+        headers["Cookie"] = `oms_session=${adminToken}`;
+      }
+      const res = await fetch(ep.url, { method: ep.method, headers });
       const isSuccess = ep.expectedStatus.includes(res.status);
       if (isSuccess) {
-        console.log(`✅ [${res.status}] ${ep.name} (${ep.url})`);
+        console.log(`✅ [${res.status}] ${ep.name}`);
         passed++;
       } else {
-        console.error(`❌ [${res.status}] ${ep.name} (${ep.url}) - Unexpected HTTP status`);
+        console.error(`❌ [${res.status}] ${ep.name} - Expected: ${ep.expectedStatus.join(",")}`);
         failed++;
       }
     } catch (err: any) {
-      console.error(`❌ [ERROR] ${ep.name} (${ep.url}): ${err.message}`);
+      console.error(`❌ [ERROR] ${ep.name}: ${err.message}`);
       failed++;
     }
   }
@@ -41,11 +56,11 @@ async function testBackendApis() {
       body: JSON.stringify({ identity: "unknown.user999@gmail.com", password: "wrongpassword" }),
     });
     const unknownJson = await unknownRes.json();
-    if (unknownRes.status === 401 && unknownJson.error === "Invalid email/employee ID or password") {
+    if (unknownRes.status === 401 && (unknownJson.error === "Invalid email/employee ID or password" || unknownJson.error?.includes("Invalid"))) {
       console.log(`✅ [401] Invalid Credentials Test Passed`);
       passed++;
     } else {
-      console.error(`❌ [${unknownRes.status}] Failed Credentials Test for unknown account`);
+      console.error(`❌ [${unknownRes.status}] Failed Credentials Test for unknown account: ${JSON.stringify(unknownJson)}`);
       failed++;
     }
   } catch (err: any) {

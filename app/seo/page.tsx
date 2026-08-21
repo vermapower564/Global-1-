@@ -51,6 +51,8 @@ export default function SeoPage() {
       });
       const json = await res.json();
       if (json.success) {
+
+        
         setShowAddModal(false);
         setNewKw({ keyword: "", searchVolume: "12,000/mo", currentRank: 5, targetUrl: "https://globalwebify.com/oms" });
         fetchKeywords();

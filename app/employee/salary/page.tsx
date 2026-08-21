@@ -11,7 +11,6 @@ export default function EmployeeSalaryPage() {
   const [loading, setLoading] = useState(true);
   const [selectedSlip, setSelectedSlip] = useState<any | null>(null);
   const [showSlipModal, setShowSlipModal] = useState(false);
-
   const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
@@ -55,22 +54,24 @@ export default function EmployeeSalaryPage() {
           🚫
         </div>
         <h2 className="text-xl font-black text-slate-900 tracking-tight">
-          403 — Access Forbidden
+          Session Required
         </h2>
         <p className="text-xs text-slate-600 leading-relaxed">
-          Salary slips and compensation ledgers are restricted from general employee, team leader, and project manager access. Contact HR or Finance administration for payroll inquiries.
+          Please sign in to access your confidential salary slips and payment records.
         </p>
         <div className="pt-2">
           <Link
-            href="/employee/dashboard"
+            href="/login"
             className="inline-block bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl transition"
           >
-            ← Return to Dashboard
+            Go to Login
           </Link>
         </div>
       </div>
     );
   }
+
+  const latestSlip = salarySlips.length > 0 ? salarySlips[0] : null;
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-16 font-sans bg-white text-black p-4 sm:p-6">
@@ -83,7 +84,7 @@ export default function EmployeeSalaryPage() {
           My Monthly Salary & Payment Slips
         </h1>
         <p className="text-xs text-slate-600">
-          View your salary disbursement history, earnings/deductions breakdown, and download verified salary slip PDFs.
+          View your published salary disbursement history, earnings/deductions breakdown, and download verified salary slip PDFs.
         </p>
       </div>
 
@@ -91,28 +92,32 @@ export default function EmployeeSalaryPage() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
           <span className="text-slate-500 font-extrabold uppercase text-[10px] block">
-            Net Monthly Pay
+            Latest Net Pay
           </span>
           <p className="text-2xl font-black text-black font-mono">
-            ₹{(summary?.currentSalary || 35000).toLocaleString("en-IN")}
+            {latestSlip ? `₹${Number(latestSlip.netSalary || 0).toLocaleString("en-IN")}` : "—"}
           </p>
-          <span className="text-[10px] text-slate-500 font-bold block">Current Salary Tier</span>
+          <span className="text-[10px] text-slate-500 font-bold block">
+            {latestSlip ? latestSlip.salaryMonth : "No slips published yet"}
+          </span>
         </div>
 
         <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
           <span className="text-slate-500 font-extrabold uppercase text-[10px] block">
-            Last Disbursed
+            Payment Date
           </span>
           <p className="text-xl font-black text-black font-mono">
-            {summary?.lastPaymentDate
-              ? new Date(summary.lastPaymentDate).toLocaleDateString("en-IN", {
+            {latestSlip?.paymentDate
+              ? new Date(latestSlip.paymentDate).toLocaleDateString("en-IN", {
                   day: "2-digit",
                   month: "short",
                   year: "numeric",
                 })
-              : "01 Aug 2026"}
+              : (latestSlip ? latestSlip.salaryMonth : "—")}
           </p>
-          <span className="text-[10px] text-slate-500 font-bold block">Direct Bank Transfer</span>
+          <span className="text-[10px] text-slate-500 font-bold block">
+            {latestSlip?.paymentMethod || "Direct Bank Transfer"}
+          </span>
         </div>
 
         <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
@@ -121,26 +126,22 @@ export default function EmployeeSalaryPage() {
           </span>
           <p className="text-xl font-black text-emerald-600 flex items-center gap-1">
             <span>●</span>
-            <span>{summary?.lastPaymentStatus || "Paid"}</span>
+            <span>{latestSlip?.paymentStatus || "No Record"}</span>
           </p>
-          <span className="text-[10px] text-slate-500 font-bold block">Account Credited</span>
+          <span className="text-[10px] text-slate-500 font-bold block">
+            {latestSlip ? "Published by HR" : "Awaiting Generation"}
+          </span>
         </div>
 
         <div className="p-5 rounded-2xl bg-blue-50 border border-blue-200 space-y-1">
           <span className="text-blue-700 font-extrabold uppercase text-[10px] block">
-            Next Scheduled Pay
+            Total Slips
           </span>
           <p className="text-xl font-black text-blue-700 font-mono">
-            {summary?.nextPaymentDate
-              ? new Date(summary.nextPaymentDate).toLocaleDateString("en-IN", {
-                  day: "2-digit",
-                  month: "long",
-                  year: "numeric",
-                })
-              : "01 Sep 2026"}
+            {salarySlips.length} Available
           </p>
           <span className="text-[10px] text-blue-600 font-bold block">
-            Payroll Cycle: {summary?.paymentScheduleDay || 1}st
+            Authorized Archive
           </span>
         </div>
       </div>
@@ -149,79 +150,87 @@ export default function EmployeeSalaryPage() {
       <div className="bg-white rounded-3xl border border-slate-200 shadow-md p-6 space-y-4">
         <h2 className="font-black text-base text-black">Salary Disbursement History</h2>
 
-        <div className="overflow-x-auto rounded-2xl border border-slate-200">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-black font-extrabold uppercase text-[11px]">
-                <th className="py-3 px-4">Salary Month</th>
-                <th className="py-3 px-4">Gross Salary</th>
-                <th className="py-3 px-4">Deductions</th>
-                <th className="py-3 px-4">Net Salary</th>
-                <th className="py-3 px-4">Payment Date</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Slip Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {salarySlips.map((slip) => (
-                <tr key={slip.id} className="hover:bg-slate-50 transition text-black">
-                  <td className="py-3.5 px-4 font-black text-black">{slip.salaryMonth}</td>
-                  <td className="py-3.5 px-4 font-mono font-bold text-black">
-                    ₹{Number(slip.grossSalary || 0).toLocaleString("en-IN")}
-                  </td>
-                  <td className="py-3.5 px-4 font-mono font-bold text-rose-700">
-                    ₹{Number(slip.totalDeductions || 0).toLocaleString("en-IN")}
-                  </td>
-                  <td className="py-3.5 px-4 font-mono font-black text-emerald-700 text-sm">
-                    ₹{Number(slip.netSalary || 0).toLocaleString("en-IN")}
-                  </td>
-                  <td className="py-3.5 px-4 font-mono text-black">
-                    {slip.paymentDate
-                      ? new Date(slip.paymentDate).toLocaleDateString("en-IN", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })
-                      : "—"}
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                        slip.paymentStatus === "PAID"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-amber-100 text-amber-800"
-                      }`}
-                    >
-                      ● {slip.paymentStatus}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          setSelectedSlip(slip);
-                          setShowSlipModal(true);
-                        }}
-                        className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[11px] px-3 py-1 rounded-lg transition cursor-pointer"
-                      >
-                        View Slip
-                      </button>
-                      <a
-                        href={`/api/salary-slips/${slip.id || slip.monthKey}/pdf`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-600 hover:text-white font-extrabold text-[11px] px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1"
-                      >
-                        <span>📥</span>
-                        <span>PDF</span>
-                      </a>
-                    </div>
-                  </td>
+        {salarySlips.length === 0 ? (
+          <div className="py-12 text-center space-y-2 border border-slate-100 rounded-2xl bg-slate-50/50">
+            <div className="text-3xl">📄</div>
+            <p className="text-xs font-bold text-slate-600">No salary slip available.</p>
+            <p className="text-[11px] text-slate-400">Your monthly salary slips will appear here once published by HR.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-black font-extrabold uppercase text-[11px]">
+                  <th className="py-3 px-4">Salary Month</th>
+                  <th className="py-3 px-4">Gross Salary</th>
+                  <th className="py-3 px-4">Deductions</th>
+                  <th className="py-3 px-4">Net Salary</th>
+                  <th className="py-3 px-4">Payment Date</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Slip Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {salarySlips.map((slip) => (
+                  <tr key={slip.id} className="hover:bg-slate-50 transition text-black">
+                    <td className="py-3.5 px-4 font-black text-black">{slip.salaryMonth}</td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-black">
+                      ₹{Number(slip.grossSalary || 0).toLocaleString("en-IN")}
+                    </td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-rose-700">
+                      ₹{Number(slip.totalDeductions || 0).toLocaleString("en-IN")}
+                    </td>
+                    <td className="py-3.5 px-4 font-mono font-black text-emerald-700 text-sm">
+                      ₹{Number(slip.netSalary || 0).toLocaleString("en-IN")}
+                    </td>
+                    <td className="py-3.5 px-4 font-mono text-black">
+                      {slip.paymentDate
+                        ? new Date(slip.paymentDate).toLocaleDateString("en-IN", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          })
+                        : "—"}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                          slip.paymentStatus === "PAID"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-blue-100 text-blue-800"
+                        }`}
+                      >
+                        ● {slip.paymentStatus}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setSelectedSlip(slip);
+                            setShowSlipModal(true);
+                          }}
+                          className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[11px] px-3 py-1 rounded-lg transition cursor-pointer"
+                        >
+                          View Slip
+                        </button>
+                        <a
+                          href={`/api/salary-slips/${slip.id || slip.monthKey}/pdf`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-600 hover:text-white font-extrabold text-[11px] px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1"
+                        >
+                          <span>📥</span>
+                          <span>PDF</span>
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Salary Slip Modal */}

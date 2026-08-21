@@ -272,6 +272,74 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Validation helper for Project Manager and Team Leader project role assignment
+export async function validateProjectRoleAssignment(
+  userId: string | null | undefined,
+  expectedRole: "PROJECT_MANAGER" | "TEAM_LEADER"
+): Promise<{ valid: boolean; resolvedId: string | null; error?: string }> {
+  if (!userId) return { valid: true, resolvedId: null };
+
+  const rows = await queryDb<any[]>(
+    `SELECT u.id, u.employeeId, u.name, u.role, u.isActive, d.name as departmentName 
+     FROM user u 
+     LEFT JOIN department d ON u.departmentId = d.id 
+     WHERE u.id = ? OR u.employeeId = ? LIMIT 1`,
+    [userId, userId]
+  );
+
+  if (!rows || rows.length === 0) {
+    return {
+      valid: false,
+      resolvedId: null,
+      error: `Assigned ${expectedRole === "PROJECT_MANAGER" ? "Project Manager" : "Team Leader"} user does not exist.`,
+    };
+  }
+
+  const u = rows[0];
+
+  if (!u.isActive) {
+    return {
+      valid: false,
+      resolvedId: null,
+      error: `Employee ${u.name} (${u.employeeId}) is currently inactive and cannot be assigned to projects.`,
+    };
+  }
+
+  const roleUpper = (u.role || "").toUpperCase();
+  const deptUpper = (u.departmentName || "").toUpperCase();
+
+  // Strict HR Check: HR employees must NOT be assigned as PM or Team Leader
+  if (roleUpper === "HR" || deptUpper.includes("HUMAN RESOURCES") || deptUpper === "HR") {
+    return {
+      valid: false,
+      resolvedId: null,
+      error: "HR employees cannot be assigned as Project Manager or Team Leader.",
+    };
+  }
+
+  if (expectedRole === "PROJECT_MANAGER") {
+    const allowedPMRoles = ["PROJECT_MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN_HR"];
+    if (!allowedPMRoles.includes(roleUpper)) {
+      return {
+        valid: false,
+        resolvedId: null,
+        error: "This employee is not authorised for project management.",
+      };
+    }
+  } else if (expectedRole === "TEAM_LEADER") {
+    const forbiddenTLRoles = ["FINANCE", "HR", "CLIENT"];
+    if (forbiddenTLRoles.includes(roleUpper) || deptUpper.includes("FINANCE") || deptUpper.includes("ACCOUNTS")) {
+      return {
+        valid: false,
+        resolvedId: null,
+        error: "This employee is not authorised for Team Leader role.",
+      };
+    }
+  }
+
+  return { valid: true, resolvedId: u.id };
+}
+
 // POST: Project Manager or Admin creates a new project or saves a draft with Team Leader and Skill specifications
 export async function POST(req: NextRequest) {
   try {
@@ -310,6 +378,7 @@ export async function POST(req: NextRequest) {
       requiredRoles = "Developer, UI/UX Designer, QA Tester",
       techStack = "React, Next.js, Node.js, Tailwind CSS",
       expectedTeamSize = 5,
+      projectManagerId: requestedPMId,
       teamLeaderId,
       memberUserIds = [],
     } = body;
@@ -318,6 +387,40 @@ export async function POST(req: NextRequest) {
 
     if (!projectTitle || !projectTitle.trim()) {
       return NextResponse.json({ success: false, error: "Project title is required." }, { status: 400 });
+    }
+
+    // 1. Validate Project Manager
+    const targetPMId = requestedPMId || authUser.id;
+    const pmValidation = await validateProjectRoleAssignment(targetPMId, "PROJECT_MANAGER");
+    if (!pmValidation.valid) {
+      return NextResponse.json({ success: false, error: pmValidation.error }, { status: 400 });
+    }
+    const resolvedPMId = pmValidation.resolvedId || authUser.id;
+
+    // 2. Validate Team Leader
+    let finalTeamLeaderId = teamLeaderId || null;
+
+    if (finalTeamLeaderId && finalTeamLeaderId !== "AUTO") {
+      const tlValidation = await validateProjectRoleAssignment(finalTeamLeaderId, "TEAM_LEADER");
+      if (!tlValidation.valid) {
+        return NextResponse.json({ success: false, error: tlValidation.error }, { status: 400 });
+      }
+      finalTeamLeaderId = tlValidation.resolvedId;
+    } else if (!finalTeamLeaderId || finalTeamLeaderId === "AUTO") {
+      // Auto-allocate: Compare active project workloads and assign to the freest Team Leader (excluding HR)
+      const freeTLRows = await queryDb<any[]>(
+        `SELECT u.id, u.employeeId, u.name, u.email,
+                COUNT(p.id) AS activeProjectCount
+         FROM user u
+         LEFT JOIN project p ON u.id = p.teamLeaderId AND p.status IN ('ACTIVE', 'PLANNING', 'IN_PROGRESS', 'DRAFT')
+         WHERE u.role IN ('TEAM_LEADER', 'DEVELOPER') AND u.role != 'HR' AND u.isActive = 1
+         GROUP BY u.id, u.employeeId, u.name, u.email
+         ORDER BY activeProjectCount ASC, u.createdAt ASC
+         LIMIT 1`
+      );
+      if (freeTLRows && freeTLRows.length > 0) {
+        finalTeamLeaderId = freeTLRows[0].id;
+      }
     }
 
     const projectId = projectCode ? `PRJ-${projectCode.trim().toUpperCase()}` : `PRJ-${Date.now().toString(36).toUpperCase()}`;
@@ -347,14 +450,14 @@ export async function POST(req: NextRequest) {
         requiredRoles ? requiredRoles.trim() : null,
         techStack ? techStack.trim() : null,
         parseInt(expectedTeamSize) || 5,
-        authUser.id,
-        teamLeaderId || null,
+        resolvedPMId,
+        finalTeamLeaderId,
       ]
     );
 
     // Associate assigned members in _assignedstaffprojects
     const allMemberIds = new Set<string>();
-    if (teamLeaderId) allMemberIds.add(teamLeaderId);
+    if (finalTeamLeaderId) allMemberIds.add(finalTeamLeaderId);
     if (Array.isArray(memberUserIds)) {
       memberUserIds.forEach((uid: string) => uid && allMemberIds.add(uid));
     }
@@ -432,6 +535,7 @@ export async function PUT(req: NextRequest) {
       requiredRoles,
       techStack,
       expectedTeamSize,
+      projectManagerId,
       teamLeaderId,
       memberUserIds,
     } = body;
@@ -455,6 +559,26 @@ export async function PUT(req: NextRequest) {
         { success: false, error: "Forbidden: You are not authorized to modify this project." },
         { status: 403 }
       );
+    }
+
+    // Validate Project Manager if changing
+    let resolvedPMId: string | null = undefined as any;
+    if (projectManagerId !== undefined) {
+      const pmValidation = await validateProjectRoleAssignment(projectManagerId, "PROJECT_MANAGER");
+      if (!pmValidation.valid) {
+        return NextResponse.json({ success: false, error: pmValidation.error }, { status: 400 });
+      }
+      resolvedPMId = pmValidation.resolvedId;
+    }
+
+    // Validate Team Leader if changing
+    let resolvedTLId: string | null = undefined as any;
+    if (teamLeaderId !== undefined) {
+      const tlValidation = await validateProjectRoleAssignment(teamLeaderId, "TEAM_LEADER");
+      if (!tlValidation.valid) {
+        return NextResponse.json({ success: false, error: tlValidation.error }, { status: 400 });
+      }
+      resolvedTLId = tlValidation.resolvedId;
     }
 
     const updates: string[] = [];
@@ -524,9 +648,13 @@ export async function PUT(req: NextRequest) {
       updates.push("expectedTeamSize = ?");
       values.push(parseInt(expectedTeamSize) || 5);
     }
-    if (teamLeaderId !== undefined) {
+    if (resolvedPMId !== undefined) {
+      updates.push("projectManagerId = ?");
+      values.push(resolvedPMId);
+    }
+    if (resolvedTLId !== undefined) {
       updates.push("teamLeaderId = ?");
-      values.push(teamLeaderId || null);
+      values.push(resolvedTLId);
     }
 
     if (updates.length > 0) {

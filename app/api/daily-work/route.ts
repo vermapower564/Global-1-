@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
       params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
-    sql += ` ORDER BY w.date DESC, w.submittedAt DESC`;
+    sql += ` ORDER BY w.date DESC, w.submittedAt DESC, w.id DESC`;
 
     const rawRows = await queryDbCached<any[]>(sql, params, 5);
 

@@ -225,17 +225,20 @@ model itasset {
 }
 
 model leaverequest {
-  id        String   @id @default(cuid())
-  userId    String
-  leaveType String
-  startDate DateTime
-  endDate   DateTime
-  totalDays Int
-  reason    String   @db.Text
-  status    String   @default("PENDING")
-  hrRemarks String?  @db.Text
-  appliedAt DateTime @default(now())
-  user      user     @relation(fields: [userId], references: [id], map: "LeaveRequest_userId_fkey")
+  id               String    @id @default(cuid())
+  userId           String
+  leaveType        String
+  startDate        DateTime
+  endDate          DateTime
+  totalDays        Int
+  reason           String    @db.Text
+  status           String    @default("PENDING")
+  hrRemarks        String?   @db.Text
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  attachmentUrl    String?
+  appliedAt        DateTime  @default(now())
+  user             user      @relation(fields: [userId], references: [id], map: "LeaveRequest_userId_fkey")
 
   @@index([userId], map: "LeaveRequest_userId_fkey")
 }
@@ -494,6 +497,7 @@ model task {
   title            String
   description      String?       @db.Text
   projectId        String?
+  manualProjectName String?
   section          String?
   reviewNotes      String?       @db.Text
   isMainTask       Boolean       @default(false)

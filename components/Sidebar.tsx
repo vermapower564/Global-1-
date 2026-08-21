@@ -26,7 +26,7 @@ interface SidebarProps {
   onClose?: () => void;
 }
 
-const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR", "ADMIN"];
+const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR", "ADMIN"];
 
 function getInitials(name: string): string {
   if (!name || !name.trim()) return "U";
@@ -76,8 +76,9 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
 
   const roleUpper = (user?.role || "").toUpperCase();
   const isSuperAdmin = roleUpper === "SUPER_ADMIN" || roleUpper === "DIRECTOR" || roleUpper === "ADMIN_HR";
+  const isHR = roleUpper === "HR";
   const isPM = roleUpper === "PROJECT_MANAGER";
-  const isTL = roleUpper === "TEAM_LEADER" || (isTeamLeader && !isPM && !isSuperAdmin && !isAdmin);
+  const isTL = roleUpper === "TEAM_LEADER" || (isTeamLeader && !isPM && !isSuperAdmin && !isHR);
 
   // 1. SUPER ADMIN / ADMIN CANONICAL NAVIGATION
   const superAdminSections = [
@@ -89,6 +90,8 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
         { name: "Projects", href: "/admin/projects", icon: IconFolder },
         { name: "Tasks", href: "/admin/tasks", icon: IconClipboardList },
         { name: "Attendance", href: "/admin/attendance", icon: IconCalendar },
+        { name: "Salary Slips", href: "/admin/salary-slips", icon: IconFileText },
+        { name: "Leave Requests", href: "/hr/leave", icon: IconClipboardList },
         ...(isSuperAdmin ? [{ name: "Audit Logs", href: "/admin/audit-logs", icon: IconHistory }] : []),
         { name: "Settings", href: "/settings", icon: IconSettings },
         { name: "Profile", href: "/employee/profile", icon: IconSettings },
@@ -96,58 +99,76 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     },
   ];
 
-  // 2. PROJECT MANAGER CANONICAL NAVIGATION
+  // 2. HR DEDICATED CANONICAL NAVIGATION
+  const hrSections = [
+    {
+      title: "HUMAN RESOURCES",
+      items: [
+        { name: "Dashboard", href: "/hr", icon: IconDashboard },
+        { name: "Employees", href: "/hr/employees", icon: IconUsers },
+        { name: "Attendance", href: "/hr/attendance", icon: IconCalendar },
+        { name: "Leave Requests", href: "/hr/leave", icon: IconClipboardList },
+        { name: "Salary Management", href: "/hr/payroll", icon: IconFileText },
+        { name: "Onboarding", href: "/hr/onboarding", icon: IconUserCheck },
+        { name: "Documents", href: "/hr/documents", icon: IconFolder },
+        { name: "Resignation", href: "/hr/resignation", icon: IconFileText },
+        { name: "Reports", href: "/hr/reports", icon: IconFileEdit },
+      ],
+    },
+  ];
+
+  // 3. PROJECT MANAGER CANONICAL NAVIGATION
   const projectManagerSections = [
     {
       title: "PROJECT MANAGER",
       items: [
         { name: "Dashboard", href: "/project-manager", icon: IconDashboard },
         { name: "Projects", href: "/projects", icon: IconFolder },
-        { name: "Create Project", href: "/project-manager/create-project", icon: IconFileEdit },
-        { name: "Team Leaders", href: "/project-manager/team-leaders", icon: IconUsers },
-        { name: "Employee Performance", href: "/project-manager/performance", icon: IconStar },
-        { name: "Promotions", href: "/project-manager/promotions", icon: IconAward },
-        { name: "Project Reports", href: "/project-manager/reports", icon: IconFileText },
-        { name: "Profile", href: "/employee/profile", icon: IconSettings },
+        { name: "Team", href: "/project-manager/team-leaders", icon: IconUsers },
+        { name: "Tasks", href: "/admin/tasks", icon: IconClipboardList },
+        { name: "Workboard", href: "/team-leader/tasks", icon: IconClipboardList },
+        { name: "Daily Updates", href: "/admin/work", icon: IconUserCheck },
+        { name: "Leave Request", href: "/leave", icon: IconFileText },
+        { name: "Reports", href: "/project-manager/reports", icon: IconFileText },
       ],
     },
   ];
 
-  // 3. TEAM LEADER CANONICAL NAVIGATION
+  // 4. TEAM LEADER CANONICAL NAVIGATION
   const teamLeaderSections = [
     {
       title: "TEAM LEADER",
       items: [
         { name: "Dashboard", href: "/team-leader", icon: IconDashboard },
         { name: "My Projects", href: "/employee/projects", icon: IconFolder },
-        { name: "My Team", href: "/team-leader/team", icon: IconUsers },
-        { name: "Assign Work", href: "/team-leader/assign-work", icon: IconFileEdit },
+        { name: "Team", href: "/team-leader/team", icon: IconUsers },
+        { name: "Tasks", href: "/team-leader/assign-work", icon: IconFileEdit },
         { name: "Workboard", href: "/team-leader/tasks", icon: IconClipboardList },
         { name: "Daily Updates", href: "/team-leader/reviews", icon: IconUserCheck },
-        { name: "Team Performance", href: "/team-leader/progress", icon: IconHistory },
-        { name: "Profile", href: "/employee/profile", icon: IconSettings },
+        { name: "Leave Request", href: "/leave", icon: IconFileText },
       ],
     },
   ];
 
-  // 4. EMPLOYEE CANONICAL NAVIGATION
+  // 5. EMPLOYEE CANONICAL NAVIGATION
   const employeeSections = [
     {
       title: "EMPLOYEE",
       items: [
         { name: "Dashboard", href: "/employee/dashboard", icon: IconDashboard },
-        { name: "My Projects", href: "/employee/projects", icon: IconFolder },
         { name: "My Tasks", href: "/employee/tasks", icon: IconClipboardList },
-        { name: "Daily Work", href: "/employee/work", icon: IconFileEdit },
         { name: "Attendance", href: "/employee/attendance", icon: IconCalendar },
-        { name: "Payslips", href: "/employee/salary", icon: IconFileText },
-        { name: "Profile", href: "/employee/profile", icon: IconSettings },
+        { name: "Salary Slips", href: "/employee/salary", icon: IconFileText },
+        { name: "Leave Request", href: "/leave", icon: IconFileText },
+        { name: "Daily Work", href: "/employee/work", icon: IconFileEdit },
+        { name: "My Profile", href: "/employee/profile", icon: IconSettings },
       ],
     },
   ];
 
   let currentSections = employeeSections;
-  if (isSuperAdmin || isAdmin) currentSections = superAdminSections;
+  if (isSuperAdmin) currentSections = superAdminSections;
+  else if (isHR) currentSections = hrSections;
   else if (isPM) currentSections = projectManagerSections;
   else if (isTL) currentSections = teamLeaderSections;
 
@@ -176,8 +197,10 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       <div className="flex items-center justify-between px-6 py-5 border-b border-slate-800/80 bg-slate-950">
         <Link
           href={
-            isSuperAdmin || isAdmin
+            isSuperAdmin
               ? "/admin/dashboard"
+              : isHR
+              ? "/hr"
               : isPM
               ? "/project-manager"
               : isTL
@@ -194,8 +217,10 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
               OMS Enterprise
             </h1>
             <span className="text-[10px] text-blue-400 font-extrabold uppercase tracking-widest mt-1 block">
-              {isSuperAdmin || isAdmin
+              {isSuperAdmin
                 ? "Admin Control Center"
+                : isHR
+                ? "HR Operations Hub"
                 : isPM
                 ? "Project Manager Portal"
                 : isTL

@@ -420,18 +420,18 @@ export default function ProjectsPage() {
 
       {/* View 2: Stage Kanban */}
       {viewMode === "kanban" && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {["ACTIVE", "IN_PROGRESS", "COMPLETED"].map((stage) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {["PLANNING", "IN_PROGRESS", "ON_HOLD", "COMPLETED"].map((stage) => (
             <div key={stage} className="pro-card p-4 space-y-3 bg-slate-50 border-slate-200">
               <h3 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider border-b border-slate-200 pb-2 flex justify-between">
-                <span>{stage.replace("_", " ")}</span>
+                <span>{stage === "PLANNING" ? "📝 PLANNING / ACTIVE" : stage.replace("_", " ")}</span>
                 <span className="bg-slate-200 px-2 py-0.5 rounded text-[10px]">
-                  {filteredProjects.filter((p) => p.status === stage).length}
+                  {filteredProjects.filter((p) => stage === "PLANNING" ? (p.status === "PLANNING" || p.status === "ACTIVE") : p.status === stage).length}
                 </span>
               </h3>
               <div className="space-y-3">
                 {filteredProjects
-                  .filter((p) => p.status === stage)
+                  .filter((p) => stage === "PLANNING" ? (p.status === "PLANNING" || p.status === "ACTIVE") : p.status === stage)
                   .map((p) => (
                     <div key={p.id} className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-xs space-y-2">
                       <div className="flex justify-between items-start">
@@ -444,7 +444,7 @@ export default function ProjectsPage() {
                           {isEmployeeMode ? "🔒 Confidential" : `₹${Number(p.contractValue).toLocaleString()}`}
                         </span>
                         
-                        {stage === "ACTIVE" && (
+                        {(stage === "PLANNING") && (
                           <button
                             onClick={() => handleUpdateStatus(p.id, "IN_PROGRESS")}
                             className="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded hover:bg-amber-200"
