@@ -123,7 +123,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       title: "PROJECT MANAGER",
       items: [
         { name: "Dashboard", href: "/project-manager", icon: IconDashboard },
-        { name: "Projects", href: "/projects", icon: IconFolder },
+        { name: "Projects", href: "/admin/projects", icon: IconFolder },
         { name: "Team", href: "/project-manager/team-leaders", icon: IconUsers },
         { name: "Tasks", href: "/admin/tasks", icon: IconClipboardList },
         { name: "Workboard", href: "/team-leader/tasks", icon: IconClipboardList },
@@ -157,6 +157,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       items: [
         { name: "Dashboard", href: "/employee/dashboard", icon: IconDashboard },
         { name: "My Tasks", href: "/employee/tasks", icon: IconClipboardList },
+        { name: "My Projects", href: "/employee/projects", icon: IconFolder },
         { name: "Attendance", href: "/employee/attendance", icon: IconCalendar },
         { name: "Salary Slips", href: "/employee/salary", icon: IconFileText },
         { name: "Leave Request", href: "/leave", icon: IconFileText },
