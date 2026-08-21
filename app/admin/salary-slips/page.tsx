@@ -84,7 +84,8 @@ export default function AdminSalarySlipsFolderPage() {
         setSlips(json.slips || json.data || []);
         setMetrics(json.metrics || json.summary || null);
         if (json.availableMonths && json.availableMonths.length > 0) {
-          setAvailableMonths(json.availableMonths);
+          const uniqueMonths = Array.from(new Set<string>(json.availableMonths));
+          setAvailableMonths(uniqueMonths);
         }
       } else {
         if (res.status === 403 || json.error?.includes("Forbidden")) {
@@ -255,7 +256,7 @@ export default function AdminSalarySlipsFolderPage() {
         {/* Quick Month Selector Tabs */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-bold text-gray-500 mr-1">Select Month:</span>
-          {availableMonths.map((m) => (
+          {Array.from(new Set(availableMonths)).map((m) => (
             <button
               key={m}
               onClick={() => setMonthFilter(m)}

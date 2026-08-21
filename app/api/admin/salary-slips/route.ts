@@ -66,11 +66,13 @@ export async function GET(request: NextRequest) {
 
     // Extract available distinct months for filter dropdown
     const distinctMonthRows = await queryDbCached<any[]>(
-      `SELECT DISTINCT salaryMonth, monthKey FROM salaryslip ORDER BY monthKey DESC`,
+      `SELECT DISTINCT salaryMonth FROM salaryslip WHERE salaryMonth IS NOT NULL AND salaryMonth != '' ORDER BY salaryMonth DESC`,
       [],
       30
     );
-    const availableMonths = (distinctMonthRows || []).map((r) => r.salaryMonth || r.monthKey);
+    const availableMonths = Array.from(
+      new Set((distinctMonthRows || []).map((r) => (r.salaryMonth || "").trim()).filter(Boolean))
+    );
 
     // Compute Summary KPIs
     const totalDisbursed = slips.reduce((sum, s) => sum + (s.netSalary || 0), 0);
