@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 
 type TabType = "PROJECT_MANAGERS" | "TEAM_LEADERS" | "EMPLOYEES";
+type PersonProfileTab = "WORK_OVERVIEW" | "ORG_STRUCTURE" | "ATTENDANCE_LEAVES" | "ACCOUNT_MANAGEMENT";
 type TaskStatusFilter = "ALL" | "COMPLETED" | "IN_PROGRESS" | "PENDING" | "IN_REVIEW" | "BLOCKED";
 
 export default function AdminOrganisationPage() {
@@ -15,17 +16,18 @@ export default function AdminOrganisationPage() {
     teamLeaders: any[];
     employees: any[];
     projects: any[];
+    departments: any[];
   }>({
     projectManagers: [],
     teamLeaders: [],
     employees: [],
     projects: [],
+    departments: [],
   });
 
-  // Selected Detail Views
-  const [selectedPM, setSelectedPM] = useState<any | null>(null);
-  const [selectedTL, setSelectedTL] = useState<any | null>(null);
-  const [selectedEmp, setSelectedEmp] = useState<any | null>(null);
+  // Selected Person (opens full authorized profile)
+  const [selectedPerson, setSelectedPerson] = useState<any | null>(null);
+  const [profileTab, setProfileTab] = useState<PersonProfileTab>("WORK_OVERVIEW");
 
   // Task Details Modal
   const [activeTaskModal, setActiveTaskModal] = useState<any | null>(null);
@@ -52,6 +54,51 @@ export default function AdminOrganisationPage() {
   const [empPage, setEmpPage] = useState(1);
   const EMP_PER_PAGE = 8;
 
+  // -------------------------------------------------------------
+  // Account Management State
+  // -------------------------------------------------------------
+  const [editAccountData, setEditAccountData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    role: "",
+    departmentId: "",
+    isActive: true,
+  });
+  const [isSavingAccount, setIsSavingAccount] = useState(false);
+  const [accountMsg, setAccountMsg] = useState("");
+  const [accountError, setAccountError] = useState("");
+
+  // -------------------------------------------------------------
+  // OTP-Protected Bank Details State
+  // -------------------------------------------------------------
+  const [unmaskedBankData, setUnmaskedBankData] = useState<any | null>(null);
+  const [isBankViewUnlocked, setIsBankViewUnlocked] = useState(false);
+
+  // OTP Modal
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpPurpose, setOtpPurpose] = useState<"VIEW_BANK_DETAILS" | "EDIT_BANK_DETAILS">("VIEW_BANK_DETAILS");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpTimer, setOtpTimer] = useState(300);
+  const [otpMaskedEmail, setOtpMaskedEmail] = useState("");
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpError, setOtpError] = useState("");
+  const [otpSuccessMsg, setOtpSuccessMsg] = useState("");
+  const [editAuthToken, setEditAuthToken] = useState("");
+
+  // Edit Bank Details Form
+  const [showEditBankForm, setShowEditBankForm] = useState(false);
+  const [bankFormData, setBankFormData] = useState({
+    bankName: "State Bank of India",
+    accountHolderName: "",
+    accountNumber: "",
+    ifscCode: "",
+    branchName: "Main Branch",
+    accountType: "Savings",
+  });
+  const [showBankConfirmModal, setShowBankConfirmModal] = useState(false);
+  const [isSavingBank, setIsSavingBank] = useState(false);
+
   const loadData = () => {
     setLoading(true);
     setError("");
@@ -63,6 +110,16 @@ export default function AdminOrganisationPage() {
       .then((json) => {
         if (json.success && json.data) {
           setData(json.data);
+          // If a person is currently selected, refresh their data
+          if (selectedPerson) {
+            const all = [
+              ...json.data.projectManagers,
+              ...json.data.teamLeaders,
+              ...json.data.employees,
+            ];
+            const updated = all.find((p: any) => p.id === selectedPerson.id);
+            if (updated) setSelectedPerson(updated);
+          }
         } else {
           setError(json.error || "No work data available.");
         }
@@ -78,7 +135,50 @@ export default function AdminOrganisationPage() {
     loadData();
   }, []);
 
-  // Filtered Project Managers
+  // OTP Countdown Timer
+  useEffect(() => {
+    let interval: any = null;
+    if (showOtpModal && otpTimer > 0) {
+      interval = setInterval(() => {
+        setOtpTimer((prev) => prev - 1);
+      }, 1000);
+    } else if (otpTimer === 0 && showOtpModal) {
+      setOtpError("Verification code has expired. Please request a new OTP.");
+    }
+    return () => clearInterval(interval);
+  }, [showOtpModal, otpTimer]);
+
+  // When a person is selected, sync account edit fields
+  const handleSelectPerson = (person: any) => {
+    setSelectedPerson(person);
+    setProfileTab("WORK_OVERVIEW");
+    setUnmaskedBankData(null);
+    setIsBankViewUnlocked(false);
+    setShowEditBankForm(false);
+    setEditAuthToken("");
+    setAccountMsg("");
+    setAccountError("");
+    setEditAccountData({
+      name: person.name || "",
+      email: person.email || "",
+      phone: person.phone || "",
+      role: person.role || "",
+      departmentId: person.departmentId || "",
+      isActive: person.status === "ACTIVE",
+    });
+    setBankFormData({
+      bankName: person.bankDetails?.bankName || "State Bank of India",
+      accountHolderName: person.name || "",
+      accountNumber: "",
+      ifscCode: "",
+      branchName: person.bankDetails?.branchName || "Main Branch",
+      accountType: person.bankDetails?.accountType || "Savings",
+    });
+  };
+
+  // -------------------------------------------------------------
+  // Filtered Lists (Strict Role Scoping)
+  // -------------------------------------------------------------
   const filteredPMs = useMemo(() => {
     return data.projectManagers.filter((pm) => {
       const q = pmSearch.toLowerCase().trim();
@@ -93,7 +193,6 @@ export default function AdminOrganisationPage() {
     });
   }, [data.projectManagers, pmSearch, pmStatusFilter, pmDeptFilter]);
 
-  // Filtered Team Leaders
   const filteredTLs = useMemo(() => {
     return data.teamLeaders.filter((tl) => {
       const q = tlSearch.toLowerCase().trim();
@@ -111,7 +210,6 @@ export default function AdminOrganisationPage() {
     });
   }, [data.teamLeaders, tlSearch, tlStatusFilter, tlProjectFilter]);
 
-  // Filtered Employees
   const filteredEmployees = useMemo(() => {
     return data.employees.filter((emp) => {
       const q = empSearch.toLowerCase().trim();
@@ -164,9 +262,9 @@ export default function AdminOrganisationPage() {
   // Employee Workboard Calculations (Scoped to Selected Project)
   // -------------------------------------------------------------
   const employeeWorkboardData = useMemo(() => {
-    if (!selectedEmp) return null;
+    if (!selectedPerson) return null;
 
-    const allEmpTasks: any[] = selectedEmp.allTasks || [];
+    const allEmpTasks: any[] = selectedPerson.allTasks || [];
     const scopedTasks =
       empWorkboardProjectFilter === "ALL"
         ? allEmpTasks
@@ -179,16 +277,12 @@ export default function AdminOrganisationPage() {
     const inReviewTasks = scopedTasks.filter((t: any) => t.status === "IN_REVIEW");
     const blockedTasks = scopedTasks.filter((t: any) => t.status === "BLOCKED");
 
-    // Task Completion % = (Completed / Total) * 100
     const taskCompletionRate = totalTasks > 0 ? ((completedTasks.length / totalTasks) * 100).toFixed(1) : "0";
-
-    // Overall Work Progress % = Average of real progress
     const overallProgressVal =
       totalTasks > 0
         ? (scopedTasks.reduce((acc: number, t: any) => acc + (t.progress || 0), 0) / totalTasks).toFixed(1)
         : "0";
 
-    // Filtered by active tab
     let visibleTasks = scopedTasks;
     if (empWorkboardStatusTab === "COMPLETED") visibleTasks = completedTasks;
     else if (empWorkboardStatusTab === "IN_PROGRESS") visibleTasks = inProgressTasks;
@@ -207,7 +301,141 @@ export default function AdminOrganisationPage() {
       overallProgressVal,
       visibleTasks,
     };
-  }, [selectedEmp, empWorkboardProjectFilter, empWorkboardStatusTab]);
+  }, [selectedPerson, empWorkboardProjectFilter, empWorkboardStatusTab]);
+
+  // -------------------------------------------------------------
+  // Account Management Save Handler
+  // -------------------------------------------------------------
+  const handleSaveAccountInfo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPerson) return;
+
+    setIsSavingAccount(true);
+    setAccountMsg("");
+    setAccountError("");
+
+    try {
+      const res = await fetch(`/api/admin/employees/${selectedPerson.employeeId || selectedPerson.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editAccountData),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setAccountMsg("✓ Account information updated successfully!");
+        loadData();
+      } else {
+        setAccountError(json.error || "Failed to update account information.");
+      }
+    } catch (err: any) {
+      setAccountError(err.message || "Network error while updating account.");
+    } finally {
+      setIsSavingAccount(false);
+    }
+  };
+
+  // -------------------------------------------------------------
+  // OTP Flow Handlers (View & Edit Bank Details)
+  // -------------------------------------------------------------
+  const handleInitiateOtp = async (purpose: "VIEW_BANK_DETAILS" | "EDIT_BANK_DETAILS") => {
+    if (!selectedPerson) return;
+    setOtpPurpose(purpose);
+    setOtpCode("");
+    setOtpError("");
+    setOtpSuccessMsg("");
+    setOtpLoading(true);
+
+    try {
+      const res = await fetch("/api/admin/bank/request-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetUserId: selectedPerson.id,
+          purpose,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setOtpMaskedEmail(json.emailMasked || "registered email");
+        setOtpTimer(json.expiresInSeconds || 300);
+        setShowOtpModal(true);
+      } else {
+        alert(json.error || "Failed to request verification code.");
+      }
+    } catch (err: any) {
+      alert(err.message || "Network error requesting OTP.");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPerson || !otpCode.trim()) return;
+
+    setOtpLoading(true);
+    setOtpError("");
+
+    try {
+      const res = await fetch("/api/admin/bank/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetUserId: selectedPerson.id,
+          purpose: otpPurpose,
+          otpCode: otpCode.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setShowOtpModal(false);
+        if (otpPurpose === "VIEW_BANK_DETAILS") {
+          setUnmaskedBankData(json.unmaskedBankDetails);
+          setIsBankViewUnlocked(true);
+        } else if (otpPurpose === "EDIT_BANK_DETAILS") {
+          setEditAuthToken(json.authToken);
+          setShowEditBankForm(true);
+        }
+      } else {
+        setOtpError(json.error || "Invalid verification code.");
+      }
+    } catch (err: any) {
+      setOtpError(err.message || "OTP verification error.");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleSaveBankDetails = async () => {
+    if (!selectedPerson || !editAuthToken) return;
+
+    setIsSavingBank(true);
+    try {
+      const res = await fetch("/api/admin/bank/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetUserId: selectedPerson.id,
+          authToken: editAuthToken,
+          bankDetails: bankFormData,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setShowBankConfirmModal(false);
+        setShowEditBankForm(false);
+        setEditAuthToken("");
+        alert("✓ Bank details updated successfully! Audit record created and employee notified.");
+        loadData();
+      } else {
+        alert(json.error || "Failed to update bank details.");
+      }
+    } catch (err: any) {
+      alert(err.message || "Network error updating bank details.");
+    } finally {
+      setIsSavingBank(false);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6 font-sans text-black">
@@ -215,10 +443,10 @@ export default function AdminOrganisationPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <span>🏢</span> Organisation
+            <span>🏢</span> Organisation Management
           </h1>
           <p className="text-xs text-slate-500 font-medium">
-            Professional role directories, basic authorised details, and live project workboards.
+            Account administration, dynamic organization hierarchy, and OTP-protected confidential information.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -231,13 +459,13 @@ export default function AdminOrganisationPage() {
         </div>
       </div>
 
-      {/* 1. ORGANISATION — THREE MAIN VIEWS TABS */}
+      {/* 1. THREE MAIN VIEWS TABS (Project Managers | Team Leaders | Employees) */}
       <div className="bg-slate-100/80 p-1.5 rounded-2xl flex items-center gap-1 border border-slate-200 max-w-lg shadow-2xs">
         <button
           type="button"
           onClick={() => {
             setActiveTab("PROJECT_MANAGERS");
-            setSelectedPM(null);
+            setSelectedPerson(null);
           }}
           className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
             activeTab === "PROJECT_MANAGERS"
@@ -245,14 +473,14 @@ export default function AdminOrganisationPage() {
               : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
           }`}
         >
-          Project Managers
+          Project Managers ({data.projectManagers.length})
         </button>
 
         <button
           type="button"
           onClick={() => {
             setActiveTab("TEAM_LEADERS");
-            setSelectedTL(null);
+            setSelectedPerson(null);
           }}
           className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
             activeTab === "TEAM_LEADERS"
@@ -260,14 +488,14 @@ export default function AdminOrganisationPage() {
               : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
           }`}
         >
-          Team Leaders
+          Team Leaders ({data.teamLeaders.length})
         </button>
 
         <button
           type="button"
           onClick={() => {
             setActiveTab("EMPLOYEES");
-            setSelectedEmp(null);
+            setSelectedPerson(null);
           }}
           className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
             activeTab === "EMPLOYEES"
@@ -275,14 +503,14 @@ export default function AdminOrganisationPage() {
               : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
           }`}
         >
-          Employees
+          Employees ({data.employees.length})
         </button>
       </div>
 
-      {/* Loading & Error / Retry States */}
+      {/* Loading & Error States */}
       {loading ? (
         <div className="bg-white border border-slate-200 rounded-3xl p-10 text-center text-slate-400 text-xs font-bold animate-pulse">
-          Loading organisation work data...
+          Loading organization records...
         </div>
       ) : error ? (
         <div className="bg-white border border-rose-200 rounded-3xl p-8 text-center space-y-3">
@@ -298,181 +526,827 @@ export default function AdminOrganisationPage() {
       ) : (
         <>
           {/* ========================================================================= */}
-          {/* TAB 1: PROJECT MANAGERS                                                    */}
+          {/* COMPLETE AUTHORIZED PROFILE VIEW (WHEN ANY PERSON IS CLICKED)               */}
           {/* ========================================================================= */}
-          {activeTab === "PROJECT_MANAGERS" && (
-            <div>
-              {selectedPM ? (
-                /* --- PROJECT MANAGER DETAILS VIEW --- */
-                <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs animate-in fade-in duration-200">
-                  {/* Back Action */}
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedPM(null)}
-                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5"
-                    >
-                      ← Back to Project Managers
-                    </button>
-                    <span className="text-xs font-bold px-3 py-1 bg-slate-100 text-slate-700 rounded-full border border-slate-200">
-                      Project Manager Details
-                    </span>
-                  </div>
+          {selectedPerson ? (
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs animate-in fade-in duration-200">
+              {/* Back Button */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <button
+                  type="button"
+                  onClick={() => setSelectedPerson(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                >
+                  ← Back to {activeTab === "PROJECT_MANAGERS" ? "Project Managers" : activeTab === "TEAM_LEADERS" ? "Team Leaders" : "Employees"}
+                </button>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold px-3 py-1 bg-slate-100 text-slate-700 rounded-full border border-slate-200">
+                    {selectedPerson.role?.replace(/_/g, " ")} Dossier
+                  </span>
+                  <span className="text-xs font-bold px-3 py-1 bg-emerald-50 text-emerald-800 rounded-full border border-emerald-200">
+                    {selectedPerson.status}
+                  </span>
+                </div>
+              </div>
 
-                  {/* 3. Basic Person Details Card */}
-                  <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                      {selectedPM.avatarUrl ? (
-                        <img
-                          src={selectedPM.avatarUrl}
-                          alt={selectedPM.name}
-                          className="h-16 w-16 rounded-2xl object-cover border border-slate-200 shadow-xs"
-                        />
-                      ) : (
-                        <div className="h-16 w-16 rounded-2xl bg-blue-600 text-white font-black text-xl flex items-center justify-center shadow-xs">
-                          {selectedPM.name ? selectedPM.name.substring(0, 2).toUpperCase() : "PM"}
-                        </div>
-                      )}
+              {/* Authorized Profile Header Card */}
+              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  {selectedPerson.avatarUrl ? (
+                    <img
+                      src={selectedPerson.avatarUrl}
+                      alt={selectedPerson.name}
+                      className="h-16 w-16 rounded-2xl object-cover border border-slate-200 shadow-xs"
+                    />
+                  ) : (
+                    <div className="h-16 w-16 rounded-2xl bg-slate-900 text-white font-black text-xl flex items-center justify-center shadow-xs">
+                      {selectedPerson.name ? selectedPerson.name.substring(0, 2).toUpperCase() : "U"}
+                    </div>
+                  )}
+                  <div>
+                    <h2 className="text-lg font-black text-slate-900">{selectedPerson.name}</h2>
+                    <p className="text-xs text-slate-500 font-mono">
+                      ID: <span className="font-bold text-slate-800">{selectedPerson.employeeId}</span> • Email: <span className="font-bold text-slate-700">{selectedPerson.email}</span> • Phone: <span className="font-bold text-slate-700">{selectedPerson.phone}</span>
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mt-2 text-[11px] text-slate-600 font-medium">
                       <div>
-                        <h2 className="text-lg font-black text-slate-900">{selectedPM.name}</h2>
-                        <p className="text-xs text-slate-500 font-mono">
-                          ID: <span className="font-bold text-slate-800">{selectedPM.employeeId}</span>
-                        </p>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mt-2 text-[11px] text-slate-600 font-medium">
-                          <div>
-                            <span className="text-slate-400 font-bold">Role:</span> {selectedPM.role}
-                          </div>
-                          <div>
-                            <span className="text-slate-400 font-bold">Department:</span> {selectedPM.department}
-                          </div>
-                          <div>
-                            <span className="text-slate-400 font-bold">Joining Date:</span>{" "}
-                            {new Date(selectedPM.joiningDate).toLocaleDateString("en-IN", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                            })}
-                          </div>
-                          <div>
-                            <span className="text-slate-400 font-bold">Status:</span>{" "}
-                            <span className="font-bold text-emerald-700">{selectedPM.status}</span>
-                          </div>
-                        </div>
+                        <span className="text-slate-400 font-bold">Designation:</span> {selectedPerson.role}
                       </div>
-                    </div>
-                  </div>
-
-                  {/* 5. Work Overview */}
-                  <div className="space-y-3">
-                    <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
-                      Work Overview
-                    </h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                      <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50">
-                        <p className="text-[10px] font-bold uppercase text-slate-400">Projects Managed</p>
-                        <p className="text-lg font-black text-slate-900 mt-1">{selectedPM.totalProjects}</p>
+                      <div>
+                        <span className="text-slate-400 font-bold">Department:</span> {selectedPerson.department}
                       </div>
-                      <div className="p-3.5 rounded-2xl border border-blue-200 bg-blue-50/30">
-                        <p className="text-[10px] font-bold uppercase text-blue-700">Active Projects</p>
-                        <p className="text-lg font-black text-blue-800 mt-1">{selectedPM.activeProjectsCount}</p>
+                      <div>
+                        <span className="text-slate-400 font-bold">Joining Date:</span>{" "}
+                        {new Date(selectedPerson.joiningDate).toLocaleDateString("en-IN", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
                       </div>
-                      <div className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/30">
-                        <p className="text-[10px] font-bold uppercase text-emerald-700">Completed Projects</p>
-                        <p className="text-lg font-black text-emerald-800 mt-1">{selectedPM.completedProjectsCount}</p>
+                      <div>
+                        <span className="text-slate-400 font-bold">Employment:</span> {selectedPerson.employmentStatus}
                       </div>
-                      <div className="p-3.5 rounded-2xl border border-rose-200 bg-rose-50/30">
-                        <p className="text-[10px] font-bold uppercase text-rose-700">Delayed Projects</p>
-                        <p className="text-lg font-black text-rose-800 mt-1">{selectedPM.delayedProjectsCount}</p>
+                      <div className="sm:col-span-2">
+                        <span className="text-slate-400 font-bold">Current Project:</span>{" "}
+                        <span className="font-bold text-blue-700">
+                          {selectedPerson.currentProject?.projectTitle || (selectedPerson.projects && selectedPerson.projects[0]?.projectTitle) || "Operational Deliverables"}
+                        </span>
                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-center text-xs">
-                      <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50">
-                        <p className="text-[10px] font-bold uppercase text-slate-400">Overall Project Progress</p>
-                        <p className="text-base font-black text-slate-900 mt-1">{selectedPM.projectCompletionRate}%</p>
+                      <div className="sm:col-span-2">
+                        <span className="text-slate-400 font-bold">Reporting Manager / TL:</span>{" "}
+                        <span className="font-bold text-slate-800">
+                          {selectedPerson.teamLeader?.name || selectedPerson.reportingManager?.name || selectedPerson.managerName || "Direct to Super Admin"}
+                        </span>
                       </div>
-                      <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50">
-                        <p className="text-[10px] font-bold uppercase text-slate-400">Team Leaders Managed</p>
-                        <p className="text-base font-black text-slate-900 mt-1">{selectedPM.teamLeadersManagedCount} TLs</p>
-                      </div>
-                      <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50">
-                        <p className="text-[10px] font-bold uppercase text-slate-400">Current Workload</p>
-                        <p className="text-base font-black text-slate-900 mt-1">
-                          {selectedPM.workload !== null ? `${selectedPM.workload}% (${selectedPM.workloadStatus})` : "Workload: Not available"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 5. Projects Managed Table */}
-                  <div className="space-y-3 pt-2 border-t border-slate-100">
-                    <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
-                      Managed Projects ({selectedPM.projects?.length || 0})
-                    </h3>
-                    <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-black tracking-wider">
-                          <tr>
-                            <th className="py-3 px-4">Project Name</th>
-                            <th className="py-3 px-4">Project Code</th>
-                            <th className="py-3 px-4">Team Leader</th>
-                            <th className="py-3 px-4 text-center">Progress</th>
-                            <th className="py-3 px-4 text-center">Team Size</th>
-                            <th className="py-3 px-4 text-center">Deadline</th>
-                            <th className="py-3 px-4 text-center">Project Health</th>
-                            <th className="py-3 px-4 text-center">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-                          {selectedPM.projects?.length === 0 ? (
-                            <tr>
-                              <td colSpan={8} className="py-6 text-center text-slate-400 font-bold">
-                                No projects currently assigned to this Project Manager.
-                              </td>
-                            </tr>
-                          ) : (
-                            selectedPM.projects?.map((proj: any) => (
-                              <tr key={proj.id} className="hover:bg-slate-50/80 transition">
-                                <td className="py-3 px-4 font-bold text-slate-900">{proj.projectTitle}</td>
-                                <td className="py-3 px-4 font-mono text-slate-500">{proj.projectCode || proj.id}</td>
-                                <td className="py-3 px-4 font-semibold text-slate-800">{proj.teamLeaderName || "Unassigned"}</td>
-                                <td className="py-3 px-4 text-center font-mono font-bold text-slate-900">{proj.progress}%</td>
-                                <td className="py-3 px-4 text-center font-mono text-slate-700">{proj.memberCount || 0}</td>
-                                <td className="py-3 px-4 text-center font-mono text-slate-600">
-                                  {new Date(proj.endDate).toLocaleDateString("en-IN", {
-                                    day: "2-digit",
-                                    month: "short",
-                                    year: "numeric",
-                                  })}
-                                </td>
-                                <td className="py-3 px-4 text-center">
-                                  <span
-                                    className={`px-2 py-0.5 rounded-full text-[10px] font-black border uppercase ${
-                                      proj.projectHealth === "CRITICAL"
-                                        ? "bg-rose-100 text-rose-800 border-rose-200"
-                                        : proj.projectHealth === "AT_RISK"
-                                        ? "bg-amber-100 text-amber-800 border-amber-200"
-                                        : "bg-emerald-100 text-emerald-800 border-emerald-200"
-                                    }`}
-                                  >
-                                    {proj.projectHealth || "HEALTHY"}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-4 text-center">
-                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700">
-                                    {proj.status}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
                     </div>
                   </div>
                 </div>
-              ) : (
-                /* --- PROJECT MANAGERS LIST VIEW --- */
+              </div>
+
+              {/* Profile Sub-Section Navigation Tabs */}
+              <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200 pb-3 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setProfileTab("WORK_OVERVIEW")}
+                  className={`px-4 py-2 rounded-xl transition cursor-pointer ${
+                    profileTab === "WORK_OVERVIEW"
+                      ? "bg-slate-900 text-white shadow-2xs"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  }`}
+                >
+                  📊 Work & Deliverables
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setProfileTab("ORG_STRUCTURE")}
+                  className={`px-4 py-2 rounded-xl transition cursor-pointer ${
+                    profileTab === "ORG_STRUCTURE"
+                      ? "bg-slate-900 text-white shadow-2xs"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  }`}
+                >
+                  🌳 Organisation Structure
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setProfileTab("ATTENDANCE_LEAVES")}
+                  className={`px-4 py-2 rounded-xl transition cursor-pointer ${
+                    profileTab === "ATTENDANCE_LEAVES"
+                      ? "bg-slate-900 text-white shadow-2xs"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  }`}
+                >
+                  ⏱️ Attendance & Leaves
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setProfileTab("ACCOUNT_MANAGEMENT")}
+                  className={`px-4 py-2 rounded-xl transition cursor-pointer ${
+                    profileTab === "ACCOUNT_MANAGEMENT"
+                      ? "bg-slate-900 text-white shadow-2xs"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  }`}
+                >
+                  🔐 Account Control & Bank Security
+                </button>
+              </div>
+
+              {/* ========================================================================= */}
+              {/* SUB-TAB 1: WORK & DELIVERABLES OVERVIEW                                    */}
+              {/* ========================================================================= */}
+              {profileTab === "WORK_OVERVIEW" && (
+                <div className="space-y-6">
+                  {/* For PM: Projects Table */}
+                  {selectedPerson.role === "PROJECT_MANAGER" && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                        <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50">
+                          <p className="text-[10px] font-bold uppercase text-slate-400">Total Projects</p>
+                          <p className="text-lg font-black text-slate-900 mt-1">{selectedPerson.totalProjects}</p>
+                        </div>
+                        <div className="p-3.5 rounded-2xl border border-blue-200 bg-blue-50/30">
+                          <p className="text-[10px] font-bold uppercase text-blue-700">Active Projects</p>
+                          <p className="text-lg font-black text-blue-800 mt-1">{selectedPerson.activeProjectsCount}</p>
+                        </div>
+                        <div className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/30">
+                          <p className="text-[10px] font-bold uppercase text-emerald-700">Completed</p>
+                          <p className="text-lg font-black text-emerald-800 mt-1">{selectedPerson.completedProjectsCount}</p>
+                        </div>
+                        <div className="p-3.5 rounded-2xl border border-rose-200 bg-rose-50/30">
+                          <p className="text-[10px] font-bold uppercase text-rose-700">Delayed</p>
+                          <p className="text-lg font-black text-rose-800 mt-1">{selectedPerson.delayedProjectsCount}</p>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-black tracking-wider">
+                            <tr>
+                              <th className="py-3 px-4">Project</th>
+                              <th className="py-3 px-4">Team Leader</th>
+                              <th className="py-3 px-4 text-center">Progress</th>
+                              <th className="py-3 px-4 text-center">Deadline</th>
+                              <th className="py-3 px-4 text-center">Health</th>
+                              <th className="py-3 px-4 text-center">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                            {selectedPerson.projects?.map((proj: any) => (
+                              <tr key={proj.id} className="hover:bg-slate-50/80 transition">
+                                <td className="py-3 px-4 font-bold text-slate-900">{proj.projectTitle}</td>
+                                <td className="py-3 px-4">{proj.teamLeaderName || "Unassigned"}</td>
+                                <td className="py-3 px-4 text-center font-mono font-bold text-slate-900">{proj.progress}%</td>
+                                <td className="py-3 px-4 text-center font-mono text-slate-600">
+                                  {new Date(proj.endDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black border uppercase">
+                                    {proj.projectHealth || "HEALTHY"}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-center">{proj.status}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* For TL: Team Work & Pipeline */}
+                  {selectedPerson.role === "TEAM_LEADER" && (
+                    <div className="space-y-4">
+                      <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-2">
+                        <h4 className="text-[11px] font-black uppercase text-amber-400">Team Leader Execution Workflow</h4>
+                        <p className="text-xs text-slate-300 font-semibold">
+                          Project Manager → Project → Team Leader ({selectedPerson.name}) → Employees → Tasks → Review → Completed
+                        </p>
+                      </div>
+
+                      <div className="space-y-3">
+                        {selectedPerson.projects?.map((proj: any) => (
+                          <div key={proj.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/40 space-y-3">
+                            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                              <div>
+                                <h4 className="text-sm font-black text-slate-900">{proj.projectTitle}</h4>
+                                <p className="text-xs text-slate-500">Client: {proj.clientCompany}</p>
+                              </div>
+                              <span className="text-xs font-mono font-bold text-slate-900">Progress: {proj.progress}%</span>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                              {proj.members?.map((m: any) => (
+                                <button
+                                  key={m.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const found = data.employees.find((e) => e.id === m.id);
+                                    if (found) handleSelectPerson(found);
+                                  }}
+                                  className="px-2.5 py-1 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-800 hover:bg-emerald-50 hover:border-emerald-300 transition cursor-pointer"
+                                >
+                                  {m.name} ({m.employeeId})
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* For Employees: Workboard */}
+                  {selectedPerson.role !== "PROJECT_MANAGER" && selectedPerson.role !== "TEAM_LEADER" && employeeWorkboardData && (
+                    <div className="space-y-4">
+                      {/* Workboard Scope & Status Tabs */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-2">
+                        <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
+                          Employee Workboard
+                        </h3>
+                        <select
+                          value={empWorkboardProjectFilter}
+                          onChange={(e) => setEmpWorkboardProjectFilter(e.target.value)}
+                          className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-blue-600 focus:outline-none"
+                        >
+                          <option value="ALL">All Projects ({selectedPerson.allTasks?.length || 0} Total Tasks)</option>
+                          {selectedPerson.assignedProjects?.map((p: any) => (
+                            <option key={p.id} value={p.id}>{p.projectTitle}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Numbers */}
+                      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 text-center">
+                        <div className="p-3 rounded-2xl border border-slate-200 bg-slate-50/50">
+                          <p className="text-[10px] font-bold uppercase text-slate-400">Total Tasks</p>
+                          <p className="text-base font-black text-slate-900 mt-1">{employeeWorkboardData.totalTasks}</p>
+                        </div>
+                        <div className="p-3 rounded-2xl border border-emerald-200 bg-emerald-50/30">
+                          <p className="text-[10px] font-bold uppercase text-emerald-700">Completed</p>
+                          <p className="text-base font-black text-emerald-800 mt-1">{employeeWorkboardData.completedCount}</p>
+                        </div>
+                        <div className="p-3 rounded-2xl border border-blue-200 bg-blue-50/30">
+                          <p className="text-[10px] font-bold uppercase text-blue-700">In Progress</p>
+                          <p className="text-base font-black text-blue-800 mt-1">{employeeWorkboardData.inProgressCount}</p>
+                        </div>
+                        <div className="p-3 rounded-2xl border border-slate-200 bg-slate-50/50">
+                          <p className="text-[10px] font-bold uppercase text-slate-500">Pending</p>
+                          <p className="text-base font-black text-slate-700 mt-1">{employeeWorkboardData.pendingCount}</p>
+                        </div>
+                        <div className="p-3 rounded-2xl border border-amber-200 bg-amber-50/30">
+                          <p className="text-[10px] font-bold uppercase text-amber-700">In Review</p>
+                          <p className="text-base font-black text-amber-800 mt-1">{employeeWorkboardData.inReviewCount}</p>
+                        </div>
+                        <div className="p-3 rounded-2xl border border-rose-200 bg-rose-50/30">
+                          <p className="text-[10px] font-bold uppercase text-rose-700">Blocked</p>
+                          <p className="text-base font-black text-rose-800 mt-1">{employeeWorkboardData.blockedCount}</p>
+                        </div>
+                      </div>
+
+                      {/* Status Tabs */}
+                      <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setEmpWorkboardStatusTab("ALL")}
+                          className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                            empWorkboardStatusTab === "ALL" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          All ({employeeWorkboardData.totalTasks})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEmpWorkboardStatusTab("COMPLETED")}
+                          className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                            empWorkboardStatusTab === "COMPLETED" ? "bg-white text-emerald-800 shadow-2xs font-black" : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          Completed ({employeeWorkboardData.completedCount})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEmpWorkboardStatusTab("IN_PROGRESS")}
+                          className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                            empWorkboardStatusTab === "IN_PROGRESS" ? "bg-white text-blue-800 shadow-2xs font-black" : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          In Progress ({employeeWorkboardData.inProgressCount})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEmpWorkboardStatusTab("PENDING")}
+                          className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                            empWorkboardStatusTab === "PENDING" ? "bg-white text-slate-900 shadow-2xs font-black" : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          Pending ({employeeWorkboardData.pendingCount})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEmpWorkboardStatusTab("IN_REVIEW")}
+                          className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                            empWorkboardStatusTab === "IN_REVIEW" ? "bg-white text-amber-800 shadow-2xs font-black" : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          In Review ({employeeWorkboardData.inReviewCount})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEmpWorkboardStatusTab("BLOCKED")}
+                          className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                            empWorkboardStatusTab === "BLOCKED" ? "bg-white text-rose-800 shadow-2xs font-black" : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          Blocked ({employeeWorkboardData.blockedCount})
+                        </button>
+                      </div>
+
+                      {/* Tasks Table */}
+                      <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-black tracking-wider">
+                            <tr>
+                              <th className="py-3 px-4">Task</th>
+                              <th className="py-3 px-4">Project</th>
+                              <th className="py-3 px-4 text-center">Priority</th>
+                              <th className="py-3 px-4 text-center">Status</th>
+                              <th className="py-3 px-4 text-center">Due Date</th>
+                              <th className="py-3 px-4 text-center">Progress</th>
+                              <th className="py-3 px-4 text-right">Details</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                            {employeeWorkboardData.visibleTasks.length === 0 ? (
+                              <tr>
+                                <td colSpan={7} className="py-6 text-center text-slate-400 font-bold">
+                                  No tasks found.
+                                </td>
+                              </tr>
+                            ) : (
+                              employeeWorkboardData.visibleTasks.map((t: any) => (
+                                <tr key={t.id} onClick={() => setActiveTaskModal(t)} className="hover:bg-slate-50/80 transition cursor-pointer">
+                                  <td className="py-3 px-4 font-bold text-slate-900">{t.title}</td>
+                                  <td className="py-3 px-4 text-slate-600">{t.projectTitle || "General"}</td>
+                                  <td className="py-3 px-4 text-center">{t.priority}</td>
+                                  <td className="py-3 px-4 text-center">{t.status}</td>
+                                  <td className="py-3 px-4 text-center font-mono text-slate-600">
+                                    {t.dueDate ? new Date(t.dueDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : "N/A"}
+                                  </td>
+                                  <td className="py-3 px-4 text-center font-mono font-bold">{t.progress}%</td>
+                                  <td className="py-3 px-4 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveTaskModal(t);
+                                      }}
+                                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold rounded-lg"
+                                    >
+                                      View →
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ========================================================================= */}
+              {/* SUB-TAB 2: INTERACTIVE DYNAMIC ORGANISATION HIERARCHY DIAGRAM               */}
+              {/* ========================================================================= */}
+              {profileTab === "ORG_STRUCTURE" && selectedPerson.orgHierarchy && (
+                <div className="space-y-6">
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
+                        Dynamic Organisation Structure
+                      </h3>
+                      <p className="text-xs text-slate-500 font-medium">
+                        Live relationship graph generated from real project and department hierarchies. Click any related person to open their profile.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-8 rounded-3xl bg-slate-950 text-white flex flex-col items-center space-y-6 overflow-x-auto">
+                    {/* Level 1: Superior (Admin or PM) */}
+                    {selectedPerson.orgHierarchy.level1 && (
+                      <div className="flex flex-col items-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const u = selectedPerson.orgHierarchy.level1.user;
+                            const found = data.projectManagers.find((pm) => pm.id === u.id);
+                            if (found) handleSelectPerson(found);
+                          }}
+                          className="p-4 rounded-2xl bg-slate-900 border border-slate-700 hover:border-amber-400 text-center transition cursor-pointer shadow-lg w-64"
+                        >
+                          <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded-md uppercase">
+                            {selectedPerson.orgHierarchy.level1.title}
+                          </span>
+                          <p className="text-sm font-black text-white mt-1">{selectedPerson.orgHierarchy.level1.user.name}</p>
+                          <p className="text-[10px] text-slate-400 font-mono">{selectedPerson.orgHierarchy.level1.user.employeeId}</p>
+                        </button>
+                        <div className="h-6 w-0.5 bg-slate-700 mt-2"></div>
+                        <span className="text-slate-500 text-xs">▼</span>
+                      </div>
+                    )}
+
+                    {/* Level 2: Middle Tier (PM or TL) */}
+                    {selectedPerson.orgHierarchy.level2 && (
+                      <div className="flex flex-col items-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const u = selectedPerson.orgHierarchy.level2.user;
+                            const found =
+                              data.projectManagers.find((pm) => pm.id === u.id) ||
+                              data.teamLeaders.find((tl) => tl.id === u.id);
+                            if (found) handleSelectPerson(found);
+                          }}
+                          className="p-4 rounded-2xl bg-indigo-950/80 border border-indigo-500 hover:border-indigo-300 text-center transition cursor-pointer shadow-lg w-64"
+                        >
+                          <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-500/20 text-indigo-300 rounded-md uppercase">
+                            {selectedPerson.orgHierarchy.level2.title}
+                          </span>
+                          <p className="text-sm font-black text-white mt-1">{selectedPerson.orgHierarchy.level2.user.name}</p>
+                          <p className="text-[10px] text-slate-400 font-mono">{selectedPerson.orgHierarchy.level2.user.employeeId}</p>
+                        </button>
+                        <div className="h-6 w-0.5 bg-slate-700 mt-2"></div>
+                        <span className="text-slate-500 text-xs">▼</span>
+                      </div>
+                    )}
+
+                    {/* Level 3: Subordinates / Direct Reports */}
+                    {selectedPerson.orgHierarchy.level3 && (
+                      <div className="flex flex-wrap justify-center gap-4">
+                        {Array.isArray(selectedPerson.orgHierarchy.level3) ? (
+                          selectedPerson.orgHierarchy.level3.map((item: any, idx: number) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                const found =
+                                  data.employees.find((e) => e.id === item.user?.id) ||
+                                  data.teamLeaders.find((tl) => tl.id === item.user?.id);
+                                if (found) handleSelectPerson(found);
+                              }}
+                              className={`p-3.5 rounded-2xl border text-center transition cursor-pointer w-56 ${
+                                item.isSelected
+                                  ? "bg-emerald-950/80 border-emerald-400 ring-2 ring-emerald-400/40"
+                                  : "bg-slate-900 border-slate-800 hover:border-slate-600"
+                              }`}
+                            >
+                              <span className="text-[9px] font-bold px-2 py-0.5 bg-slate-800 text-slate-300 rounded-md uppercase">
+                                {item.title || "Team Member"}
+                              </span>
+                              <p className="text-xs font-black text-white mt-1 truncate">{item.user?.name || "Member"}</p>
+                              <p className="text-[10px] text-slate-400 font-mono">{item.user?.employeeId}</p>
+                            </button>
+                          ))
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================================= */}
+              {/* SUB-TAB 3: ATTENDANCE & LEAVES SUMMARY                                     */}
+              {/* ========================================================================= */}
+              {profileTab === "ATTENDANCE_LEAVES" && (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+                    <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50">
+                      <p className="text-[10px] font-bold uppercase text-slate-400">Total Recorded Days</p>
+                      <p className="text-xl font-black text-slate-900 mt-1">{selectedPerson.attendanceSummary?.totalDays || 0}</p>
+                    </div>
+                    <div className="p-4 rounded-2xl border border-emerald-200 bg-emerald-50/30">
+                      <p className="text-[10px] font-bold uppercase text-emerald-700">Days Present</p>
+                      <p className="text-xl font-black text-emerald-800 mt-1">{selectedPerson.attendanceSummary?.presentDays || 0}</p>
+                    </div>
+                    <div className="p-4 rounded-2xl border border-blue-200 bg-blue-50/30">
+                      <p className="text-[10px] font-bold uppercase text-blue-700">Total Hours Logged</p>
+                      <p className="text-xl font-black text-blue-800 mt-1">{selectedPerson.attendanceSummary?.totalHours || 0} hrs</p>
+                    </div>
+                    <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50/30">
+                      <p className="text-[10px] font-bold uppercase text-amber-700">Approved Leaves</p>
+                      <p className="text-xl font-black text-amber-800 mt-1">{selectedPerson.leaveSummary?.approvedLeaves || 0}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================================= */}
+              {/* SUB-TAB 4: ACCOUNT MANAGEMENT & OTP-PROTECTED BANK DETAILS                 */}
+              {/* ========================================================================= */}
+              {profileTab === "ACCOUNT_MANAGEMENT" && (
+                <div className="space-y-8">
+                  {/* 1. Account Management (Non-Sensitive Fields) */}
+                  <form onSubmit={handleSaveAccountInfo} className="p-6 rounded-3xl border border-slate-200 bg-white space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div>
+                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">
+                          Account Control & Profile Info
+                        </h3>
+                        <p className="text-xs text-slate-500 font-medium">
+                          Update authorized profile fields. Sensitive bank information requires separate OTP authorization.
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-bold px-2.5 py-1 bg-blue-50 text-blue-800 rounded-md border border-blue-200 uppercase">
+                        Admin Privileged Action
+                      </span>
+                    </div>
+
+                    {accountMsg && (
+                      <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold">
+                        {accountMsg}
+                      </div>
+                    )}
+                    {accountError && (
+                      <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-bold">
+                        {accountError}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
+                      <div>
+                        <label className="block font-bold text-slate-800 mb-1">Full Name</label>
+                        <input
+                          type="text"
+                          required
+                          value={editAccountData.name}
+                          onChange={(e) => setEditAccountData({ ...editAccountData, name: e.target.value })}
+                          className="w-full p-2.5 rounded-xl border border-slate-300 font-medium text-black focus:border-slate-900 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-800 mb-1">Corporate Email</label>
+                        <input
+                          type="email"
+                          required
+                          value={editAccountData.email}
+                          onChange={(e) => setEditAccountData({ ...editAccountData, email: e.target.value })}
+                          className="w-full p-2.5 rounded-xl border border-slate-300 font-medium text-black focus:border-slate-900 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-800 mb-1">Phone Number</label>
+                        <input
+                          type="text"
+                          value={editAccountData.phone}
+                          onChange={(e) => setEditAccountData({ ...editAccountData, phone: e.target.value })}
+                          className="w-full p-2.5 rounded-xl border border-slate-300 font-medium text-black focus:border-slate-900 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-800 mb-1">Designation / Role</label>
+                        <select
+                          value={editAccountData.role}
+                          onChange={(e) => setEditAccountData({ ...editAccountData, role: e.target.value })}
+                          className="w-full p-2.5 rounded-xl border border-slate-300 font-bold text-black focus:border-slate-900 focus:outline-none"
+                        >
+                          <option value="DEVELOPER">Developer</option>
+                          <option value="TEAM_LEADER">Team Leader</option>
+                          <option value="PROJECT_MANAGER">Project Manager</option>
+                          <option value="UI_UX_DESIGNER">UI/UX Designer</option>
+                          <option value="QA_TESTER">QA Tester</option>
+                          <option value="HR">HR</option>
+                          <option value="FINANCE">Finance</option>
+                          <option value="INTERN">Intern</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-800 mb-1">Department</label>
+                        <select
+                          value={editAccountData.departmentId}
+                          onChange={(e) => setEditAccountData({ ...editAccountData, departmentId: e.target.value })}
+                          className="w-full p-2.5 rounded-xl border border-slate-300 font-bold text-black focus:border-slate-900 focus:outline-none"
+                        >
+                          <option value="">-- Select Department --</option>
+                          {data.departments?.map((d: any) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name} ({d.code})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-800 mb-1">Account Status</label>
+                        <select
+                          value={editAccountData.isActive ? "ACTIVE" : "INACTIVE"}
+                          onChange={(e) => setEditAccountData({ ...editAccountData, isActive: e.target.value === "ACTIVE" })}
+                          className="w-full p-2.5 rounded-xl border border-slate-300 font-bold text-black focus:border-slate-900 focus:outline-none"
+                        >
+                          <option value="ACTIVE">Active</option>
+                          <option value="INACTIVE">Inactive / Suspended</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-2">
+                      <button
+                        type="submit"
+                        disabled={isSavingAccount}
+                        className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs transition disabled:opacity-50 cursor-pointer"
+                      >
+                        {isSavingAccount ? "Saving Updates..." : "Save Account Info"}
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* 2. OTP-Protected Bank Account Section */}
+                  <div className="p-6 rounded-3xl border border-slate-200 bg-slate-50/50 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                      <div>
+                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                          <span>🏦</span> Confidential Bank Account Details
+                        </h3>
+                        <p className="text-xs text-slate-500 font-medium">
+                          Strictly masked by default. Requires one-time OTP verification directly from the account owner.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {isBankViewUnlocked ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsBankViewUnlocked(false);
+                              setUnmaskedBankData(null);
+                            }}
+                            className="px-3.5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold rounded-xl transition cursor-pointer"
+                          >
+                            Hide Details 🔒
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleInitiateOtp("VIEW_BANK_DETAILS")}
+                            disabled={otpLoading}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+                          >
+                            Request OTP to View Details 👁️
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleInitiateOtp("EDIT_BANK_DETAILS")}
+                          disabled={otpLoading}
+                          className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+                        >
+                          Edit Bank Details ✏️
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Bank Display Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-4 rounded-2xl bg-white border border-slate-200 text-xs">
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Bank Name</span>
+                        <span className="font-bold text-slate-900">
+                          {isBankViewUnlocked && unmaskedBankData
+                            ? unmaskedBankData.bankName
+                            : selectedPerson.bankDetails?.bankName || "State Bank of India"}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Account Holder</span>
+                        <span className="font-bold text-slate-900">
+                          {isBankViewUnlocked && unmaskedBankData
+                            ? unmaskedBankData.accountHolderName
+                            : selectedPerson.bankDetails?.accountHolderNameMasked || "R**** V****"}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Account Number</span>
+                        <span className="font-mono font-bold text-slate-900">
+                          {isBankViewUnlocked && unmaskedBankData
+                            ? unmaskedBankData.accountNumber
+                            : selectedPerson.bankDetails?.accountNumberMasked || "************4521"}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">IFSC Code</span>
+                        <span className="font-mono font-bold text-slate-900">
+                          {isBankViewUnlocked && unmaskedBankData
+                            ? unmaskedBankData.ifscCode
+                            : selectedPerson.bankDetails?.ifscCodeMasked || "********123"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* If Edit Bank Form is Unlocked */}
+                    {showEditBankForm && (
+                      <div className="p-5 rounded-2xl bg-white border border-indigo-200 space-y-4 animate-in fade-in">
+                        <div className="flex items-center justify-between border-b border-indigo-100 pb-2">
+                          <h4 className="text-xs font-black uppercase text-indigo-950">
+                            Authorized Bank Detail Modification Form
+                          </h4>
+                          <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md">
+                            OTP Verified Session Active
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <label className="block font-bold text-slate-800 mb-1">Bank Name *</label>
+                            <input
+                              type="text"
+                              required
+                              value={bankFormData.bankName}
+                              onChange={(e) => setBankFormData({ ...bankFormData, bankName: e.target.value })}
+                              className="w-full p-2 rounded-xl border border-slate-300 font-medium text-black focus:border-indigo-600 focus:outline-none"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-bold text-slate-800 mb-1">Account Holder Name *</label>
+                            <input
+                              type="text"
+                              required
+                              value={bankFormData.accountHolderName}
+                              onChange={(e) => setBankFormData({ ...bankFormData, accountHolderName: e.target.value })}
+                              className="w-full p-2 rounded-xl border border-slate-300 font-medium text-black focus:border-indigo-600 focus:outline-none"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-bold text-slate-800 mb-1">New Account Number *</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="e.g. 123456789012"
+                              value={bankFormData.accountNumber}
+                              onChange={(e) => setBankFormData({ ...bankFormData, accountNumber: e.target.value })}
+                              className="w-full p-2 rounded-xl border border-slate-300 font-mono font-bold text-black focus:border-indigo-600 focus:outline-none"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-bold text-slate-800 mb-1">New IFSC Code *</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="e.g. SBIN0001234"
+                              value={bankFormData.ifscCode}
+                              onChange={(e) => setBankFormData({ ...bankFormData, ifscCode: e.target.value.toUpperCase() })}
+                              className="w-full p-2 rounded-xl border border-slate-300 font-mono font-bold text-black focus:border-indigo-600 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowEditBankForm(false)}
+                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!bankFormData.accountNumber || !bankFormData.ifscCode) {
+                                alert("Please enter new Account Number and IFSC Code.");
+                                return;
+                              }
+                              setShowBankConfirmModal(true);
+                            }}
+                            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs"
+                          >
+                            Review & Confirm Changes →
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ========================================================================= */
+            /* DIRECTORY LIST VIEWS (Project Managers | Team Leaders | Employees)         */
+            /* ========================================================================= */
+            <div>
+              {/* Project Managers View */}
+              {activeTab === "PROJECT_MANAGERS" && (
                 <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs space-y-4 p-5 sm:p-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
@@ -480,25 +1354,24 @@ export default function AdminOrganisationPage() {
                         Project Managers ({filteredPMs.length})
                       </h2>
                       <p className="text-xs text-slate-500 font-medium">
-                        Click on any Project Manager name or ID to view their work overview and managed projects.
+                        Click on any Project Manager name or ID to open their complete authorized profile.
                       </p>
                     </div>
                   </div>
 
-                  {/* Filters */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <input
                       type="text"
                       placeholder="Search PM name or ID..."
                       value={pmSearch}
                       onChange={(e) => setPmSearch(e.target.value)}
-                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-medium text-black focus:border-blue-600 focus:outline-none"
+                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-medium text-black focus:border-slate-900 focus:outline-none"
                     />
 
                     <select
                       value={pmStatusFilter}
                       onChange={(e) => setPmStatusFilter(e.target.value)}
-                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-blue-600 focus:outline-none"
+                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-slate-900 focus:outline-none"
                     >
                       <option value="ALL">All Statuses</option>
                       <option value="ACTIVE">Active</option>
@@ -508,18 +1381,15 @@ export default function AdminOrganisationPage() {
                     <select
                       value={pmDeptFilter}
                       onChange={(e) => setPmDeptFilter(e.target.value)}
-                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-blue-600 focus:outline-none"
+                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-slate-900 focus:outline-none"
                     >
                       <option value="ALL">All Departments</option>
                       {uniquePMDepts.map((d) => (
-                        <option key={d} value={d}>
-                          {d}
-                        </option>
+                        <option key={d} value={d}>{d}</option>
                       ))}
                     </select>
                   </div>
 
-                  {/* Table */}
                   <div className="overflow-x-auto border border-slate-200 rounded-2xl">
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-black tracking-wider">
@@ -529,17 +1399,16 @@ export default function AdminOrganisationPage() {
                           <th className="py-3.5 px-4">Designation / Dept</th>
                           <th className="py-3.5 px-4 text-center">Projects</th>
                           <th className="py-3.5 px-4 text-center">Active Projects</th>
-                          <th className="py-3.5 px-4 text-center">Project Progress</th>
+                          <th className="py-3.5 px-4 text-center">Progress</th>
                           <th className="py-3.5 px-4 text-center">Team Leaders</th>
-                          <th className="py-3.5 px-4 text-center">Workload</th>
                           <th className="py-3.5 px-4 text-center">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
                         {filteredPMs.length === 0 ? (
                           <tr>
-                            <td colSpan={9} className="py-8 text-center text-slate-400 font-bold">
-                              No Project Managers found.
+                            <td colSpan={8} className="py-8 text-center text-slate-400 font-bold">
+                              No Project Managers registered.
                             </td>
                           </tr>
                         ) : (
@@ -556,7 +1425,7 @@ export default function AdminOrganisationPage() {
                                   )}
                                   <button
                                     type="button"
-                                    onClick={() => setSelectedPM(pm)}
+                                    onClick={() => handleSelectPerson(pm)}
                                     className="font-extrabold text-slate-900 hover:text-blue-600 hover:underline cursor-pointer text-left"
                                   >
                                     {pm.name}
@@ -567,7 +1436,7 @@ export default function AdminOrganisationPage() {
                               <td className="py-3.5 px-4 font-mono font-bold">
                                 <button
                                   type="button"
-                                  onClick={() => setSelectedPM(pm)}
+                                  onClick={() => handleSelectPerson(pm)}
                                   className="text-slate-700 hover:text-blue-600 hover:underline cursor-pointer"
                                 >
                                   {pm.employeeId}
@@ -579,28 +1448,10 @@ export default function AdminOrganisationPage() {
                                 <div className="text-[10px] text-slate-500">{pm.department}</div>
                               </td>
 
-                              <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-900">
-                                {pm.totalProjects}
-                              </td>
-
-                              <td className="py-3.5 px-4 text-center font-mono font-bold text-blue-700">
-                                {pm.activeProjectsCount}
-                              </td>
-
-                              <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-800">
-                                {pm.projectCompletionRate}%
-                              </td>
-
-                              <td className="py-3.5 px-4 text-center font-mono font-semibold text-slate-700">
-                                {pm.teamLeadersManagedCount} TLs
-                              </td>
-
-                              <td className="py-3.5 px-4 text-center">
-                                <span className="text-[11px] font-mono font-bold text-slate-700">
-                                  {pm.workload !== null ? `${pm.workload}%` : "N/A"}
-                                </span>
-                              </td>
-
+                              <td className="py-3.5 px-4 text-center font-mono font-bold">{pm.totalProjects}</td>
+                              <td className="py-3.5 px-4 text-center font-mono font-bold text-blue-700">{pm.activeProjectsCount}</td>
+                              <td className="py-3.5 px-4 text-center font-mono font-bold">{pm.projectCompletionRate}%</td>
+                              <td className="py-3.5 px-4 text-center font-mono">{pm.teamLeadersManagedCount} TLs</td>
                               <td className="py-3.5 px-4 text-center">
                                 <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md text-[10px] font-bold">
                                   {pm.status}
@@ -614,241 +1465,9 @@ export default function AdminOrganisationPage() {
                   </div>
                 </div>
               )}
-            </div>
-          )}
 
-          {/* ========================================================================= */}
-          {/* TAB 2: TEAM LEADERS                                                        */}
-          {/* ========================================================================= */}
-          {activeTab === "TEAM_LEADERS" && (
-            <div>
-              {selectedTL ? (
-                /* --- TEAM LEADER DETAILS VIEW --- */
-                <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs animate-in fade-in duration-200">
-                  {/* Back Action */}
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedTL(null)}
-                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5"
-                    >
-                      ← Back to Team Leaders
-                    </button>
-                    <span className="text-xs font-bold px-3 py-1 bg-slate-100 text-slate-700 rounded-full border border-slate-200">
-                      Team Leader Details
-                    </span>
-                  </div>
-
-                  {/* 3. Basic Details */}
-                  <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                      {selectedTL.avatarUrl ? (
-                        <img
-                          src={selectedTL.avatarUrl}
-                          alt={selectedTL.name}
-                          className="h-16 w-16 rounded-2xl object-cover border border-slate-200 shadow-xs"
-                        />
-                      ) : (
-                        <div className="h-16 w-16 rounded-2xl bg-indigo-600 text-white font-black text-xl flex items-center justify-center shadow-xs">
-                          {selectedTL.name ? selectedTL.name.substring(0, 2).toUpperCase() : "TL"}
-                        </div>
-                      )}
-                      <div>
-                        <h2 className="text-lg font-black text-slate-900">{selectedTL.name}</h2>
-                        <p className="text-xs text-slate-500 font-mono">
-                          Team Leader ID: <span className="font-bold text-slate-800">{selectedTL.employeeId}</span>
-                        </p>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mt-2 text-[11px] text-slate-600 font-medium">
-                          <div>
-                            <span className="text-slate-400 font-bold">Role:</span> {selectedTL.role}
-                          </div>
-                          <div>
-                            <span className="text-slate-400 font-bold">Department:</span> {selectedTL.department}
-                          </div>
-                          <div>
-                            <span className="text-slate-400 font-bold">Joining Date:</span>{" "}
-                            {new Date(selectedTL.joiningDate).toLocaleDateString("en-IN", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                            })}
-                          </div>
-                          <div>
-                            <span className="text-slate-400 font-bold">Status:</span>{" "}
-                            <span className="font-bold text-emerald-700">{selectedTL.status}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 7. Work Overview */}
-                  <div className="space-y-3">
-                    <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
-                      Work Overview
-                    </h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
-                      <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50">
-                        <p className="text-[10px] font-bold uppercase text-slate-400">Projects Managed</p>
-                        <p className="text-lg font-black text-slate-900 mt-1">{selectedTL.projectsCount}</p>
-                      </div>
-                      <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50">
-                        <p className="text-[10px] font-bold uppercase text-slate-400">Team Members</p>
-                        <p className="text-lg font-black text-slate-900 mt-1">{selectedTL.teamSize}</p>
-                      </div>
-                      <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50">
-                        <p className="text-[10px] font-bold uppercase text-slate-400">Tasks Managed</p>
-                        <p className="text-lg font-black text-slate-900 mt-1">{selectedTL.metrics?.totalTasks || 0}</p>
-                      </div>
-                      <div className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/30">
-                        <p className="text-[10px] font-bold uppercase text-emerald-700">Completed Tasks</p>
-                        <p className="text-lg font-black text-emerald-800 mt-1">{selectedTL.metrics?.completedTasks || 0}</p>
-                      </div>
-                      <div className="p-3.5 rounded-2xl border border-blue-200 bg-blue-50/30">
-                        <p className="text-[10px] font-bold uppercase text-blue-700">In Progress</p>
-                        <p className="text-lg font-black text-blue-800 mt-1">{selectedTL.metrics?.inProgressTasks || 0}</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-center text-xs">
-                      <div className="p-3 rounded-2xl border border-rose-200 bg-rose-50/30">
-                        <p className="text-[10px] font-bold uppercase text-rose-700">Blocked</p>
-                        <p className="text-base font-black text-rose-800 mt-1">{selectedTL.metrics?.blockedTasks || 0}</p>
-                      </div>
-                      <div className="p-3 rounded-2xl border border-amber-200 bg-amber-50/30">
-                        <p className="text-[10px] font-bold uppercase text-amber-700">In Review</p>
-                        <p className="text-base font-black text-amber-800 mt-1">{selectedTL.metrics?.inReviewTasks || 0}</p>
-                      </div>
-                      <div className="p-3 rounded-2xl border border-slate-200 bg-slate-50/50">
-                        <p className="text-[10px] font-bold uppercase text-slate-400">Team Performance</p>
-                        <p className="text-base font-black text-slate-900 mt-1">
-                          {selectedTL.performanceScore !== null ? `${selectedTL.performanceScore}%` : "Not enough data"}
-                        </p>
-                      </div>
-                      <div className="p-3 rounded-2xl border border-slate-200 bg-slate-50/50">
-                        <p className="text-[10px] font-bold uppercase text-slate-400">Current Workload</p>
-                        <p className="text-base font-black text-slate-900 mt-1">
-                          {selectedTL.workload !== null ? `${selectedTL.workload}%` : "Not available"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 7. Project Workflow Diagram */}
-                  <div className="p-5 rounded-2xl bg-slate-900 text-white space-y-3">
-                    <h3 className="text-xs font-black uppercase text-amber-400 tracking-wider">
-                      Project Workflow
-                    </h3>
-                    <div className="flex flex-wrap items-center gap-2 text-xs font-extrabold text-slate-200">
-                      <span className="px-2.5 py-1 bg-slate-800 rounded-lg border border-slate-700 text-blue-400">
-                        Project Manager
-                      </span>
-                      <span>→</span>
-                      <span className="px-2.5 py-1 bg-slate-800 rounded-lg border border-slate-700 text-purple-400">
-                        Project
-                      </span>
-                      <span>→</span>
-                      <span className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg shadow-xs">
-                        Team Leader ({selectedTL.name})
-                      </span>
-                      <span>→</span>
-                      <span className="px-2.5 py-1 bg-slate-800 rounded-lg border border-slate-700 text-emerald-400">
-                        Employees
-                      </span>
-                      <span>→</span>
-                      <span className="px-2.5 py-1 bg-slate-800 rounded-lg border border-slate-700 text-amber-400">
-                        Tasks
-                      </span>
-                      <span>→</span>
-                      <span className="px-2.5 py-1 bg-slate-800 rounded-lg border border-slate-700">
-                        Work Updates
-                      </span>
-                      <span>→</span>
-                      <span className="px-2.5 py-1 bg-slate-800 rounded-lg border border-slate-700 text-cyan-400">
-                        Review
-                      </span>
-                      <span>→</span>
-                      <span className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg">
-                        Completed ✓
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Projects & Team Members */}
-                  <div className="space-y-4 pt-2 border-t border-slate-100">
-                    <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
-                      Projects & Team Work ({selectedTL.projects?.length || 0})
-                    </h3>
-
-                    {selectedTL.projects?.length === 0 ? (
-                      <p className="text-xs text-slate-400 font-medium">No projects currently led by this Team Leader.</p>
-                    ) : (
-                      selectedTL.projects?.map((proj: any) => (
-                        <div key={proj.id} className="border border-slate-200 rounded-2xl p-5 bg-slate-50/40 space-y-4">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
-                            <div>
-                              <span className="text-[10px] font-mono font-bold text-slate-400">
-                                {proj.projectCode || proj.id}
-                              </span>
-                              <h4 className="text-sm font-black text-slate-900">{proj.projectTitle}</h4>
-                              <p className="text-xs text-slate-500 font-medium">Client: {proj.clientCompany}</p>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <span className="text-xs font-mono font-black text-slate-900">
-                                Progress: {proj.progress}%
-                              </span>
-                              <span
-                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border uppercase ${
-                                  proj.projectHealth === "CRITICAL"
-                                    ? "bg-rose-100 text-rose-800 border-rose-200"
-                                    : proj.projectHealth === "AT_RISK"
-                                    ? "bg-amber-100 text-amber-800 border-amber-200"
-                                    : "bg-emerald-100 text-emerald-800 border-emerald-200"
-                                }`}
-                              >
-                                {proj.projectHealth || "HEALTHY"}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="space-y-2">
-                            <p className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wide">
-                              Team Members on Deliverable ({proj.members?.length || 0}):
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                              {proj.members?.map((m: any) => (
-                                <button
-                                  key={m.id}
-                                  type="button"
-                                  onClick={() => {
-                                    const foundEmp = data.employees.find((e) => e.id === m.id || e.employeeId === m.employeeId);
-                                    if (foundEmp) {
-                                      setActiveTab("EMPLOYEES");
-                                      setSelectedEmp(foundEmp);
-                                    }
-                                  }}
-                                  className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 hover:border-emerald-300 border border-slate-200 text-xs font-bold text-slate-800 flex items-center gap-2 transition cursor-pointer"
-                                >
-                                  {m.avatarUrl ? (
-                                    <img src={m.avatarUrl} alt={m.name} className="h-5 w-5 rounded-full object-cover" />
-                                  ) : (
-                                    <div className="h-5 w-5 rounded-full bg-slate-900 text-white text-[9px] flex items-center justify-center font-bold">
-                                      {m.name?.substring(0, 1).toUpperCase()}
-                                    </div>
-                                  )}
-                                  <span className="hover:underline">{m.name}</span>
-                                  <span className="text-[10px] text-slate-400 font-mono">({m.employeeId})</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              ) : (
-                /* --- TEAM LEADERS LIST VIEW --- */
+              {/* Team Leaders View */}
+              {activeTab === "TEAM_LEADERS" && (
                 <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs space-y-4 p-5 sm:p-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
@@ -856,25 +1475,24 @@ export default function AdminOrganisationPage() {
                         Team Leaders ({filteredTLs.length})
                       </h2>
                       <p className="text-xs text-slate-500 font-medium">
-                        Click on any Team Leader name or ID to open their work overview and project workflow.
+                        Click on any Team Leader name or ID to open their complete authorized profile.
                       </p>
                     </div>
                   </div>
 
-                  {/* Filters */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <input
                       type="text"
                       placeholder="Search TL name or ID..."
                       value={tlSearch}
                       onChange={(e) => setTlSearch(e.target.value)}
-                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-medium text-black focus:border-blue-600 focus:outline-none"
+                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-medium text-black focus:border-slate-900 focus:outline-none"
                     />
 
                     <select
                       value={tlStatusFilter}
                       onChange={(e) => setTlStatusFilter(e.target.value)}
-                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-blue-600 focus:outline-none"
+                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-slate-900 focus:outline-none"
                     >
                       <option value="ALL">All Statuses</option>
                       <option value="ACTIVE">Active</option>
@@ -884,18 +1502,15 @@ export default function AdminOrganisationPage() {
                     <select
                       value={tlProjectFilter}
                       onChange={(e) => setTlProjectFilter(e.target.value)}
-                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-blue-600 focus:outline-none"
+                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-slate-900 focus:outline-none"
                     >
                       <option value="ALL">All Projects</option>
                       {data.projects.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.projectTitle}
-                        </option>
+                        <option key={p.id} value={p.id}>{p.projectTitle}</option>
                       ))}
                     </select>
                   </div>
 
-                  {/* Table */}
                   <div className="overflow-x-auto border border-slate-200 rounded-2xl">
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-black tracking-wider">
@@ -907,17 +1522,14 @@ export default function AdminOrganisationPage() {
                           <th className="py-3.5 px-4 text-center">Team Size</th>
                           <th className="py-3.5 px-4 text-center">Tasks Managed</th>
                           <th className="py-3.5 px-4 text-center">Task Completion</th>
-                          <th className="py-3.5 px-4 text-center">Project Progress</th>
-                          <th className="py-3.5 px-4 text-center">Performance</th>
-                          <th className="py-3.5 px-4 text-center">Workload</th>
                           <th className="py-3.5 px-4 text-center">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
                         {filteredTLs.length === 0 ? (
                           <tr>
-                            <td colSpan={11} className="py-8 text-center text-slate-400 font-bold">
-                              No Team Leaders found.
+                            <td colSpan={8} className="py-8 text-center text-slate-400 font-bold">
+                              No Team Leaders registered.
                             </td>
                           </tr>
                         ) : (
@@ -934,7 +1546,7 @@ export default function AdminOrganisationPage() {
                                   )}
                                   <button
                                     type="button"
-                                    onClick={() => setSelectedTL(tl)}
+                                    onClick={() => handleSelectPerson(tl)}
                                     className="font-extrabold text-slate-900 hover:text-indigo-600 hover:underline cursor-pointer text-left"
                                   >
                                     {tl.name}
@@ -945,7 +1557,7 @@ export default function AdminOrganisationPage() {
                               <td className="py-3.5 px-4 font-mono font-bold">
                                 <button
                                   type="button"
-                                  onClick={() => setSelectedTL(tl)}
+                                  onClick={() => handleSelectPerson(tl)}
                                   className="text-slate-700 hover:text-indigo-600 hover:underline cursor-pointer"
                                 >
                                   {tl.employeeId}
@@ -957,34 +1569,10 @@ export default function AdminOrganisationPage() {
                                 <div className="text-[10px] text-slate-500">{tl.department}</div>
                               </td>
 
-                              <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-900">
-                                {tl.projectsCount}
-                              </td>
-
-                              <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-800">
-                                {tl.teamSize}
-                              </td>
-
-                              <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-800">
-                                {tl.metrics?.totalTasks || 0}
-                              </td>
-
-                              <td className="py-3.5 px-4 text-center font-mono font-bold text-indigo-700">
-                                {tl.taskCompletionPct}%
-                              </td>
-
-                              <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-800">
-                                {tl.projectProgress}%
-                              </td>
-
-                              <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-700">
-                                {tl.performanceScore !== null ? `${tl.performanceScore}%` : "N/A"}
-                              </td>
-
-                              <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-700">
-                                {tl.workload !== null ? `${tl.workload}%` : "N/A"}
-                              </td>
-
+                              <td className="py-3.5 px-4 text-center font-mono font-bold">{tl.projectsCount}</td>
+                              <td className="py-3.5 px-4 text-center font-mono font-bold">{tl.teamSize}</td>
+                              <td className="py-3.5 px-4 text-center font-mono">{tl.metrics?.totalTasks || 0}</td>
+                              <td className="py-3.5 px-4 text-center font-mono font-bold text-indigo-700">{tl.taskCompletionPct}%</td>
                               <td className="py-3.5 px-4 text-center">
                                 <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md text-[10px] font-bold">
                                   {tl.status}
@@ -998,434 +1586,31 @@ export default function AdminOrganisationPage() {
                   </div>
                 </div>
               )}
-            </div>
-          )}
 
-          {/* ========================================================================= */}
-          {/* TAB 3: EMPLOYEES                                                           */}
-          {/* ========================================================================= */}
-          {activeTab === "EMPLOYEES" && (
-            <div>
-              {selectedEmp ? (
-                /* --- EMPLOYEE BASIC DETAILS + WORKBOARD VIEW --- */
-                <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs animate-in fade-in duration-200">
-                  {/* Back Action */}
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedEmp(null);
-                        setEmpWorkboardProjectFilter("ALL");
-                        setEmpWorkboardStatusTab("ALL");
-                      }}
-                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5"
-                    >
-                      ← Back to Employees
-                    </button>
-                    <span className="text-xs font-bold px-3 py-1 bg-slate-100 text-slate-700 rounded-full border border-slate-200">
-                      Employee Basic Details & Workboard
-                    </span>
-                  </div>
-
-                  {/* 3. Basic Person Details Card */}
-                  <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                      {selectedEmp.avatarUrl ? (
-                        <img
-                          src={selectedEmp.avatarUrl}
-                          alt={selectedEmp.name}
-                          className="h-16 w-16 rounded-2xl object-cover border border-slate-200 shadow-xs"
-                        />
-                      ) : (
-                        <div className="h-16 w-16 rounded-2xl bg-slate-900 text-white font-black text-xl flex items-center justify-center shadow-xs">
-                          {selectedEmp.name ? selectedEmp.name.substring(0, 2).toUpperCase() : "E"}
-                        </div>
-                      )}
-                      <div>
-                        <h2 className="text-lg font-black text-slate-900">{selectedEmp.name}</h2>
-                        <p className="text-xs text-slate-500 font-mono">
-                          Employee ID: <span className="font-bold text-slate-800">{selectedEmp.employeeId}</span>
-                        </p>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mt-2 text-[11px] text-slate-600 font-medium">
-                          <div>
-                            <span className="text-slate-400 font-bold">Designation:</span> {selectedEmp.role}
-                          </div>
-                          <div>
-                            <span className="text-slate-400 font-bold">Department:</span> {selectedEmp.department}
-                          </div>
-                          <div>
-                            <span className="text-slate-400 font-bold">Joining Date:</span>{" "}
-                            {new Date(selectedEmp.joiningDate).toLocaleDateString("en-IN", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                            })}
-                          </div>
-                          <div>
-                            <span className="text-slate-400 font-bold">Current Status:</span>{" "}
-                            <span className="font-bold text-emerald-700">{selectedEmp.status}</span>
-                          </div>
-                          <div className="sm:col-span-2">
-                            <span className="text-slate-400 font-bold">Current Project:</span>{" "}
-                            <span className="font-bold text-blue-700">
-                              {selectedEmp.currentProject?.projectTitle || "Operational Tasks"}
-                            </span>
-                          </div>
-                          <div className="sm:col-span-2">
-                            <span className="text-slate-400 font-bold">Team Leader:</span>{" "}
-                            <span className="font-bold text-slate-800">{selectedEmp.teamLeader?.name || "Unassigned"}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 9 & 13. Work Summary & Performance Numbers */}
-                  {employeeWorkboardData && (
-                    <div className="space-y-4">
-                      {/* Project Scope Filter Toolbar */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                        <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
-                          Work Summary
-                        </h3>
-                        <div className="flex items-center gap-2">
-                          <label className="text-[11px] font-bold text-slate-500">Project Scope:</label>
-                          <select
-                            value={empWorkboardProjectFilter}
-                            onChange={(e) => setEmpWorkboardProjectFilter(e.target.value)}
-                            className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-blue-600 focus:outline-none"
-                          >
-                            <option value="ALL">All Projects ({selectedEmp.allTasks?.length || 0} Total Tasks)</option>
-                            {selectedEmp.assignedProjects?.map((p: any) => (
-                              <option key={p.id} value={p.id}>
-                                {p.projectTitle}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      {/* Work Summary Numbers */}
-                      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 text-center">
-                        <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50">
-                          <p className="text-[10px] font-bold uppercase text-slate-400">Total Tasks</p>
-                          <p className="text-base font-black text-slate-900 mt-1">{employeeWorkboardData.totalTasks}</p>
-                        </div>
-                        <div className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/30">
-                          <p className="text-[10px] font-bold uppercase text-emerald-700">Completed</p>
-                          <p className="text-base font-black text-emerald-800 mt-1">{employeeWorkboardData.completedCount}</p>
-                        </div>
-                        <div className="p-3.5 rounded-2xl border border-blue-200 bg-blue-50/30">
-                          <p className="text-[10px] font-bold uppercase text-blue-700">In Progress</p>
-                          <p className="text-base font-black text-blue-800 mt-1">{employeeWorkboardData.inProgressCount}</p>
-                        </div>
-                        <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50">
-                          <p className="text-[10px] font-bold uppercase text-slate-500">Pending</p>
-                          <p className="text-base font-black text-slate-700 mt-1">{employeeWorkboardData.pendingCount}</p>
-                        </div>
-                        <div className="p-3.5 rounded-2xl border border-amber-200 bg-amber-50/30">
-                          <p className="text-[10px] font-bold uppercase text-amber-700">In Review</p>
-                          <p className="text-base font-black text-amber-800 mt-1">{employeeWorkboardData.inReviewCount}</p>
-                        </div>
-                        <div className="p-3.5 rounded-2xl border border-rose-200 bg-rose-50/30">
-                          <p className="text-[10px] font-bold uppercase text-rose-700">Blocked</p>
-                          <p className="text-base font-black text-rose-800 mt-1">{employeeWorkboardData.blockedCount}</p>
-                        </div>
-                      </div>
-
-                      {/* Mathematical Completion & Overall Progress */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 text-center text-xs">
-                        <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50">
-                          <p className="text-[10px] font-bold uppercase text-slate-400">
-                            Task Completion (Completed / Total)
-                          </p>
-                          <p className="text-base font-black text-slate-900 mt-1">
-                            {employeeWorkboardData.taskCompletionRate}%
-                          </p>
-                        </div>
-
-                        <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50">
-                          <p className="text-[10px] font-bold uppercase text-slate-400">
-                            Overall Work Progress (Sum of Progress / Tasks)
-                          </p>
-                          <p className="text-base font-black text-blue-700 mt-1">
-                            {employeeWorkboardData.overallProgressVal}%
-                          </p>
-                        </div>
-
-                        <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50">
-                          <p className="text-[10px] font-bold uppercase text-slate-400">Performance Assessment</p>
-                          <p className="text-base font-black text-emerald-700 mt-1">
-                            {selectedEmp.performanceScore !== null ? `${selectedEmp.performanceScore}%` : "Performance: Not enough data"}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* 19. TODAY'S WORK */}
-                      <div className="p-4.5 rounded-2xl border border-blue-200 bg-blue-50/20 space-y-3">
-                        <h4 className="text-xs font-black uppercase text-blue-900 tracking-wider flex items-center gap-1.5">
-                          <span>📅</span> Today's Work Summary
-                        </h4>
-                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-center text-xs">
-                          <div className="p-2.5 rounded-xl bg-white border border-blue-100">
-                            <p className="text-[10px] text-slate-400 font-bold uppercase">Today's Completed</p>
-                            <p className="text-sm font-black text-emerald-700">{selectedEmp.todayWork?.todayCompletedTasks || 0}</p>
-                          </div>
-                          <div className="p-2.5 rounded-xl bg-white border border-blue-100">
-                            <p className="text-[10px] text-slate-400 font-bold uppercase">Today's In Progress</p>
-                            <p className="text-sm font-black text-blue-700">{selectedEmp.todayWork?.todayInProgressTasks || 0}</p>
-                          </div>
-                          <div className="p-2.5 rounded-xl bg-white border border-blue-100">
-                            <p className="text-[10px] text-slate-400 font-bold uppercase">Today's Updates</p>
-                            <p className="text-sm font-black text-slate-900">{selectedEmp.todayWork?.todayUpdatesCount || 0}</p>
-                          </div>
-                          <div className="p-2.5 rounded-xl bg-white border border-blue-100">
-                            <p className="text-[10px] text-slate-400 font-bold uppercase">Today's Hours</p>
-                            <p className="text-sm font-black text-slate-900">{selectedEmp.todayWork?.todayHours || 0} hrs</p>
-                          </div>
-                          <div className="p-2.5 rounded-xl bg-white border border-blue-100">
-                            <p className="text-[10px] text-slate-400 font-bold uppercase">Today's Blockers</p>
-                            <p className={`text-sm font-black ${(selectedEmp.todayWork?.todayBlockers || 0) > 0 ? "text-rose-600" : "text-slate-900"}`}>
-                              {selectedEmp.todayWork?.todayBlockers || 0}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 10. EMPLOYEE WORKBOARD TABS & DISTINCT TASKS TABLE */}
-                      <div className="space-y-3 pt-2">
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                          <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
-                            Employee Workboard
-                          </h3>
-                          <span className="text-[11px] text-slate-400 font-medium">
-                            Click any task row to view updates & attachments
-                          </span>
-                        </div>
-
-                        {/* Status Tabs */}
-                        <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-bold">
-                          <button
-                            type="button"
-                            onClick={() => setEmpWorkboardStatusTab("ALL")}
-                            className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                              empWorkboardStatusTab === "ALL" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            All Tasks ({employeeWorkboardData.totalTasks})
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEmpWorkboardStatusTab("COMPLETED")}
-                            className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                              empWorkboardStatusTab === "COMPLETED" ? "bg-white text-emerald-800 shadow-2xs font-black" : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            Completed ({employeeWorkboardData.completedCount})
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEmpWorkboardStatusTab("IN_PROGRESS")}
-                            className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                              empWorkboardStatusTab === "IN_PROGRESS" ? "bg-white text-blue-800 shadow-2xs font-black" : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            In Progress ({employeeWorkboardData.inProgressCount})
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEmpWorkboardStatusTab("PENDING")}
-                            className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                              empWorkboardStatusTab === "PENDING" ? "bg-white text-slate-900 shadow-2xs font-black" : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            Pending ({employeeWorkboardData.pendingCount})
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEmpWorkboardStatusTab("IN_REVIEW")}
-                            className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                              empWorkboardStatusTab === "IN_REVIEW" ? "bg-white text-amber-800 shadow-2xs font-black" : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            In Review ({employeeWorkboardData.inReviewCount})
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEmpWorkboardStatusTab("BLOCKED")}
-                            className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                              empWorkboardStatusTab === "BLOCKED" ? "bg-white text-rose-800 shadow-2xs font-black" : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            Blocked ({employeeWorkboardData.blockedCount})
-                          </button>
-                        </div>
-
-                        {/* Distinct Tasks Table (No Duplicates) */}
-                        <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-                          <table className="w-full text-left text-xs">
-                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-black tracking-wider">
-                              <tr>
-                                <th className="py-3 px-4">Task Name</th>
-                                <th className="py-3 px-4">Project</th>
-                                <th className="py-3 px-4">Section</th>
-                                <th className="py-3 px-4 text-center">Priority</th>
-                                <th className="py-3 px-4 text-center">Status</th>
-                                <th className="py-3 px-4 text-center">Due Date</th>
-                                <th className="py-3 px-4 text-center">Progress</th>
-                                <th className="py-3 px-4 text-right">Action</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-                              {employeeWorkboardData.visibleTasks.length === 0 ? (
-                                <tr>
-                                  <td colSpan={8} className="py-6 text-center text-slate-400 font-bold">
-                                    No tasks found in this section.
-                                  </td>
-                                </tr>
-                              ) : (
-                                employeeWorkboardData.visibleTasks.map((t: any) => (
-                                  <tr
-                                    key={t.id}
-                                    onClick={() => setActiveTaskModal(t)}
-                                    className="hover:bg-slate-50/80 transition cursor-pointer"
-                                  >
-                                    <td className="py-3 px-4">
-                                      <div className="font-extrabold text-slate-900 hover:text-blue-600 hover:underline">
-                                        {t.title}
-                                      </div>
-                                      <div className="text-[10px] text-slate-400 font-mono">ID: {t.id}</div>
-                                    </td>
-                                    <td className="py-3 px-4 text-slate-700 font-semibold">{t.projectTitle || "Operational"}</td>
-                                    <td className="py-3 px-4 text-slate-600">{t.section || "General"}</td>
-                                    <td className="py-3 px-4 text-center">
-                                      <span
-                                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                                          t.priority === "HIGH" || t.priority === "URGENT"
-                                            ? "bg-rose-50 text-rose-700 border border-rose-200"
-                                            : "bg-slate-100 text-slate-700"
-                                        }`}
-                                      >
-                                        {t.priority}
-                                      </span>
-                                    </td>
-                                    <td className="py-3 px-4 text-center">
-                                      <span
-                                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                                          t.status === "COMPLETED"
-                                            ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
-                                            : t.status === "IN_PROGRESS"
-                                            ? "bg-blue-50 text-blue-800 border border-blue-200"
-                                            : t.status === "BLOCKED"
-                                            ? "bg-rose-50 text-rose-800 border border-rose-200"
-                                            : "bg-slate-100 text-slate-700"
-                                        }`}
-                                      >
-                                        {t.status}
-                                      </span>
-                                    </td>
-                                    <td className="py-3 px-4 text-center font-mono text-slate-600">
-                                      {t.dueDate
-                                        ? new Date(t.dueDate).toLocaleDateString("en-IN", {
-                                            day: "2-digit",
-                                            month: "short",
-                                          })
-                                        : "N/A"}
-                                    </td>
-                                    <td className="py-3 px-4 text-center font-mono font-bold text-slate-900">
-                                      {t.progress !== undefined ? `${t.progress}%` : "Progress not reported"}
-                                    </td>
-                                    <td className="py-3 px-4 text-right">
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setActiveTaskModal(t);
-                                        }}
-                                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold rounded-lg transition"
-                                      >
-                                        View Details →
-                                      </button>
-                                    </td>
-                                  </tr>
-                                ))
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-
-                      {/* 20. RECENT WORK UPDATES */}
-                      <div className="space-y-3 pt-2 border-t border-slate-100">
-                        <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
-                          Recent Work Updates
-                        </h3>
-                        {selectedEmp.recentWorkUpdates?.length === 0 ? (
-                          <p className="text-xs text-slate-400 font-medium py-2">No work update logs on record.</p>
-                        ) : (
-                          <div className="space-y-2.5">
-                            {selectedEmp.recentWorkUpdates?.map((wu: any) => (
-                              <div
-                                key={wu.id}
-                                className="p-4 rounded-2xl border border-slate-200 bg-slate-50/60 space-y-1.5"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-bold text-slate-400 font-mono">
-                                    {new Date(wu.date).toLocaleDateString("en-IN", {
-                                      day: "2-digit",
-                                      month: "short",
-                                      year: "numeric",
-                                    })}{" "}
-                                    • {wu.projectTitle || "Operational"}
-                                  </span>
-                                  <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-200 text-slate-800 rounded-md">
-                                    {wu.hoursWorked || 8} hrs logged
-                                  </span>
-                                </div>
-                                <p className="text-xs text-slate-800 font-medium">{wu.description}</p>
-                                {wu.achievements && (
-                                  <p className="text-[11px] text-emerald-700 font-semibold">
-                                    ✓ Key Achievement: {wu.achievements}
-                                  </p>
-                                )}
-                                {wu.blockers && (
-                                  <p className="text-[11px] text-rose-600 font-semibold">
-                                    ⚠️ Blocker: {wu.blockers}
-                                  </p>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                /* --- EMPLOYEES LIST VIEW WITH SEARCH, FILTERS & PAGINATION --- */
+              {/* Employees View */}
+              {activeTab === "EMPLOYEES" && (
                 <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs space-y-4 p-5 sm:p-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                       <h2 className="text-sm font-black uppercase text-slate-900 tracking-wider">
-                        Workforce Directory ({filteredEmployees.length})
+                        Employees Workforce ({filteredEmployees.length})
                       </h2>
                       <p className="text-xs text-slate-500 font-medium">
-                        Click on any Employee name or Employee ID to view their Basic Details and Workboard.
+                        Click on any Employee name or ID to open their complete authorized profile.
                       </p>
                     </div>
                   </div>
 
-                  {/* Filter Toolbar */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                     <input
                       type="text"
-                      placeholder="Search Employee Name or ID..."
+                      placeholder="Search Name or Employee ID..."
                       value={empSearch}
                       onChange={(e) => {
                         setEmpSearch(e.target.value);
                         setEmpPage(1);
                       }}
-                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-medium text-black focus:border-blue-600 focus:outline-none"
+                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-medium text-black focus:border-slate-900 focus:outline-none"
                     />
 
                     <select
@@ -1434,13 +1619,11 @@ export default function AdminOrganisationPage() {
                         setEmpProjectFilter(e.target.value);
                         setEmpPage(1);
                       }}
-                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-blue-600 focus:outline-none"
+                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-slate-900 focus:outline-none"
                     >
                       <option value="ALL">All Projects</option>
                       {data.projects.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.projectTitle}
-                        </option>
+                        <option key={p.id} value={p.id}>{p.projectTitle}</option>
                       ))}
                     </select>
 
@@ -1450,13 +1633,11 @@ export default function AdminOrganisationPage() {
                         setEmpTLFilter(e.target.value);
                         setEmpPage(1);
                       }}
-                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-blue-600 focus:outline-none"
+                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-slate-900 focus:outline-none"
                     >
                       <option value="ALL">All Team Leaders</option>
                       {uniqueTLs.map((tl) => (
-                        <option key={tl.id} value={tl.id}>
-                          {tl.name}
-                        </option>
+                        <option key={tl.id} value={tl.id}>{tl.name}</option>
                       ))}
                     </select>
 
@@ -1466,7 +1647,7 @@ export default function AdminOrganisationPage() {
                         setEmpStatusFilter(e.target.value);
                         setEmpPage(1);
                       }}
-                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-blue-600 focus:outline-none"
+                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-slate-900 focus:outline-none"
                     >
                       <option value="ALL">All Statuses</option>
                       <option value="ACTIVE">Active</option>
@@ -1474,7 +1655,6 @@ export default function AdminOrganisationPage() {
                     </select>
                   </div>
 
-                  {/* Employees Table */}
                   <div className="overflow-x-auto border border-slate-200 rounded-2xl">
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-black tracking-wider">
@@ -1484,18 +1664,17 @@ export default function AdminOrganisationPage() {
                           <th className="py-3.5 px-4">Designation / Dept</th>
                           <th className="py-3.5 px-4">Current Project</th>
                           <th className="py-3.5 px-4">Team Leader</th>
-                          <th className="py-3.5 px-4 text-center">Assigned Tasks</th>
-                          <th className="py-3.5 px-4 text-center">Completed Tasks</th>
-                          <th className="py-3.5 px-4 text-center">Work Progress</th>
-                          <th className="py-3.5 px-4 text-center">Performance</th>
+                          <th className="py-3.5 px-4 text-center">Tasks</th>
+                          <th className="py-3.5 px-4 text-center">Completed</th>
+                          <th className="py-3.5 px-4 text-center">Progress</th>
                           <th className="py-3.5 px-4 text-center">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
                         {paginatedEmployees.length === 0 ? (
                           <tr>
-                            <td colSpan={10} className="py-8 text-center text-slate-400 font-bold">
-                              No employees found matching filter criteria.
+                            <td colSpan={9} className="py-8 text-center text-slate-400 font-bold">
+                              No employees found matching criteria.
                             </td>
                           </tr>
                         ) : (
@@ -1512,7 +1691,7 @@ export default function AdminOrganisationPage() {
                                   )}
                                   <button
                                     type="button"
-                                    onClick={() => setSelectedEmp(emp)}
+                                    onClick={() => handleSelectPerson(emp)}
                                     className="font-extrabold text-slate-900 hover:text-blue-600 hover:underline cursor-pointer text-left"
                                   >
                                     {emp.name}
@@ -1523,7 +1702,7 @@ export default function AdminOrganisationPage() {
                               <td className="py-3.5 px-4 font-mono font-bold">
                                 <button
                                   type="button"
-                                  onClick={() => setSelectedEmp(emp)}
+                                  onClick={() => handleSelectPerson(emp)}
                                   className="text-slate-700 hover:text-blue-600 hover:underline cursor-pointer"
                                 >
                                   {emp.employeeId}
@@ -1535,32 +1714,17 @@ export default function AdminOrganisationPage() {
                                 <div className="text-[10px] text-slate-500">{emp.department}</div>
                               </td>
 
-                              <td className="py-3.5 px-4">
-                                <div className="font-bold text-slate-900 line-clamp-1">
-                                  {emp.currentProject?.projectTitle || "Operational"}
-                                </div>
+                              <td className="py-3.5 px-4 font-bold text-slate-900 line-clamp-1">
+                                {emp.currentProject?.projectTitle || "Operational"}
                               </td>
 
                               <td className="py-3.5 px-4 font-semibold text-slate-700">
                                 {emp.teamLeader?.name || "Unassigned"}
                               </td>
 
-                              <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-900">
-                                {emp.tasksAssignedCount}
-                              </td>
-
-                              <td className="py-3.5 px-4 text-center font-mono font-bold text-emerald-700">
-                                {emp.completedTasksCount}
-                              </td>
-
-                              <td className="py-3.5 px-4 text-center font-mono font-bold text-blue-700">
-                                {emp.overallWorkProgress}%
-                              </td>
-
-                              <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-700">
-                                {emp.performanceScore !== null ? `${emp.performanceScore}%` : "N/A"}
-                              </td>
-
+                              <td className="py-3.5 px-4 text-center font-mono font-bold">{emp.tasksAssignedCount}</td>
+                              <td className="py-3.5 px-4 text-center font-mono font-bold text-emerald-700">{emp.completedTasksCount}</td>
+                              <td className="py-3.5 px-4 text-center font-mono font-bold text-blue-700">{emp.overallWorkProgress}%</td>
                               <td className="py-3.5 px-4 text-center">
                                 <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md text-[10px] font-bold">
                                   {emp.status}
@@ -1573,12 +1737,9 @@ export default function AdminOrganisationPage() {
                     </table>
                   </div>
 
-                  {/* Pagination */}
                   {totalEmpPages > 1 && (
                     <div className="flex items-center justify-between pt-2">
-                      <p className="text-xs text-slate-500 font-medium">
-                        Page {empPage} of {totalEmpPages}
-                      </p>
+                      <p className="text-xs text-slate-500 font-medium">Page {empPage} of {totalEmpPages}</p>
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
@@ -1606,25 +1767,144 @@ export default function AdminOrganisationPage() {
         </>
       )}
 
-      {/* 14. TASK DETAILS MODAL WITH ALL ASSOCIATED WORK UPDATES */}
-      {activeTaskModal && (
-        <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setActiveTaskModal(null);
-          }}
-        >
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+      {/* ========================================================================= */}
+      {/* 6. OTP VERIFICATION DIALOG MODAL (SENSITIVE BANK INFO PROTECTION)          */}
+      {/* ========================================================================= */}
+      {showOtpModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-200 space-y-4">
+            <div className="text-center space-y-2">
+              <div className="h-12 w-12 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-600 flex items-center justify-center mx-auto text-xl font-bold">
+                🔐
+              </div>
+              <h3 className="text-base font-black text-slate-900">OTP Security Verification</h3>
+              <p className="text-xs text-slate-500 font-medium">
+                A one-time verification code has been dispatched to <strong>{selectedPerson?.name}</strong>'s registered contact (<span className="font-mono text-slate-700 font-bold">{otpMaskedEmail}</span>).
+              </p>
+            </div>
+
+            {otpError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-bold text-center">
+                {otpError}
+              </div>
+            )}
+
+            <form onSubmit={handleVerifyOtp} className="space-y-4">
               <div>
-                <span className="text-[10px] font-mono font-bold text-slate-400">
-                  Task ID: {activeTaskModal.id}
+                <label className="block text-xs font-bold text-slate-700 text-center mb-1">
+                  Enter 6-Digit OTP Code provided by account owner
+                </label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  required
+                  placeholder="• • • • • •"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                  className="w-full text-center text-2xl font-mono font-black tracking-widest p-3 rounded-xl border border-slate-300 text-black focus:border-indigo-600 focus:outline-none bg-slate-50"
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-500 px-1">
+                <span>
+                  Valid for: <strong className={otpTimer < 60 ? "text-rose-600" : "text-slate-900"}>{Math.floor(otpTimer / 60)}:{(otpTimer % 60).toString().padStart(2, "0")}</strong>
                 </span>
+                <button
+                  type="button"
+                  onClick={() => handleInitiateOtp(otpPurpose)}
+                  disabled={otpLoading || otpTimer > 240}
+                  className="text-indigo-600 hover:underline disabled:opacity-40 cursor-pointer"
+                >
+                  Resend OTP
+                </button>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOtpModal(false)}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={otpLoading || otpCode.length !== 6}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl shadow-xs transition disabled:opacity-50 cursor-pointer"
+                >
+                  {otpLoading ? "Verifying..." : "Verify OTP Code"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 12. BANK DETAILS CHANGE CONFIRMATION MODAL                                */}
+      {/* ========================================================================= */}
+      {showBankConfirmModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-200 space-y-4">
+            <h3 className="text-base font-black text-slate-900 border-b border-slate-100 pb-2">
+              Confirm Bank Account Modification
+            </h3>
+
+            <p className="text-xs text-slate-600 font-medium">
+              Please review the confidential bank account details before saving. This will update payroll records and create an audit event.
+            </p>
+
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 font-bold">Target Employee:</span>
+                <span className="font-bold text-slate-900">{selectedPerson?.name} ({selectedPerson?.employeeId})</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 font-bold">Bank Name:</span>
+                <span className="font-bold text-slate-900">{bankFormData.bankName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 font-bold">New Account Number:</span>
+                <span className="font-mono font-bold text-indigo-700">
+                  ••••••••{bankFormData.accountNumber.slice(-4)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 font-bold">IFSC Code:</span>
+                <span className="font-mono font-bold text-slate-900">{bankFormData.ifscCode}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowBankConfirmModal(false)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveBankDetails}
+                disabled={isSavingBank}
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-xs disabled:opacity-50"
+              >
+                {isSavingBank ? "Saving..." : "Confirm & Save Bank Detail"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Task Details Modal */}
+      {activeTaskModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+              <div>
+                <span className="text-[10px] font-mono font-bold text-slate-400">ID: {activeTaskModal.id}</span>
                 <h3 className="text-base font-black text-slate-900 mt-0.5">{activeTaskModal.title}</h3>
-                <p className="text-xs text-slate-500 font-medium">
-                  Project: {activeTaskModal.projectTitle || "Operational"} ({activeTaskModal.projectCode || "N/A"})
-                </p>
+                <p className="text-xs text-slate-500 font-medium">Project: {activeTaskModal.projectTitle || "Operational"}</p>
               </div>
               <button
                 type="button"
@@ -1635,8 +1915,7 @@ export default function AdminOrganisationPage() {
               </button>
             </div>
 
-            {/* Task Meta Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 bg-slate-50 rounded-2xl text-xs">
+            <div className="grid grid-cols-3 gap-3 p-4 bg-slate-50 rounded-2xl text-xs">
               <div>
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">Status</span>
                 <span className="font-bold text-slate-900">{activeTaskModal.status}</span>
@@ -1647,73 +1926,23 @@ export default function AdminOrganisationPage() {
               </div>
               <div>
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">Progress</span>
-                <span className="font-bold text-blue-700">{activeTaskModal.progress || 0}%</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase block">Assigned Employee</span>
-                <span className="font-bold text-slate-900">{activeTaskModal.assignedUserName || selectedEmp?.name || "Assigned"}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase block">Team Leader</span>
-                <span className="font-bold text-slate-900">{activeTaskModal.teamLeaderName || selectedEmp?.teamLeader?.name || "Unassigned"}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase block">Due Date</span>
-                <span className="font-mono text-slate-700">
-                  {activeTaskModal.dueDate ? new Date(activeTaskModal.dueDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "N/A"}
-                </span>
+                <span className="font-bold text-blue-700">{activeTaskModal.progress}%</span>
               </div>
             </div>
 
-            {/* Task Description */}
             {activeTaskModal.description && (
-              <div className="space-y-1">
-                <h4 className="text-[10px] font-bold text-slate-400 uppercase">Scope & Description</h4>
-                <p className="text-xs text-slate-700 leading-relaxed p-3 rounded-xl bg-slate-50/50 border border-slate-100">
-                  {activeTaskModal.description}
-                </p>
-              </div>
+              <p className="text-xs text-slate-700 p-3 rounded-xl bg-slate-50/50 border border-slate-100">
+                {activeTaskModal.description}
+              </p>
             )}
-
-            {/* Associated Work Updates for this Task */}
-            <div className="space-y-3 pt-2 border-t border-slate-100">
-              <h4 className="text-xs font-black uppercase text-slate-900 tracking-wider">
-                Work Updates Associated with Task ({activeTaskModal.workUpdates?.length || 0})
-              </h4>
-
-              {activeTaskModal.workUpdates?.length === 0 ? (
-                <p className="text-xs text-slate-400 font-medium py-2">No daily work updates logged for this task yet.</p>
-              ) : (
-                <div className="space-y-2.5">
-                  {activeTaskModal.workUpdates?.map((wu: any) => (
-                    <div key={wu.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 space-y-1 text-xs">
-                      <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
-                        <span>{new Date(wu.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
-                        <span className="px-2 py-0.5 bg-slate-200 text-slate-800 rounded-md">{wu.hoursWorked || 8} Hours</span>
-                      </div>
-                      <p className="text-slate-800 font-medium">{wu.description}</p>
-                      {wu.achievements && (
-                        <p className="text-[11px] text-emerald-700 font-semibold">✓ {wu.achievements}</p>
-                      )}
-                      {wu.blockers && (
-                        <p className="text-[11px] text-rose-600 font-semibold">⚠️ Blocker: {wu.blockers}</p>
-                      )}
-                      {wu.gitCommits && (
-                        <p className="text-[10px] font-mono text-blue-700">Git Commits: {wu.gitCommits}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
 
             <div className="flex justify-end pt-2">
               <button
                 type="button"
                 onClick={() => setActiveTaskModal(null)}
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+                className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-xl"
               >
-                Close Task Details
+                Close
               </button>
             </div>
           </div>

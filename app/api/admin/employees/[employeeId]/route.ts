@@ -486,68 +486,28 @@ async function handleUpdateEmployee(
       await queryDb(`UPDATE user SET ${updateFields.join(", ")} WHERE id = ?`, updateValues);
     }
 
-    // 4. Update or Insert Bank Detail if provided
-    if (bankDetail && typeof bankDetail === "object") {
-      const {
-        accountHolderName,
-        bankName,
-        accountNumber,
-        ifscCode,
-        branchName,
-        accountType = "Savings",
-      } = bankDetail;
-
-      if (accountHolderName && accountNumber && ifscCode) {
-        const existingBank = await queryDb<any[]>(
-          `SELECT id FROM bankdetail WHERE userId = ? LIMIT 1`,
-          [userId]
-        );
-
-        if (existingBank && existingBank.length > 0) {
-          await queryDb(
-            `UPDATE bankdetail 
-             SET accountHolderName = ?, bankName = ?, accountNumber = ?, ifscCode = ?, branchName = ?, accountType = ?, updatedAt = NOW()
-             WHERE userId = ?`,
-            [
-              accountHolderName.trim(),
-              bankName?.trim() || "State Bank of India",
-              accountNumber.trim(),
-              ifscCode.trim().toUpperCase(),
-              branchName?.trim() || null,
-              accountType || "Savings",
-              userId,
-            ]
-          );
-        } else {
-          const bankId = `bank_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-          await queryDb(
-            `INSERT INTO bankdetail (id, userId, accountHolderName, bankName, accountNumber, ifscCode, branchName, accountType, isActive, createdAt, updatedAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())`,
-            [
-              bankId,
-              userId,
-              accountHolderName.trim(),
-              bankName?.trim() || "State Bank of India",
-              accountNumber.trim(),
-              ifscCode.trim().toUpperCase(),
-              branchName?.trim() || null,
-              accountType || "Savings",
-            ]
-          );
-        }
-      }
+    // 4. Reject direct unauthenticated bank modifications
+    if (bankDetail !== undefined) {
+      return NextResponse.json(
+        { success: false, error: "Sensitive bank details cannot be updated directly. Please use the OTP-authorized bank update workflow." },
+        { status: 400 }
+      );
     }
 
-    // 5. Record Audit Log
+    // 5. Record Audit Log for Non-Sensitive Account Update
     try {
       const auditId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       await queryDb(
         `INSERT INTO auditlog (id, userId, action, details, timestamp)
-         VALUES (?, ?, 'EMPLOYEE_PROFILE_UPDATED', ?, NOW())`,
+         VALUES (?, ?, 'ADMIN_UPDATE_ACCOUNT', ?, NOW())`,
         [
           auditId,
           authResult.user?.id || userId,
-          `Admin updated profile & details for employee ${user.name} (${user.employeeId}).`,
+          JSON.stringify({
+            targetUserId: userId,
+            targetEmployeeId: user.employeeId,
+            updatedFields: updateFields,
+          }),
         ]
       );
     } catch (auditErr) {
