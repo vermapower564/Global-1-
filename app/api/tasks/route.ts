@@ -55,14 +55,28 @@ export async function GET(request: NextRequest) {
     // 2. Team Leader of specific project: Can view all tasks in their led projects
     // 3. Normal Employee: Only sees tasks assigned directly to them
     if (!isAdmin) {
-      if (projectIdParam && ledProjectIds.includes(projectIdParam)) {
-        // User is Team Leader of this project -> allowed to see all tasks in this project
-        sql += ` AND t.projectId = ?`;
-        params.push(projectIdParam);
-      } else if (ledProjectIds.length > 0 && !assignedToUserId) {
-        // User is Team Leader of some projects -> sees own assigned tasks + tasks in their led projects
-        sql += ` AND (t.assignedToUserId = ? OR t.projectId IN (${ledProjectIds.map(() => "?").join(",")}))`;
-        params.push(authUser.id, ...ledProjectIds);
+      // Find all projects where authUser is an assigned member
+      const memberProjectRows = await queryDb<any[]>(
+        `SELECT A as projectId FROM _assignedstaffprojects WHERE B = ?`,
+        [authUser.id]
+      );
+      const memberProjectIds = (memberProjectRows || []).map((p) => p.projectId);
+      const allMyProjectIds = Array.from(new Set([...ledProjectIds, ...memberProjectIds]));
+
+      if (projectIdParam) {
+        if (allMyProjectIds.includes(projectIdParam)) {
+          // User is member or TL of this project -> allowed to see tasks in this project
+          sql += ` AND t.projectId = ?`;
+          params.push(projectIdParam);
+        } else {
+          // User not in project -> return only their own tasks if any in that project
+          sql += ` AND t.assignedToUserId = ? AND t.projectId = ?`;
+          params.push(authUser.id, projectIdParam);
+        }
+      } else if (allMyProjectIds.length > 0 && !assignedToUserId) {
+        // User sees own assigned tasks + tasks in their shared projects
+        sql += ` AND (t.assignedToUserId = ? OR t.projectId IN (${allMyProjectIds.map(() => "?").join(",")}))`;
+        params.push(authUser.id, ...allMyProjectIds);
       } else {
         // Normal employee -> strictly own assigned tasks
         sql += ` AND t.assignedToUserId = ?`;
@@ -237,15 +251,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Resolve assignedToUserId to real user.id cuid if employeeId was passed
+    const userRows = await queryDb<any[]>(
+      `SELECT id FROM user WHERE id = ? OR employeeId = ? LIMIT 1`,
+      [assignedToUserId, assignedToUserId]
+    );
+    const resolvedUserId = userRows && userRows.length > 0 ? userRows[0].id : assignedToUserId;
+
     const taskId = `TSK-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
+    const isMainTaskFlag = typeof body.isMainTask === "boolean" ? (body.isMainTask ? 1 : 0) : (isAdmin && !body.parentTaskId ? 1 : 0);
 
     await queryDb(
       `INSERT INTO task (
-        id, title, description, section, projectId, assignedToUserId, createdById,
+        id, title, description, section, projectId, isMainTask, assignedToUserId, createdById,
         status, priority, progress, startDate, dueDate, estimatedHours, actualHours,
         createdAt, updatedAt
       ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, 0, ?, ?, ?, 0,
         NOW(), NOW()
       )`,
@@ -255,7 +277,8 @@ export async function POST(request: NextRequest) {
         description ? description.trim() : null,
         section ? section.trim() : "General",
         projectId || null,
-        assignedToUserId,
+        isMainTaskFlag,
+        resolvedUserId,
         authUser.id,
         status,
         priority,
@@ -266,9 +289,9 @@ export async function POST(request: NextRequest) {
     );
 
     // If projectId provided, ensure assigned user is linked in _assignedstaffprojects
-    if (projectId && assignedToUserId) {
+    if (projectId && resolvedUserId) {
       try {
-        await queryDb(`INSERT IGNORE INTO _assignedstaffprojects (A, B) VALUES (?, ?)`, [projectId, assignedToUserId]);
+        await queryDb(`INSERT IGNORE INTO _assignedstaffprojects (A, B) VALUES (?, ?)`, [projectId, resolvedUserId]);
       } catch {}
     }
 
@@ -304,6 +327,6 @@ export async function POST(request: NextRequest) {
     );
   } catch (error: any) {
     console.error("POST /api/tasks error:", error);
-    return NextResponse.json({ success: false, error: "Failed to create task." }, { status: 500 });
+    return NextResponse.json({ success: false, error: error.message || "Failed to create task." }, { status: 500 });
   }
 }

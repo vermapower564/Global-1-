@@ -7,11 +7,11 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const authResult = await authenticateRequest(request);
-    const adminRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
+    const privilegedRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR"];
 
-    if (!authResult.user || !adminRoles.includes(authResult.user.role)) {
+    if (!authResult.user || !privilegedRoles.includes(authResult.user.role)) {
       return NextResponse.json(
-        { success: false, error: "Forbidden: Admin authorization required." },
+        { success: false, error: "Forbidden: Salary slip records require HR, Finance, or Executive authorization." },
         { status: 403 }
       );
     }

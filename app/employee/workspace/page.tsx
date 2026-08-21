@@ -121,7 +121,7 @@ export default function EmployeeSelfWorkspacePage() {
             What Do I Need To Work On Today?
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Welcome back, <strong>{user?.name || "Employee"}</strong> ({user?.employeeId || "EMP"}). Update your active task progress and log blockers in real-time.
+            Welcome back, <strong>{user?.name || "Employee"}</strong>. Update your active task progress and log blockers in real-time.
           </p>
         </div>
         <div className="flex items-center gap-3">

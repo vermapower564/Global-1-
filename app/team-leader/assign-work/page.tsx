@@ -38,6 +38,8 @@ function AssignWorkForm() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [requiredSkills, setRequiredSkills] = useState<string[]>([]);
 
   useEffect(() => {
     fetch("/api/team-leader/summary")
@@ -49,7 +51,6 @@ function AssignWorkForm() {
             setMainTaskId(json.adminMainTasks[0].id);
           }
           if (!preEmployeeId && json.teamMembers?.length > 0) {
-            // Pick first available member if possible
             const free = json.teamMembers.find((m: any) => m.workloadStatus === "AVAILABLE");
             setAssignedToUserId(free?.id || json.teamMembers[0].id);
           }
@@ -57,6 +58,17 @@ function AssignWorkForm() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+
+    // Fetch smart employee recommendations
+    fetch("/api/team-leader/recommendations")
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success && Array.isArray(res.recommendations)) {
+          setRecommendations(res.recommendations);
+          setRequiredSkills(res.requiredSkills || []);
+        }
+      })
+      .catch(() => {});
   }, [preMainTaskId, preEmployeeId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -151,6 +163,93 @@ function AssignWorkForm() {
       {successMsg && (
         <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold animate-in fade-in">
           {successMsg}
+        </div>
+      )}
+
+      {/* Smart Skill-Based Employee Recommendations Card */}
+      {recommendations.length > 0 && (
+        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-base">💡</span>
+              <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                Smart Employee Recommendations (Skill Match & Capacity)
+              </h3>
+            </div>
+            <div className="text-[10px] text-slate-500 font-mono">
+              Target Skills: {requiredSkills.slice(0, 4).join(", ")}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {recommendations.slice(0, 3).map((rec) => {
+              const isSelected = assignedToUserId === rec.id;
+              const isHighLoad = rec.currentWorkload >= 80;
+
+              return (
+                <div
+                  key={rec.id}
+                  className={`p-3.5 rounded-2xl border transition flex flex-col justify-between space-y-2.5 ${
+                    isSelected
+                      ? "bg-blue-50 border-blue-400 ring-2 ring-blue-500/20"
+                      : "bg-slate-50/70 border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {rec.avatarUrl ? (
+                        <img src={rec.avatarUrl} alt={rec.name} className="h-8 w-8 rounded-xl object-cover" />
+                      ) : (
+                        <div className="h-8 w-8 rounded-xl bg-blue-600 text-white font-black text-xs flex items-center justify-center shrink-0">
+                          {rec.name.substring(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-black text-slate-900 truncate">{rec.name}</h4>
+                        <p className="text-[10px] text-slate-500 truncate">{rec.role}</p>
+                      </div>
+                    </div>
+
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+                      ⭐ {rec.matchScore}% Match
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-[10px] font-extrabold">
+                      <span className="text-slate-500">Workload:</span>
+                      <span className={isHighLoad ? "text-rose-600 font-black" : "text-slate-800 font-black"}>
+                        {rec.currentWorkload}% {isHighLoad ? "⚠️ HIGH LOAD" : `(${rec.availableCapacity}% free)`}
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${isHighLoad ? "bg-rose-500" : rec.currentWorkload > 50 ? "bg-amber-500" : "bg-emerald-500"}`}
+                        style={{ width: `${rec.currentWorkload}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[10px] text-slate-400 truncate max-w-[120px]">
+                      {rec.skills}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setAssignedToUserId(rec.id)}
+                      className={`px-2.5 py-1 rounded-xl text-[10px] font-black transition cursor-pointer ${
+                        isSelected
+                          ? "bg-blue-600 text-white shadow-xs"
+                          : "bg-white hover:bg-slate-200 text-slate-800 border border-slate-300"
+                      }`}
+                    >
+                      {isSelected ? "✓ Selected" : "Assign →"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

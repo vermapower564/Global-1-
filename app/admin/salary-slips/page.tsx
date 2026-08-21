@@ -61,6 +61,8 @@ export default function AdminSalarySlipsFolderPage() {
   const [selectedSlip, setSelectedSlip] = useState<SalarySlipItem | null>(null);
   const [showSlipModal, setShowSlipModal] = useState(false);
 
+  const [accessDenied, setAccessDenied] = useState(false);
+
   const fetchSalarySlips = async () => {
     try {
       setLoading(true);
@@ -71,6 +73,11 @@ export default function AdminSalarySlipsFolderPage() {
       });
 
       const res = await fetch(`/api/admin/salary-slips?${query.toString()}`);
+      if (res.status === 403) {
+        setAccessDenied(true);
+        setLoading(false);
+        return;
+      }
       const json = await res.json();
 
       if (json.success) {
@@ -78,6 +85,10 @@ export default function AdminSalarySlipsFolderPage() {
         setMetrics(json.metrics || json.summary || null);
         if (json.availableMonths && json.availableMonths.length > 0) {
           setAvailableMonths(json.availableMonths);
+        }
+      } else {
+        if (res.status === 403 || json.error?.includes("Forbidden")) {
+          setAccessDenied(true);
         }
       }
     } catch (e) {
@@ -139,6 +150,30 @@ export default function AdminSalarySlipsFolderPage() {
   const currentIndex = availableMonths.indexOf(monthFilter);
   const canGoPrevious = currentIndex !== -1 && currentIndex < availableMonths.length - 1;
   const canGoNext = currentIndex > 0;
+
+  if (accessDenied) {
+    return (
+      <div className="max-w-xl mx-auto my-16 p-8 bg-white border border-rose-200 rounded-3xl shadow-lg text-center space-y-4 font-sans">
+        <div className="h-14 w-14 rounded-2xl bg-rose-50 text-rose-600 font-black text-2xl flex items-center justify-center mx-auto">
+          🚫
+        </div>
+        <h2 className="text-xl font-black text-slate-900 tracking-tight">
+          403 — Forbidden Access
+        </h2>
+        <p className="text-xs text-slate-600 leading-relaxed">
+          The Organization Salary Slips & Payroll Ledger is restricted strictly to authorized Executive, HR, and Finance personnel. Project Managers, Team Leaders, and general employees do not have authorization to view this section.
+        </p>
+        <div className="pt-2">
+          <Link
+            href="/"
+            className="inline-block bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl transition"
+          >
+            ← Return to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16 font-sans bg-white text-black">

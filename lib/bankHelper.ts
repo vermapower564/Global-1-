@@ -1,5 +1,5 @@
 /**
- * Bank Details & IFSC Validation and Masking Helper
+ * Bank Details, Aadhaar & Identity Document Masking Helper
  */
 
 export function maskAccountNumber(accountNumber?: string | null): string {
@@ -8,6 +8,33 @@ export function maskAccountNumber(accountNumber?: string | null): string {
   if (clean.length <= 4) return `••••${clean}`;
   const last4 = clean.slice(-4);
   return `••••••••${last4}`;
+}
+
+export function maskAadhaarNumber(aadhaarNumber?: string | null): string {
+  if (!aadhaarNumber) return "•••• •••• ••••";
+  const clean = aadhaarNumber.toString().trim().replace(/\s+/g, "");
+  if (clean.length <= 4) return `•••• •••• ${clean}`;
+  const last4 = clean.slice(-4);
+  return `•••• •••• ${last4}`;
+}
+
+export function maskPanNumber(panNumber?: string | null): string {
+  if (!panNumber) return "•••••••";
+  const clean = panNumber.toString().trim().toUpperCase();
+  if (clean.length <= 4) return `••••${clean}`;
+  const last4 = clean.slice(-4);
+  return `••••••${last4}`;
+}
+
+/**
+ * Checks if the requesting user role is authorized to view confidential documents (Bank Acc, Aadhaar, PAN)
+ * Team Leaders, Project Managers, and Developers CANNOT view confidential employee documents.
+ */
+export function canViewConfidentialDocuments(role?: string | null, isSelf: boolean = false): boolean {
+  if (isSelf) return true;
+  if (!role) return false;
+  const authorizedRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE"];
+  return authorizedRoles.includes(role);
 }
 
 export function validateIfsc(ifsc?: string | null): { isValid: boolean; error?: string } {
@@ -50,3 +77,4 @@ export function validateBankDetails(data: {
   }
   return validateIfsc(data.ifscCode);
 }
+

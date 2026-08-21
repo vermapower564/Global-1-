@@ -26,7 +26,7 @@ interface SidebarProps {
   onClose?: () => void;
 }
 
-const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
+const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR"];
 
 function getInitials(name: string): string {
   if (!name || !name.trim()) return "U";
@@ -75,82 +75,79 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       .catch(() => {});
   }, [pathname]);
 
-  // Team Leader Navigation Section
-  const teamLeaderSection = {
-    title: "TEAM LEADER COMMAND",
-    items: [
-      { name: "TL Dashboard", href: "/team-leader", icon: IconDashboard },
-      { name: "New Tasks (Admin)", href: "/team-leader/tasks", icon: IconClipboardList },
-      { name: "Team Capacity", href: "/team-leader/team", icon: IconUsers },
-      { name: "Assign Work", href: "/team-leader/assign-work", icon: IconFileEdit },
-      { name: "Team Progress", href: "/team-leader/progress", icon: IconHistory },
-      { name: "Work Reviews", href: "/team-leader/reviews", icon: IconUserCheck },
-    ],
-  };
+  const roleUpper = (user?.role || "").toUpperCase();
+  const isSuperAdmin = roleUpper === "SUPER_ADMIN" || roleUpper === "DIRECTOR" || roleUpper === "ADMIN_HR";
+  const isPM = roleUpper === "PROJECT_MANAGER";
+  const isTL = roleUpper === "TEAM_LEADER" || (isTeamLeader && !isPM && !isSuperAdmin);
 
-  // Admin Multi-Dashboard Navigation Sections
-  const adminSections = [
+  // 1. SUPER ADMIN (Section 16)
+  const superAdminSections = [
     {
-      title: "ADMIN COMMAND",
+      title: "SUPER ADMIN",
       items: [
-        { name: "Command Dashboard", href: ROUTES.ADMIN_DASHBOARD, icon: IconDashboard },
-        { name: "Today's Live Work", href: "/admin/today", icon: IconCalendar },
-        { name: "Workforce Directory", href: ROUTES.ADMIN_EMPLOYEES, icon: IconUsers },
-        { name: "Organization Tasks", href: ROUTES.ADMIN_TASKS, icon: IconClipboardList },
-        { name: "Project Health", href: ROUTES.ADMIN_PROJECTS, icon: IconFolder },
-        { name: "Blocker Resolution", href: ROUTES.ADMIN_BLOCKERS, icon: IconUserCheck },
-      ],
-    },
-    teamLeaderSection,
-    {
-      title: "OPERATIONS & RECORDS",
-      items: [
-        { name: "Salary Slips Folder", href: "/admin/salary-slips", icon: IconFolder },
-        { name: "History & Archives Folders", href: "/admin/history", icon: IconFolder },
-        { name: "Attendance Ledger", href: ROUTES.ADMIN_ATTENDANCE, icon: IconCalendar },
-        { name: "Daily Work Review", href: ROUTES.ADMIN_WORK, icon: IconFileEdit },
-        { name: "Client Reviews & NPS", href: ROUTES.ADMIN_REVIEWS, icon: IconStar },
-        { name: "Executive Reports", href: ROUTES.ADMIN_REPORTS, icon: IconFileText },
-        { name: "Security Audit Logs", href: ROUTES.ADMIN_AUDIT_LOGS, icon: IconHistory },
+        { name: "Dashboard", href: "/admin/dashboard", icon: IconDashboard },
+        { name: "Employees", href: "/admin/employees", icon: IconUsers },
+        { name: "Project Managers", href: "/admin/project-managers", icon: IconUserCheck },
+        { name: "Organisation", href: "/admin/organisation", icon: IconBuilding },
+        { name: "Profile", href: "/employee/profile", icon: IconSettings },
+        { name: "Settings", href: "/settings", icon: IconSettings },
       ],
     },
   ];
 
-  // Employee Multi-Dashboard Navigation Sections
+  // 2. PROJECT MANAGER (Section 16)
+  const projectManagerSections = [
+    {
+      title: "PROJECT MANAGER",
+      items: [
+        { name: "Dashboard", href: "/project-manager", icon: IconDashboard },
+        { name: "Projects", href: "/projects", icon: IconFolder },
+        { name: "Create Project", href: "/project-manager/create-project", icon: IconFileEdit },
+        { name: "Team Leaders", href: "/project-manager/team-leaders", icon: IconUsers },
+        { name: "Employee Performance", href: "/project-manager/performance", icon: IconStar },
+        { name: "Promotions", href: "/project-manager/promotions", icon: IconAward },
+        { name: "Project Reports", href: "/project-manager/reports", icon: IconFileText },
+        { name: "Profile", href: "/employee/profile", icon: IconSettings },
+      ],
+    },
+  ];
+
+  // 3. TEAM LEADER (Section 16)
+  const teamLeaderSections = [
+    {
+      title: "TEAM LEADER",
+      items: [
+        { name: "Dashboard", href: "/team-leader", icon: IconDashboard },
+        { name: "My Projects", href: "/employee/projects", icon: IconFolder },
+        { name: "My Team", href: "/team-leader/team", icon: IconUsers },
+        { name: "Assign Work", href: "/team-leader/assign-work", icon: IconFileEdit },
+        { name: "Workboard", href: "/team-leader/tasks", icon: IconClipboardList },
+        { name: "Daily Updates", href: "/team-leader/reviews", icon: IconUserCheck },
+        { name: "Team Performance", href: "/team-leader/progress", icon: IconHistory },
+        { name: "Profile", href: "/employee/profile", icon: IconSettings },
+      ],
+    },
+  ];
+
+  // 4. EMPLOYEE (Section 16)
   const employeeSections = [
-    ...(isTeamLeader ? [teamLeaderSection] : []),
     {
-      title: "WORKSPACE",
+      title: "EMPLOYEE",
       items: [
-        { name: "Dashboard", href: ROUTES.EMPLOYEE_DASHBOARD, icon: IconDashboard },
-        { name: "My Tasks", href: ROUTES.EMPLOYEE_TASKS, icon: IconClipboardList },
-        { name: "My Projects", href: ROUTES.EMPLOYEE_PROJECTS, icon: IconFolder },
-      ],
-    },
-    {
-      title: "TIME & WORK",
-      items: [
-        { name: "Punch Clock", href: ROUTES.EMPLOYEE_ATTENDANCE, icon: IconCalendar },
-        { name: "Daily EOD", href: ROUTES.EMPLOYEE_WORK, icon: IconFileEdit },
-      ],
-    },
-    {
-      title: "TEAM & INSIGHTS",
-      items: [
-        { name: "Client Reviews & Feedback", href: ROUTES.EMPLOYEE_REVIEWS, icon: IconStar },
-        { name: "Project Teammates", href: "/employee/team", icon: IconUsers },
-        { name: "My Performance", href: "/employee/reports", icon: IconFileText },
-      ],
-    },
-    {
-      title: "ACCOUNT",
-      items: [
-        { name: "Profile & Security", href: ROUTES.EMPLOYEE_PROFILE, icon: IconSettings },
+        { name: "Dashboard", href: "/employee/dashboard", icon: IconDashboard },
+        { name: "My Projects", href: "/employee/projects", icon: IconFolder },
+        { name: "My Tasks", href: "/employee/tasks", icon: IconClipboardList },
+        { name: "My Work", href: "/employee/work", icon: IconFileEdit },
+        { name: "Attendance", href: "/employee/attendance", icon: IconCalendar },
+        { name: "Profile", href: "/employee/profile", icon: IconSettings },
       ],
     },
   ];
 
-  const currentSections = isAdmin ? adminSections : employeeSections;
+  let currentSections = employeeSections;
+  if (isSuperAdmin) currentSections = superAdminSections;
+  else if (isPM) currentSections = projectManagerSections;
+  else if (isTL) currentSections = teamLeaderSections;
 
   if (!isOpen) return null;
 

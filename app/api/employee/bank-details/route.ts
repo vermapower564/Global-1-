@@ -53,3 +53,101 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+// PUT / POST: Logged in employee updates their own verified bank details
+export async function PUT(request: NextRequest) {
+  return handleUpdateOwnBankDetails(request);
+}
+
+export async function POST(request: NextRequest) {
+  return handleUpdateOwnBankDetails(request);
+}
+
+async function handleUpdateOwnBankDetails(request: NextRequest) {
+  try {
+    const authResult = await authenticateRequest(request);
+    if (!authResult.user) {
+      return authResult.response || NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userId = authResult.user.id;
+    const body = await request.json();
+    const {
+      accountHolderName,
+      bankName,
+      accountNumber,
+      ifscCode,
+      branchName = "Main Branch",
+      accountType = "Savings",
+    } = body;
+
+    const { validateBankDetails } = await import("@/lib/bankHelper");
+    const validation = validateBankDetails({ accountHolderName, bankName, accountNumber, ifscCode });
+    if (!validation.isValid) {
+      return NextResponse.json(
+        { success: false, error: validation.error || "Invalid banking details provided." },
+        { status: 400 }
+      );
+    }
+
+    const cleanAcc = accountNumber.trim().replace(/\s+/g, "");
+    const cleanIfsc = ifscCode.trim().toUpperCase();
+    const cleanHolder = accountHolderName.trim();
+    const cleanBank = bankName.trim();
+    const cleanBranch = branchName.trim();
+
+    const existingBank = await prisma.bankdetail.findUnique({
+      where: { userId },
+    });
+
+    let savedDetail;
+    if (existingBank) {
+      savedDetail = await prisma.bankdetail.update({
+        where: { userId },
+        data: {
+          accountHolderName: cleanHolder,
+          bankName: cleanBank,
+          accountNumber: cleanAcc,
+          ifscCode: cleanIfsc,
+          branchName: cleanBranch,
+          accountType,
+          isActive: true,
+        },
+      });
+    } else {
+      savedDetail = await prisma.bankdetail.create({
+        data: {
+          userId,
+          accountHolderName: cleanHolder,
+          bankName: cleanBank,
+          accountNumber: cleanAcc,
+          ifscCode: cleanIfsc,
+          branchName: cleanBranch,
+          accountType,
+          isActive: true,
+        },
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Your bank account details have been successfully saved!",
+      bankDetails: {
+        accountHolderName: savedDetail.accountHolderName,
+        bankName: savedDetail.bankName,
+        accountNumberMasked: maskAccountNumber(savedDetail.accountNumber),
+        ifscCode: savedDetail.ifscCode,
+        branchName: savedDetail.branchName,
+        accountType: savedDetail.accountType,
+        updatedAt: savedDetail.updatedAt,
+      },
+    });
+  } catch (error: any) {
+    console.error("Employee PUT Bank Details Error:", error);
+    return NextResponse.json(
+      { success: false, error: error.message || "Failed to save bank account details." },
+      { status: 500 }
+    );
+  }
+}
+

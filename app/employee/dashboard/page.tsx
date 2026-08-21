@@ -63,10 +63,10 @@ export default function EmployeePersonalDashboard() {
             Employee Workspace • Personal Command Center
           </span>
           <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight mt-1">
-            Good Morning, {employeeName} 👋
+            Welcome, {employeeName} 👋
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Here's your work overview for today ({employeeId}). Track pending work, consumed time, topic discussion notes, and 2-month target completion deadlines.
+            Here's your work overview for today. Track pending work, consumed time, topic discussion notes, and 2-month target completion deadlines.
           </p>
         </div>
         <div className="flex items-center gap-3">

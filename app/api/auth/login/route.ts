@@ -97,10 +97,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 7. Automatic Server-Side Role Detection
+    // 7. Automatic Server-Side Role Detection & Exact Role Page Redirection
     const userRole = (dbUser.role || "").toUpperCase();
-    const isAdmin = ADMIN_ROLES.includes(userRole);
-    const redirectTo = isAdmin ? "/admin" : "/employee";
+    const privilegedAdminRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR", "ADMIN"];
+    const isAdmin = privilegedAdminRoles.includes(userRole);
+    let redirectTo = "/employee/dashboard";
+
+    if (isAdmin) {
+      redirectTo = "/admin/dashboard";
+    } else if (userRole === "PROJECT_MANAGER") {
+      redirectTo = "/project-manager";
+    } else if (userRole === "TEAM_LEADER") {
+      redirectTo = "/team-leader";
+    } else {
+      // Check if user is a designated Team Leader for projects in TiDB
+      const tlCheck = await queryDb<any[]>(
+        `SELECT id FROM project WHERE teamLeaderId = ? LIMIT 1`,
+        [dbUser.id]
+      );
+      if (tlCheck && tlCheck.length > 0) {
+        redirectTo = "/team-leader";
+      } else {
+        redirectTo = "/employee/dashboard";
+      }
+    }
 
     // 8. Construct Safe Authenticated User Object (Never expose password hash)
     const authenticatedUser = {

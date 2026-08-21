@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequest } from "@/lib/authMiddleware";
 import { queryDb } from "@/lib/db";
 import { getEmployeeAvatarUrl } from "@/lib/avatarHelper";
+import { maskAccountNumber } from "@/lib/bankHelper";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,48 @@ export async function GET(
 
     const user = userRows[0];
     const userId = user.id;
+
+    const requesterRole = (authResult.user?.role || "").toUpperCase();
+    const viewerId = authResult.user?.id;
+    const isSelf = Boolean(viewerId && viewerId === user.id);
+    const isPrivilegedAdmin = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR"].includes(requesterRole);
+
+    // Non-admin Employees and Leaders can ONLY view self or members of shared projects
+    if (!isPrivilegedAdmin && !isSelf) {
+      // Check if target is Super Admin (strictly invisible to employees)
+      if (user.role === "SUPER_ADMIN") {
+        return NextResponse.json(
+          { success: false, error: "Forbidden: Unauthorized access to executive profile." },
+          { status: 403 }
+        );
+      }
+
+      // Check shared project connection
+      const sharedProjects = await queryDb<any[]>(
+        `SELECT A.projectId FROM (
+           SELECT A as projectId FROM _assignedstaffprojects WHERE B = ? 
+           UNION 
+           SELECT projectId FROM task WHERE assignedToUserId = ?
+           UNION
+           SELECT id as projectId FROM project WHERE teamLeaderId = ?
+         ) A
+         INNER JOIN (
+           SELECT A as projectId FROM _assignedstaffprojects WHERE B = ? 
+           UNION 
+           SELECT projectId FROM task WHERE assignedToUserId = ?
+           UNION
+           SELECT id as projectId FROM project WHERE teamLeaderId = ?
+         ) B ON A.projectId = B.projectId`,
+        [viewerId, viewerId, viewerId, user.id, user.id, user.id]
+      );
+
+      if (!sharedProjects || sharedProjects.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "Forbidden: You are not authorized to view employee records outside your assigned projects." },
+          { status: 403 }
+        );
+      }
+    }
 
     // 3. Concurrently fetch all historical archives from TiDB Cloud
     const [
@@ -225,12 +268,25 @@ export async function GET(
         inProgress: inProgressTasks,
         pending: pendingTasks,
         blocked: blockedTasks,
-        overdue: overdueTasks,
         completionRate: taskCompletionRate,
       },
     };
 
+    // Confidentiality check: Only Self or SUPER_ADMIN / DIRECTOR / HR / FINANCE can see financial/banking documents
+    const canSeeConfidential = isSelf || isPrivilegedAdmin;
+
+    // Team Leader & General non-finance roles see NULL bank details (Strict Privacy)
+    const rawBank = bankRows.length > 0 ? bankRows[0] : null;
+    let safeBankDetail: any = null;
+    if (rawBank && canSeeConfidential) {
+      safeBankDetail = {
+        ...rawBank,
+        accountNumberMasked: maskAccountNumber(rawBank.accountNumber),
+      };
+    }
+
     const employeeObj = {
+      // Basic Information
       id: user.id,
       employeeId: user.employeeId,
       name: user.name,
@@ -243,14 +299,30 @@ export async function GET(
       isActive: user.isActive,
       isResigned: user.isResigned,
       avatarUrl,
-      emergencyContact: user.emergencyContact || "+91 98765 11111 (Family)",
-      salary: user.salary || 45000,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
       department: user.dept_name ? { id: user.dept_id, name: user.dept_name, code: user.dept_code } : null,
       manager: user.manager_name ? { name: user.manager_name, employeeId: user.manager_employeeId } : null,
-      bankDetail: bankRows.length > 0 ? bankRows[0] : null,
-      attendance: attendanceRows,
+
+      // Confidential / Restricted Fields (Hidden for Team Leaders)
+      emergencyContact: canSeeConfidential ? (user.emergencyContact || "+91 98765 11111 (Family)") : null,
+      salary: canSeeConfidential ? (user.salary || 45000) : null,
+      bankDetail: safeBankDetail,
+      salarySlips: canSeeConfidential ? salaryRows : [],
+      auditlog: canSeeConfidential ? auditRows : [],
+      isConfidentialMasked: !canSeeConfidential,
+      isTeamLeaderView: !canSeeConfidential,
+
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+
+      // Work Details (Visible to Team Leaders & Admins for project tracking)
+      attendance: attendanceRows.map((a) => ({
+        id: a.id,
+        date: a.date,
+        status: a.status,
+        checkInTime: a.checkInTime,
+        checkOutTime: a.checkOutTime,
+        hoursWorked: a.hoursWorked,
+      })),
       assignedTasks: taskRows.map((t) => ({
         ...t,
         project: t.project_title ? { projectTitle: t.project_title } : null,
@@ -260,8 +332,6 @@ export async function GET(
         project: w.project_title ? { projectTitle: w.project_title } : null,
       })),
       leaverequest: leaveRows,
-      auditlog: auditRows,
-      salarySlips: salaryRows,
       project: projectRows,
       customerReviews: reviewRows.map((r) => ({
         ...r,
@@ -282,3 +352,218 @@ export async function GET(
     );
   }
 }
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ employeeId: string }> }
+) {
+  return handleUpdateEmployee(request, params);
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ employeeId: string }> }
+) {
+  return handleUpdateEmployee(request, params);
+}
+
+async function handleUpdateEmployee(
+  request: NextRequest,
+  paramsPromise: Promise<{ employeeId: string }>
+) {
+  try {
+    // 1. Check Admin Authorization
+    const authResult = await authenticateRequest(request);
+    const adminRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
+    if (authResult.user && !adminRoles.includes(authResult.user.role)) {
+      return NextResponse.json(
+        { success: false, error: "Forbidden: Admin authorization required to edit employee details." },
+        { status: 403 }
+      );
+    }
+
+    const { employeeId } = await paramsPromise;
+    if (!employeeId) {
+      return NextResponse.json({ success: false, error: "Employee ID is required." }, { status: 400 });
+    }
+
+    const cleanId = decodeURIComponent(employeeId).trim();
+
+    // 2. Fetch existing user
+    const existingUsers = await queryDb<any[]>(
+      `SELECT * FROM user WHERE employeeId = ? OR id = ? OR LOWER(email) = LOWER(?) LIMIT 1`,
+      [cleanId, cleanId, cleanId]
+    );
+
+    if (!existingUsers || existingUsers.length === 0) {
+      return NextResponse.json({ success: false, error: "Employee not found." }, { status: 404 });
+    }
+
+    const user = existingUsers[0];
+    const userId = user.id;
+
+    const body = await request.json();
+    const {
+      name,
+      email,
+      phone,
+      role,
+      departmentId,
+      salary,
+      isActive,
+      joiningDate,
+      emergencyContact,
+      avatarUrl,
+      bankDetail,
+    } = body;
+
+    // 3. Prepare User Table Updates
+    const updateFields: string[] = [];
+    const updateValues: any[] = [];
+
+    if (name !== undefined) {
+      updateFields.push("name = ?");
+      updateValues.push(name.trim());
+    }
+    if (email !== undefined) {
+      updateFields.push("email = ?");
+      updateValues.push(email.trim().toLowerCase());
+    }
+    if (phone !== undefined) {
+      updateFields.push("phone = ?");
+      updateValues.push(phone.trim());
+    }
+    if (role !== undefined) {
+      if (role === "SUPER_ADMIN") {
+        if (authResult.user?.role !== "SUPER_ADMIN") {
+          return NextResponse.json(
+            { success: false, error: "Forbidden: Only the Super Admin can promote users to Super Admin." },
+            { status: 403 }
+          );
+        }
+        const existingSuperAdmins = await queryDb<any[]>(
+          `SELECT id FROM user WHERE role = 'SUPER_ADMIN' AND id != ? LIMIT 1`,
+          [userId]
+        );
+        if (existingSuperAdmins && existingSuperAdmins.length > 0) {
+          return NextResponse.json(
+            { success: false, error: "Validation Error: A Super Admin already exists in this organisation. Only one Super Admin is permitted." },
+            { status: 400 }
+          );
+        }
+      }
+      updateFields.push("role = ?");
+      updateValues.push(role);
+    }
+    if (departmentId !== undefined) {
+      updateFields.push("departmentId = ?");
+      updateValues.push(departmentId || null);
+    }
+    if (salary !== undefined) {
+      updateFields.push("salary = ?");
+      updateValues.push(Number(salary) || 0);
+    }
+    if (isActive !== undefined) {
+      updateFields.push("isActive = ?");
+      updateValues.push(Boolean(isActive) ? 1 : 0);
+    }
+    if (joiningDate !== undefined) {
+      updateFields.push("joiningDate = ?");
+      updateValues.push(new Date(joiningDate));
+    }
+    if (emergencyContact !== undefined) {
+      updateFields.push("emergencyContact = ?");
+      updateValues.push(emergencyContact.trim());
+    }
+    if (avatarUrl !== undefined) {
+      updateFields.push("avatarUrl = ?");
+      updateValues.push(avatarUrl);
+    }
+
+    if (updateFields.length > 0) {
+      updateFields.push("updatedAt = NOW()");
+      updateValues.push(userId);
+      await queryDb(`UPDATE user SET ${updateFields.join(", ")} WHERE id = ?`, updateValues);
+    }
+
+    // 4. Update or Insert Bank Detail if provided
+    if (bankDetail && typeof bankDetail === "object") {
+      const {
+        accountHolderName,
+        bankName,
+        accountNumber,
+        ifscCode,
+        branchName,
+        accountType = "Savings",
+      } = bankDetail;
+
+      if (accountHolderName && accountNumber && ifscCode) {
+        const existingBank = await queryDb<any[]>(
+          `SELECT id FROM bankdetail WHERE userId = ? LIMIT 1`,
+          [userId]
+        );
+
+        if (existingBank && existingBank.length > 0) {
+          await queryDb(
+            `UPDATE bankdetail 
+             SET accountHolderName = ?, bankName = ?, accountNumber = ?, ifscCode = ?, branchName = ?, accountType = ?, updatedAt = NOW()
+             WHERE userId = ?`,
+            [
+              accountHolderName.trim(),
+              bankName?.trim() || "State Bank of India",
+              accountNumber.trim(),
+              ifscCode.trim().toUpperCase(),
+              branchName?.trim() || null,
+              accountType || "Savings",
+              userId,
+            ]
+          );
+        } else {
+          const bankId = `bank_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+          await queryDb(
+            `INSERT INTO bankdetail (id, userId, accountHolderName, bankName, accountNumber, ifscCode, branchName, accountType, isActive, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())`,
+            [
+              bankId,
+              userId,
+              accountHolderName.trim(),
+              bankName?.trim() || "State Bank of India",
+              accountNumber.trim(),
+              ifscCode.trim().toUpperCase(),
+              branchName?.trim() || null,
+              accountType || "Savings",
+            ]
+          );
+        }
+      }
+    }
+
+    // 5. Record Audit Log
+    try {
+      const auditId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      await queryDb(
+        `INSERT INTO auditlog (id, userId, action, details, timestamp)
+         VALUES (?, ?, 'EMPLOYEE_PROFILE_UPDATED', ?, NOW())`,
+        [
+          auditId,
+          authResult.user?.id || userId,
+          `Admin updated profile & details for employee ${user.name} (${user.employeeId}).`,
+        ]
+      );
+    } catch (auditErr) {
+      console.warn("Audit log insert note:", auditErr);
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Employee ${name || user.name} details successfully updated!`,
+    });
+  } catch (error: any) {
+    console.error("API error updating employee profile:", error);
+    return NextResponse.json(
+      { success: false, error: error.message || "Failed to update employee details." },
+      { status: 500 }
+    );
+  }
+}
+

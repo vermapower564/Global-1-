@@ -311,6 +311,7 @@ model pdfdocument {
 model project {
   id                      String                   @id @default(cuid())
   clientId                String?
+  projectCode             String?
   projectTitle            String
   description             String?                  @db.Text
   clientCompany           String
@@ -319,8 +320,15 @@ model project {
   clientPhone             String
   startDate               DateTime
   endDate                 DateTime
-  contractValue           Float
-  status                  String                   @default("IN_PROGRESS")
+  contractValue           Float                    @default(0)
+  status                  String                   @default("ACTIVE")
+  priority                String                   @default("MEDIUM")
+  projectType             String?                  @default("WEB_APPLICATION")
+  requiredSkills          String?                  @db.Text
+  requiredRoles           String?                  @db.Text
+  techStack               String?                  @db.Text
+  expectedTeamSize        Int                      @default(5)
+  projectManagerId        String?
   teamLeaderId            String?
   createdAt               DateTime                 @default(now())
   client                  client?                  @relation(fields: [clientId], references: [id], map: "Project_clientId_fkey")
@@ -332,6 +340,24 @@ model project {
 
   @@index([clientId], map: "Project_clientId_fkey")
   @@index([teamLeaderId], map: "Project_teamLeaderId_fkey")
+}
+
+model promotionrecord {
+  id               String   @id @default(cuid())
+  employeeId       String
+  userId           String
+  employeeName     String
+  previousRole     String
+  newRole          String
+  performanceScore Float
+  reason           String   @db.Text
+  promotedById     String
+  promotedByName   String
+  comments         String?  @db.Text
+  createdAt        DateTime @default(now())
+
+  @@index([userId])
+  @@index([employeeId])
 }
 
 model resignation {
@@ -417,6 +443,8 @@ model user {
   emergencyContact   String?
   isProfileCompleted Boolean            @default(false)
   salary             Float              @default(0)
+  skills             String?            @db.Text
+  experienceYears    Float              @default(2.0)
   attendance         attendance[]
   auditlog           auditlog[]
   dailyworkupdate    dailyworkupdate[]

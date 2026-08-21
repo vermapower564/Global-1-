@@ -68,13 +68,13 @@ function LoginForm() {
           assignedProjectTitle: "OMS Enterprise System",
         });
 
-        // Determine destination dashboard
+        // Determine destination dashboard based on authenticated role
         const destination =
           redirectTarget && redirectTarget.startsWith("/")
             ? redirectTarget.startsWith("/admin") && !isAdmin
-              ? "/employee"
+              ? (data.redirectTo || "/employee/dashboard")
               : redirectTarget
-            : data.redirectTo || (isAdmin ? "/admin" : "/employee");
+            : (data.redirectTo || (isAdmin ? "/admin/dashboard" : "/employee/dashboard"));
 
         setTimeout(() => {
           window.location.href = destination;
@@ -180,44 +180,8 @@ function LoginForm() {
           </button>
         </form>
 
-        {/* ⚡ Quick Fill / 1-Click Demo Logins */}
-        <div className="pt-4 border-t border-gray-100 space-y-2">
-          <p className="text-[11px] font-extrabold uppercase tracking-wider text-gray-500 text-center">
-            Quick 1-Click Fill
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setIdentity("EMP-8595");
-                setPassword("Roushan@123");
-              }}
-              className="p-2.5 rounded-xl border border-blue-200 bg-blue-50/50 hover:bg-blue-100/60 text-left transition cursor-pointer group"
-            >
-              <span className="text-[11px] font-black text-blue-900 block flex items-center gap-1">
-                👑 Super Admin
-              </span>
-              <span className="text-[10px] text-gray-500 font-mono block">EMP-8595</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setIdentity("EMP014");
-                setPassword("Roushan@123");
-              }}
-              className="p-2.5 rounded-xl border border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/60 text-left transition cursor-pointer group"
-            >
-              <span className="text-[11px] font-black text-emerald-900 block flex items-center gap-1">
-                👤 Employee
-              </span>
-              <span className="text-[10px] text-gray-500 font-mono block">EMP014</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="pt-2 text-center text-[10px] text-gray-400 font-medium">
-          Default Password: <span className="font-mono font-bold text-gray-600">Roushan@123</span>
+        <div className="pt-2 text-center text-xs text-gray-500 font-medium">
+          Protected by Enterprise 2FA & Role-Based Access Control
         </div>
       </div>
     </div>

@@ -31,7 +31,10 @@ export const ROUTES = {
 } as const;
 
 export function getHomeRouteForRole(role?: string | null): string {
-  if (!role) return ROUTES.LOGIN;
-  const adminRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"];
-  return adminRoles.includes(role.toUpperCase()) ? ROUTES.ADMIN_HOME : ROUTES.EMPLOYEE_HOME;
+  if (!role) return "/login";
+  const upperRole = role.toUpperCase();
+  if (["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR"].includes(upperRole)) return "/admin/dashboard";
+  if (upperRole === "PROJECT_MANAGER") return "/project-manager";
+  if (upperRole === "TEAM_LEADER") return "/team-leader";
+  return "/employee/dashboard";
 }

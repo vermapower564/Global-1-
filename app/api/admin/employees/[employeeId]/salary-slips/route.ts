@@ -32,14 +32,13 @@ export async function GET(
 
     const user = userRows[0];
 
-    // Authorization check: Admin or employee accessing their own records
-    const adminRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
-    const isSelf = authResult.user?.id === user.id;
-    const isAdmin = authResult.user && adminRoles.includes(authResult.user.role);
+    // Authorization check: Privileged roles (HR/Finance/Super Admin) only
+    const privilegedRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR"];
+    const isPrivileged = authResult.user && privilegedRoles.includes(authResult.user.role);
 
-    if (!isSelf && !isAdmin) {
+    if (!isPrivileged) {
       return NextResponse.json(
-        { success: false, error: "Forbidden: Unauthorized access to salary records." },
+        { success: false, error: "Forbidden: Unauthorized access to salary records. HR/Finance/Executive access required." },
         { status: 403 }
       );
     }

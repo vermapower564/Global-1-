@@ -10,9 +10,20 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
+    const authResult = await authenticateRequest(request);
+    if (authResult.response || !authResult.user) {
+      return (
+        authResult.response ||
+        NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 })
+      );
+    }
+    const authUser = authResult.user;
+    const roleUpper = (authUser.role || "").toUpperCase();
+    const isFullAdmin = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR"].includes(roleUpper);
+
     const now = new Date();
 
-    // 1. Fetch Users, Departments, Bank Details & Reviews directly from TiDB Cloud (with 15s in-memory cache)
+    // 1. Fetch Users, Departments, Bank Details & Reviews directly from TiDB Cloud
     const users: any[] = await queryDbCached(
       `SELECT u.*, d.name AS departmentName, d.code AS departmentCode,
               b.accountHolderName, b.bankName, b.accountNumber, b.ifscCode, b.branchName, b.accountType
@@ -29,7 +40,83 @@ export async function GET(request: Request) {
     const allReviews: any[] = await queryDbCached("SELECT * FROM customerreview ORDER BY createdAt DESC", [], 15);
 
     if (users && users.length > 0) {
-      const enrichedUsers = users.map((u) => {
+      // 3. Compute Project-Level Shared Teammates for non-admins
+      let allowedUserIds = new Set<string>();
+
+      if (isFullAdmin) {
+        // Full Admin sees all
+        allowedUserIds = new Set(users.map((u) => u.id));
+      } else if (roleUpper === "PROJECT_MANAGER") {
+        // PM sees employees in their projects + self
+        allowedUserIds.add(authUser.id);
+        const pmProjects: any[] = await queryDb<any[]>(
+          `SELECT id FROM project WHERE teamLeaderId = ? OR id IN (SELECT projectId FROM task WHERE assignedToUserId = ?)`,
+          [authUser.id, authUser.id]
+        );
+        const pIds = (pmProjects || []).map((p) => p.id).filter(Boolean);
+        if (pIds.length > 0) {
+          const placeholders = pIds.map(() => "?").join(",");
+          const members: any[] = await queryDb<any[]>(
+            `SELECT B as userId FROM _assignedstaffprojects WHERE A IN (${placeholders}) 
+             UNION 
+             SELECT assignedToUserId as userId FROM task WHERE projectId IN (${placeholders})`,
+            [...pIds, ...pIds]
+          );
+          (members || []).forEach((m) => m.userId && allowedUserIds.add(m.userId));
+        }
+      } else if (roleUpper === "TEAM_LEADER") {
+        // TL sees employees in their led projects + self
+        allowedUserIds.add(authUser.id);
+        const tlProjects: any[] = await queryDb<any[]>(
+          `SELECT id FROM project WHERE teamLeaderId = ?`,
+          [authUser.id]
+        );
+        const pIds = (tlProjects || []).map((p) => p.id).filter(Boolean);
+        if (pIds.length > 0) {
+          const placeholders = pIds.map(() => "?").join(",");
+          const members: any[] = await queryDb<any[]>(
+            `SELECT B as userId FROM _assignedstaffprojects WHERE A IN (${placeholders}) 
+             UNION 
+             SELECT assignedToUserId as userId FROM task WHERE projectId IN (${placeholders})`,
+            [...pIds, ...pIds]
+          );
+          (members || []).forEach((m) => m.userId && allowedUserIds.add(m.userId));
+        }
+      } else {
+        // General Employee sees ONLY teammates within SHARED projects + their designated Team Leader
+        allowedUserIds.add(authUser.id);
+        const myProjects: any[] = await queryDb<any[]>(
+          `SELECT A as projectId FROM _assignedstaffprojects WHERE B = ? 
+           UNION 
+           SELECT projectId FROM task WHERE assignedToUserId = ?`,
+          [authUser.id, authUser.id]
+        );
+        const pIds = (myProjects || []).map((p) => p.projectId).filter(Boolean);
+        if (pIds.length > 0) {
+          const placeholders = pIds.map(() => "?").join(",");
+          const sharedTeammates: any[] = await queryDb<any[]>(
+            `SELECT B as userId FROM _assignedstaffprojects WHERE A IN (${placeholders}) 
+             UNION 
+             SELECT teamLeaderId as userId FROM project WHERE id IN (${placeholders}) 
+             UNION 
+             SELECT assignedToUserId as userId FROM task WHERE projectId IN (${placeholders})`,
+            [...pIds, ...pIds, ...pIds]
+          );
+          (sharedTeammates || []).forEach((t) => {
+            if (t.userId) allowedUserIds.add(t.userId);
+          });
+        }
+      }
+
+      // Filter and enrich
+      const filteredUsers = users.filter((u) => {
+        if (!allowedUserIds.has(u.id)) return false;
+        // Non-admins must NEVER see Super Admin in general workforce lists
+        if (!isFullAdmin && u.role === "SUPER_ADMIN" && u.id !== authUser.id) return false;
+        return true;
+      });
+
+      const enrichedUsers = filteredUsers.map((u) => {
         const tasks = allTasks.filter((t) => t.assignedToUserId === u.id);
         const reviews = allReviews.filter((r) => r.userId === u.id || r.employeeId === u.employeeId);
 
@@ -53,12 +140,19 @@ export async function GET(request: Request) {
         const currentProjectTitle = "OMS Enterprise Portal";
         const avatarUrl = getEmployeeAvatarUrl(u);
 
+        // Redact confidential bank/salary information for non-admins (or non-self)
+        const canViewPrivateDetails = isFullAdmin || u.id === authUser.id;
+
         return {
           ...u,
+          password: undefined,
+          salary: canViewPrivateDetails ? u.salary : null,
+          phone: canViewPrivateDetails || roleUpper === "TEAM_LEADER" ? u.phone : null,
+          emergencyContact: canViewPrivateDetails ? u.emergencyContact : null,
           avatarUrl,
           currentProjectTitle,
           department: u.departmentName ? { name: u.departmentName, code: u.departmentCode } : null,
-          bankDetail: u.bankName ? {
+          bankDetail: canViewPrivateDetails && u.bankName ? {
             accountHolderName: u.accountHolderName,
             accountNumberMasked: u.accountNumber && u.accountNumber.length > 4 
               ? `•••• •••• ${u.accountNumber.slice(-4)}` 
@@ -130,6 +224,20 @@ export async function POST(request: Request) {
       );
     }
 
+    // 🔒 SINGLE SUPER ADMIN RULE: Never allow creation of a second Super Admin
+    const requestedRole = (role || "DEVELOPER").toUpperCase();
+    if (requestedRole === "SUPER_ADMIN") {
+      const existingSuperAdmins = await queryDb<any[]>(
+        `SELECT id FROM user WHERE role = 'SUPER_ADMIN' LIMIT 1`
+      );
+      if (existingSuperAdmins && existingSuperAdmins.length > 0) {
+        return NextResponse.json(
+          { success: false, error: "Validation Error: A Super Admin already exists in this organisation. Only one Super Admin is permitted." },
+          { status: 400 }
+        );
+      }
+    }
+
     // Strict Gmail Validation & Normalization
     const emailValidation = validateAndNormalizeGmail(email);
     if (!emailValidation.isValid) {
@@ -172,7 +280,7 @@ export async function POST(request: Request) {
           normalizedEmail,
           hashedPassword,
           phone || "+91 98765 00000",
-          role || "DEVELOPER",
+          requestedRole,
           Number(salary) || 0,
           isActive !== false ? 1 : 0,
         ]

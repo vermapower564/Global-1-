@@ -43,9 +43,21 @@ export async function GET(
     const isTeamLeader = t.project_teamLeaderId === authUser.id;
     const isAssignee = t.assignedToUserId === authUser.id;
 
-    // Authorization check: Admin, Team Leader of this project, or the assigned employee can view
-    if (!isAdmin && !isTeamLeader && !isAssignee) {
-      return NextResponse.json({ success: false, error: "Forbidden: You do not have permission to view this task." }, { status: 403 });
+    // Authorization check: Admin, Team Leader, task assignee, or shared project members can view
+    let isProjectMember = false;
+    if (t.projectId) {
+      const memberRows = await queryDb<any[]>(
+        `SELECT B FROM _assignedstaffprojects WHERE A = ? AND B = ? LIMIT 1`,
+        [t.projectId, authUser.id]
+      );
+      isProjectMember = memberRows && memberRows.length > 0;
+    }
+
+    if (!isAdmin && !isTeamLeader && !isAssignee && !isProjectMember) {
+      return NextResponse.json(
+        { success: false, error: "Forbidden: You do not have permission to view tasks outside your assigned projects." },
+        { status: 403 }
+      );
     }
 
     // Fetch Task History

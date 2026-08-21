@@ -191,6 +191,62 @@ export async function GET(request: NextRequest) {
       pendingReviewsCount: reviewTasks.length,
     };
 
+    // 7. Fetch Recent Daily Work Updates from team members
+    let recentWorkUpdates: any[] = [];
+    if (ledProjectIds.length > 0) {
+      recentWorkUpdates = await queryDb<any[]>(
+        `SELECT dw.*, u.name AS user_name, u.employeeId AS user_employeeId, u.role AS user_role, p.projectTitle AS project_title
+         FROM dailyworkupdate dw
+         JOIN user u ON dw.userId = u.id
+         LEFT JOIN project p ON dw.projectId = p.id
+         WHERE dw.projectId IN (${ledProjectIds.map(() => "?").join(",")})
+         ORDER BY dw.submittedAt DESC LIMIT 20`,
+        ledProjectIds
+      );
+    }
+
+    // 8. Fetch Today's Attendance for led team members
+    const todayDateStr = new Date().toISOString().split("T")[0];
+    let attendanceRows: any[] = [];
+    const memberUserIds = Object.keys(uniqueMemberMap);
+    if (memberUserIds.length > 0) {
+      attendanceRows = await queryDb<any[]>(
+        `SELECT a.*, u.employeeId
+         FROM attendance a
+         JOIN user u ON a.userId = u.id
+         WHERE a.userId IN (${memberUserIds.map(() => "?").join(",")})
+           AND DATE(a.date) = DATE(?)`,
+        [...memberUserIds, todayDateStr]
+      );
+    }
+
+    const attendanceMap: Record<string, any> = {};
+    attendanceRows.forEach((a) => {
+      attendanceMap[a.userId] = a;
+    });
+
+    const enrichedTeamMembers = teamMembers.map((m: any) => {
+      const att = attendanceMap[m.id];
+      return {
+        ...m,
+        todayAttendance: att
+          ? {
+              status: att.status,
+              checkIn: att.checkInTime ? new Date(att.checkInTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : null,
+              checkOut: att.checkOutTime ? new Date(att.checkOutTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : null,
+              hoursWorked: att.hoursWorked || 0,
+              isActiveShift: !att.checkOutTime,
+            }
+          : {
+              status: "NOT_CHECKED_IN",
+              checkIn: null,
+              checkOut: null,
+              hoursWorked: 0,
+              isActiveShift: false,
+            },
+      };
+    });
+
     return NextResponse.json({
       success: true,
       isTeamLeader: true,
@@ -202,7 +258,6 @@ export async function GET(request: NextRequest) {
         clientCompany: p.clientCompany,
         startDate: p.startDate,
         endDate: p.endDate,
-        contractValue: p.contractValue,
         status: p.status,
         teamLeader: {
           id: p.teamLeaderId,
@@ -226,7 +281,7 @@ export async function GET(request: NextRequest) {
         estimatedHours: t.estimatedHours,
         assignedBy: t.creator_name ? `${t.creator_name} (${t.creator_employeeId})` : "System Admin",
       })),
-      teamMembers,
+      teamMembers: enrichedTeamMembers,
       reviewTasks: reviewTasks.map((t) => ({
         id: t.id,
         title: t.title,
@@ -246,6 +301,18 @@ export async function GET(request: NextRequest) {
         progress: t.progress || 0,
         reviewNotes: t.reviewNotes,
         updatedAt: t.updatedAt,
+      })),
+      dailyWorkUpdates: (recentWorkUpdates || []).map((dw) => ({
+        id: dw.id,
+        userName: dw.user_name,
+        employeeId: dw.user_employeeId,
+        userRole: dw.user_role,
+        projectTitle: dw.project_title,
+        taskDescription: dw.taskDescription || dw.workDone || "Daily work completed",
+        hoursWorked: dw.hoursWorked || 0,
+        blockers: dw.blockers,
+        status: dw.status,
+        date: dw.date || dw.createdAt,
       })),
       teamProgress: allSubtasks.map((t) => ({
         id: t.id,

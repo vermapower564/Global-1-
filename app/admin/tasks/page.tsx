@@ -42,6 +42,7 @@ export default function AdminTasksPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
   const [viewMode, setViewMode] = useState<"BOARD" | "TABLE">("TABLE");
+  const [isOrgTasksOpen, setIsOrgTasksOpen] = useState(false);
 
   // Create Task Modal States
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -422,222 +423,248 @@ export default function AdminTasksPage() {
         </div>
       </div>
 
-      {/* 4. Tasks View: Table or Visual Board */}
-      {loading ? (
-        <div className="p-16 text-center text-gray-400 font-bold text-xs bg-white rounded-3xl border border-gray-200">
-          Loading task records from TiDB Cloud...
-        </div>
-      ) : viewMode === "BOARD" ? (
-        /* VISUAL BOARD VIEW */
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-          {kanbanColumns.map((col) => {
-            const colTasks = tasks.filter(col.filterFn);
+      {/* 4. Organization Tasks Collapsible Accordion (CLOSED by default) */}
+      <div className="bg-white rounded-3xl border border-gray-200 shadow-xs overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setIsOrgTasksOpen(!isOrgTasksOpen)}
+          className="w-full p-5 sm:p-6 bg-slate-50/80 hover:bg-slate-100/80 transition flex items-center justify-between cursor-pointer border-b border-gray-100 text-left"
+          aria-expanded={isOrgTasksOpen}
+        >
+          <div className="flex items-center gap-3">
+            <span className="h-8 w-8 rounded-xl bg-blue-600 text-white font-black text-sm flex items-center justify-center shadow-xs shrink-0">
+              {isOrgTasksOpen ? "−" : "+"}
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-black text-black tracking-tight">
+                  Organization Tasks
+                </h3>
+                <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                  {isOrgTasksOpen ? "[ - ] OPEN" : "[ + ] CLOSED"}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 font-medium mt-0.5">
+                {isOrgTasksOpen ? "Click to collapse task list" : "Click to expand and view organization tasks"} ({tasks.length} tasks recorded)
+              </p>
+            </div>
+          </div>
 
-            return (
-              <div
-                key={col.key}
-                className="bg-gray-50/70 p-4 rounded-3xl border border-gray-200 flex flex-col space-y-3"
-              >
-                <div className={`p-3 rounded-2xl border text-xs font-black flex justify-between items-center ${col.color}`}>
-                  <span className="text-sm font-black">{col.title}</span>
-                  <span className="bg-white px-2.5 py-1 rounded-xl text-xs font-black shadow-xs">
-                    {colTasks.length}
-                  </span>
-                </div>
+          <div className="flex items-center gap-2">
+            <span className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-white border border-gray-200 text-blue-700 shadow-2xs">
+              {isOrgTasksOpen ? "Collapse List ▲" : "View All Tasks [ + ] ▼"}
+            </span>
+          </div>
+        </button>
 
-                <div className="space-y-3 flex-1">
-                  {colTasks.map((t) => (
+        {isOrgTasksOpen && (
+          <div className="p-5 sm:p-6 space-y-6">
+            {loading ? (
+              <div className="p-16 text-center text-gray-400 font-bold text-xs bg-white rounded-3xl border border-gray-200">
+                Loading task records from TiDB Cloud...
+              </div>
+            ) : viewMode === "BOARD" ? (
+              /* VISUAL BOARD VIEW */
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+                {kanbanColumns.map((col) => {
+                  const colTasks = tasks.filter(col.filterFn);
+
+                  return (
                     <div
-                      key={t.id}
-                      onClick={() => setSelectedTask(t)}
-                      className="bg-white p-5 rounded-2xl border border-gray-200 shadow-xs hover:shadow-md hover:border-blue-500 cursor-pointer space-y-3 transition"
+                      key={col.key}
+                      className="bg-gray-50/70 p-4 rounded-3xl border border-gray-200 flex flex-col space-y-3"
                     >
-                      <div className="flex justify-between items-center">
-                        <span
-                          className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
-                            t.priority === "CRITICAL"
-                              ? "bg-rose-100 text-rose-800"
-                              : t.priority === "HIGH"
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-blue-100 text-blue-800"
-                          }`}
-                        >
-                          {t.priority}
-                        </span>
-
-                        <span className="text-[11px] font-mono text-gray-500 font-bold">
-                          Due: {t.dueDate ? new Date(t.dueDate).toLocaleDateString("en-IN", { month: "short", day: "numeric" }) : "Soon"}
+                      <div className={`p-3 rounded-2xl border text-xs font-black flex justify-between items-center ${col.color}`}>
+                        <span className="text-sm font-black">{col.title}</span>
+                        <span className="bg-white px-2.5 py-1 rounded-xl text-xs font-black shadow-xs">
+                          {colTasks.length}
                         </span>
                       </div>
 
-                      <h4 className="text-sm font-black text-black leading-snug">
-                        {t.title}
-                      </h4>
-
-                      <div className="flex items-center gap-2 pt-1">
-                        <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-[9px]">
-                          {(t.assignedToUser?.name || "U")[0]}
-                        </div>
-                        <span className="text-xs font-bold text-gray-700">
-                          {t.assignedToUser?.name || "Unassigned"}
-                        </span>
-                      </div>
-
-                      <div className="space-y-1.5 pt-1">
-                        <div className="flex justify-between text-[11px] font-bold text-gray-500">
-                          <span>Progress</span>
-                          <span className="text-blue-600 font-black font-mono">{t.progress}%</span>
-                        </div>
-                        <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                      <div className="space-y-3 flex-1">
+                        {colTasks.map((t) => (
                           <div
-                            className={`h-full rounded-full ${t.progress === 100 ? "bg-emerald-500" : "bg-blue-600"}`}
-                            style={{ width: `${t.progress}%` }}
-                          ></div>
-                        </div>
+                            key={t.id}
+                            onClick={() => setSelectedTask(t)}
+                            className="bg-white p-5 rounded-2xl border border-gray-200 shadow-xs hover:shadow-md hover:border-blue-500 cursor-pointer space-y-3 transition"
+                          >
+                            <div className="flex justify-between items-center">
+                              <span
+                                className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                                  t.priority === "CRITICAL"
+                                    ? "bg-rose-100 text-rose-800"
+                                    : t.priority === "HIGH"
+                                    ? "bg-amber-100 text-amber-800"
+                                    : "bg-blue-100 text-blue-800"
+                                }`}
+                              >
+                                {t.priority}
+                              </span>
+
+                              <span className="text-[11px] font-mono text-gray-500 font-bold">
+                                Due: {t.dueDate ? new Date(t.dueDate).toLocaleDateString("en-IN", { month: "short", day: "numeric" }) : "Soon"}
+                              </span>
+                            </div>
+
+                            <h4 className="text-sm font-black text-black leading-snug">
+                              {t.title}
+                            </h4>
+
+                            <div className="flex items-center gap-2 pt-1">
+                              <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-[9px]">
+                                {(t.assignedToUser?.name || "U")[0]}
+                              </div>
+                              <span className="text-xs font-bold text-gray-700">
+                                {t.assignedToUser?.name || "Unassigned"}
+                              </span>
+                            </div>
+
+                            <div className="space-y-1.5 pt-1">
+                              <div className="flex justify-between text-[11px] font-bold text-gray-500">
+                                <span>Progress</span>
+                                <span className="text-blue-600 font-black font-mono">{t.progress}%</span>
+                              </div>
+                              <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${t.progress === 100 ? "bg-emerald-500" : "bg-blue-600"}`}
+                                  style={{ width: `${t.progress}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+
+                        {colTasks.length === 0 && (
+                          <div className="p-8 text-center text-gray-400 text-xs italic border border-dashed border-gray-200 rounded-2xl bg-white">
+                            No tasks in this column
+                          </div>
+                        )}
                       </div>
                     </div>
-                  ))}
+                  );
+                })}
+              </div>
+            ) : (
+              /* SIMPLE TABLE VIEW */
+              <div className="bg-white rounded-3xl border border-gray-200 shadow-md overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200 text-black font-bold uppercase text-[10px]">
+                        <th className="py-4 px-5">Task Details</th>
+                        <th className="py-4 px-5">Assigned Employee</th>
+                        <th className="py-4 px-5">Project</th>
+                        <th className="py-4 px-5">Priority</th>
+                        <th className="py-4 px-5">Due Date</th>
+                        <th className="py-4 px-5">Progress</th>
+                        <th className="py-4 px-5">Status</th>
+                        <th className="py-4 px-5 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 font-medium">
+                      {tasks.map((task) => (
+                        <tr
+                          key={task.id}
+                          onClick={() => setSelectedTask(task)}
+                          className="hover:bg-blue-50/40 transition cursor-pointer"
+                        >
+                          <td className="py-4 px-5">
+                            <p className="font-extrabold text-black text-sm">{task.title}</p>
+                            <p className="text-gray-500 text-xs truncate max-w-xs">{task.description || "No description."}</p>
+                          </td>
 
-                  {colTasks.length === 0 && (
-                    <div className="p-8 text-center text-gray-400 text-xs italic border border-dashed border-gray-200 rounded-2xl bg-white">
-                      No tasks in this column
-                    </div>
-                  )}
+                          <td className="py-4 px-5">
+                            {task.assignedToUser ? (
+                              <div className="flex items-center gap-2">
+                                <div className="h-6 w-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
+                                  {task.assignedToUser.name[0]}
+                                </div>
+                                <span className="font-bold text-black">{task.assignedToUser.name}</span>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 italic font-medium">Unassigned</span>
+                            )}
+                          </td>
+
+                          <td className="py-4 px-5 font-bold text-gray-700">
+                            {task.project?.projectTitle || "—"}
+                          </td>
+
+                          <td className="py-4 px-5">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
+                                task.priority === "CRITICAL"
+                                  ? "bg-rose-100 text-rose-800"
+                                  : task.priority === "HIGH"
+                                  ? "bg-amber-100 text-amber-800"
+                                  : "bg-blue-100 text-blue-800"
+                              }`}
+                            >
+                              {task.priority}
+                            </span>
+                          </td>
+
+                          <td className="py-4 px-5 font-mono font-bold text-gray-600">
+                            {task.dueDate ? new Date(task.dueDate).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" }) : "—"}
+                          </td>
+
+                          <td className="py-4 px-5">
+                            <div className="flex items-center gap-2">
+                              <div className="h-2 w-16 bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${task.progress === 100 ? "bg-emerald-500" : "bg-blue-600"}`}
+                                  style={{ width: `${task.progress}%` }}
+                                ></div>
+                              </div>
+                              <span className="font-mono font-black text-black">{task.progress}%</span>
+                            </div>
+                          </td>
+
+                          <td className="py-4 px-5">
+                            <span
+                              className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${
+                                task.status === "COMPLETED"
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : task.status === "IN_PROGRESS"
+                                  ? "bg-amber-100 text-amber-800"
+                                  : task.status === "BLOCKED"
+                                  ? "bg-rose-100 text-rose-800"
+                                  : "bg-blue-100 text-blue-800"
+                              }`}
+                            >
+                              {task.status}
+                            </span>
+                          </td>
+
+                          <td className="py-4 px-5 text-right">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedTask(task);
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-gray-100 hover:bg-blue-50 text-blue-600 font-black text-xs transition border border-gray-200"
+                            >
+                              Inspect ↗
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+
+                      {tasks.length === 0 && (
+                        <tr>
+                          <td colSpan={8} className="py-12 text-center text-gray-400 italic">
+                            No tasks found for the selected date and filters.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      ) : (
-        /* SIMPLE TABLE VIEW */
-        <div className="bg-white rounded-3xl border border-gray-200 shadow-md overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200 text-black font-bold uppercase text-[10px]">
-                  <th className="py-4 px-5">Task Details</th>
-                  <th className="py-4 px-5">Assigned Employee</th>
-                  <th className="py-4 px-5">Project</th>
-                  <th className="py-4 px-5">Priority</th>
-                  <th className="py-4 px-5">Due Date</th>
-                  <th className="py-4 px-5">Progress</th>
-                  <th className="py-4 px-5">Status</th>
-                  <th className="py-4 px-5 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {tasks.map((task) => (
-                  <tr
-                    key={task.id}
-                    onClick={() => setSelectedTask(task)}
-                    className="hover:bg-blue-50/40 transition cursor-pointer text-black"
-                  >
-                    <td className="py-4 px-5 max-w-xs">
-                      <div className="font-extrabold text-sm text-black">{task.title}</div>
-                      {task.description && (
-                        <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{task.description}</p>
-                      )}
-                    </td>
-
-                    <td className="py-4 px-5">
-                      <Link
-                        href={`/admin/employees/${encodeURIComponent(task.assignedToUser?.employeeId || task.assignedToUser?.id || "EMP001")}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-2 group hover:bg-blue-50/80 p-1.5 rounded-xl transition border border-transparent hover:border-blue-200 inline-flex cursor-pointer"
-                        title={`View ${task.assignedToUser?.name || "Employee"} Profile`}
-                      >
-                        <div className="w-7 h-7 rounded-xl bg-blue-600 group-hover:bg-blue-700 text-white flex items-center justify-center font-black text-xs shadow-xs">
-                          {(task.assignedToUser?.name || "U")[0]}
-                        </div>
-                        <div>
-                          <p className="font-black text-xs text-black group-hover:text-blue-600 group-hover:underline transition">
-                            {task.assignedToUser?.name || "Unassigned"}
-                          </p>
-                          <p className="text-[10px] text-blue-600 font-mono font-bold">
-                            {task.assignedToUser?.employeeId || "—"}
-                          </p>
-                        </div>
-                      </Link>
-                    </td>
-
-                    <td className="py-4 px-5 font-medium text-gray-700 max-w-[140px] truncate">
-                      {task.project?.projectTitle || "OMS Enterprise"}
-                    </td>
-
-                    <td className="py-4 px-5">
-                      <span
-                        className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
-                          task.priority === "CRITICAL"
-                            ? "bg-rose-100 text-rose-800"
-                            : task.priority === "HIGH"
-                            ? "bg-amber-100 text-amber-800"
-                            : "bg-blue-100 text-blue-800"
-                        }`}
-                      >
-                        {task.priority}
-                      </span>
-                    </td>
-
-                    <td className="py-4 px-5 font-mono text-gray-600 font-bold">
-                      {task.dueDate ? new Date(task.dueDate).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" }) : "—"}
-                    </td>
-
-                    <td className="py-4 px-5">
-                      <div className="w-24 space-y-1">
-                        <div className="flex justify-between text-[10px] font-bold text-gray-500">
-                          <span>{task.progress}%</span>
-                        </div>
-                        <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${task.progress === 100 ? "bg-emerald-500" : "bg-blue-600"}`}
-                            style={{ width: `${task.progress}%` }}
-                          ></div>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td className="py-4 px-5">
-                      <span
-                        className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${
-                          task.status === "COMPLETED"
-                            ? "bg-emerald-100 text-emerald-800"
-                            : task.status === "IN_PROGRESS"
-                            ? "bg-amber-100 text-amber-800"
-                            : task.status === "BLOCKED"
-                            ? "bg-rose-100 text-rose-800"
-                            : "bg-blue-100 text-blue-800"
-                        }`}
-                      >
-                        {task.status}
-                      </span>
-                    </td>
-
-                    <td className="py-4 px-5 text-right">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedTask(task);
-                        }}
-                        className="px-3 py-1.5 rounded-xl bg-gray-100 hover:bg-blue-50 text-blue-600 font-black text-xs transition border border-gray-200"
-                      >
-                        Inspect ↗
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-
-                {tasks.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="py-12 text-center text-gray-400 italic">
-                      No tasks found for the selected date and filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* 5. Create Task Modal */}
       {isCreateModalOpen && (
@@ -681,14 +708,30 @@ export default function AdminTasksPage() {
               </div>
 
               <div>
-                <label className="block font-bold text-black mb-1">Assign to Employee *</label>
+                <label className="block font-bold text-black mb-1">Project (Optional / Recommended)</label>
+                <select
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2 font-bold text-black focus:border-blue-600 focus:outline-none cursor-pointer"
+                >
+                  <option value="">-- No Project / General Task --</option>
+                  {projects.map((proj) => (
+                    <option key={proj.id} value={proj.id}>
+                      {proj.projectTitle}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-black mb-1">Assign to Project Manager / Employee *</label>
                 <select
                   required
                   value={assignedToUserId}
                   onChange={(e) => setAssignedToUserId(e.target.value)}
                   className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2 font-bold text-black focus:border-blue-600 focus:outline-none cursor-pointer"
                 >
-                  <option value="">-- Choose Employee --</option>
+                  <option value="">-- Choose Project Manager / Employee --</option>
                   {employees.map((emp) => (
                     <option key={emp.id} value={emp.id}>
                       {emp.name} ({emp.employeeId}) — {emp.role}

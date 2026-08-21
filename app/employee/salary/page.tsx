@@ -12,15 +12,23 @@ export default function EmployeeSalaryPage() {
   const [selectedSlip, setSelectedSlip] = useState<any | null>(null);
   const [showSlipModal, setShowSlipModal] = useState(false);
 
+  const [accessDenied, setAccessDenied] = useState(false);
+
   useEffect(() => {
     // 1. Fetch authenticated session
     fetch("/api/auth/me")
       .then((res) => res.json())
       .then(async (json) => {
+        const privileged = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR"];
         if (json.authenticated && json.user) {
+          if (!privileged.includes(json.user.role)) {
+            setAccessDenied(true);
+            setLoading(false);
+            return;
+          }
           setCurrentUser(json.user);
 
-          // 2. Fetch salary slips for current logged-in employee
+          // 2. Fetch salary slips
           const resSlips = await fetch(
             `/api/admin/employees/${encodeURIComponent(json.user.employeeId || json.user.id)}/salary-slips`
           );
@@ -29,6 +37,8 @@ export default function EmployeeSalaryPage() {
             setSalarySlips(dataSlips.slips || dataSlips.data || []);
             setSummary(dataSlips.summary || dataSlips.metrics || null);
           }
+        } else {
+          setAccessDenied(true);
         }
       })
       .catch(console.error)
@@ -40,6 +50,30 @@ export default function EmployeeSalaryPage() {
       <div className="p-8 space-y-4 max-w-6xl mx-auto font-sans">
         <div className="h-8 w-48 bg-slate-200 rounded-xl animate-pulse"></div>
         <div className="h-40 bg-slate-100 rounded-3xl animate-pulse"></div>
+      </div>
+    );
+  }
+
+  if (accessDenied) {
+    return (
+      <div className="max-w-xl mx-auto my-16 p-8 bg-white border border-rose-200 rounded-3xl shadow-lg text-center space-y-4 font-sans">
+        <div className="h-14 w-14 rounded-2xl bg-rose-50 text-rose-600 font-black text-2xl flex items-center justify-center mx-auto">
+          🚫
+        </div>
+        <h2 className="text-xl font-black text-slate-900 tracking-tight">
+          403 — Access Forbidden
+        </h2>
+        <p className="text-xs text-slate-600 leading-relaxed">
+          Salary slips and compensation ledgers are restricted from general employee, team leader, and project manager access. Contact HR or Finance administration for payroll inquiries.
+        </p>
+        <div className="pt-2">
+          <Link
+            href="/employee/dashboard"
+            className="inline-block bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl transition"
+          >
+            ← Return to Dashboard
+          </Link>
+        </div>
       </div>
     );
   }

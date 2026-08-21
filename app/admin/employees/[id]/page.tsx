@@ -67,6 +67,136 @@ export default function AdminEmployeeDetailsPage() {
   const [isSavingBank, setIsSavingBank] = useState(false);
   const [bankError, setBankError] = useState("");
 
+  // Full Profile & Master Details Edit Modal State
+  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [editTab, setEditTab] = useState<"PERSONAL" | "COMPANY" | "BANK">("PERSONAL");
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editRole, setEditRole] = useState("DEVELOPER");
+  const [editDepartmentId, setEditDepartmentId] = useState("");
+  const [editSalary, setEditSalary] = useState("45000");
+  const [editJoiningDate, setEditJoiningDate] = useState("");
+  const [editEmergencyContact, setEditEmergencyContact] = useState("");
+  const [editAvatarUrl, setEditAvatarUrl] = useState("");
+  const [editIsActive, setEditIsActive] = useState(true);
+  const [editBankHolder, setEditBankHolder] = useState("");
+  const [editBankName, setEditBankName] = useState("State Bank of India");
+  const [editBankAccNo, setEditBankAccNo] = useState("");
+  const [editBankIfsc, setEditBankIfsc] = useState("");
+  const [editBankBranch, setEditBankBranch] = useState("");
+  const [editBankType, setEditBankType] = useState("Savings");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [editProfileError, setEditProfileError] = useState("");
+  const [departmentsList, setDepartmentsList] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch("/api/departments")
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.success && json.data) {
+          setDepartmentsList(json.data);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const openEditProfileModal = () => {
+    if (!employee) return;
+    setEditName(employee.name || "");
+    setEditEmail(employee.email || "");
+    setEditPhone(employee.phone || "");
+    setEditRole(employee.role || "DEVELOPER");
+    setEditDepartmentId(employee.departmentId || employee.department?.id || "");
+    setEditSalary(employee.salary?.toString() || "45000");
+    setEditJoiningDate(
+      employee.joiningDate
+        ? new Date(employee.joiningDate).toISOString().split("T")[0]
+        : new Date().toISOString().split("T")[0]
+    );
+    setEditEmergencyContact(employee.emergencyContact || "");
+    setEditAvatarUrl(employee.avatarUrl || "");
+    setEditIsActive(employee.isActive !== false);
+
+    const bd = employee.bankDetail;
+    if (bd) {
+      setEditBankHolder(bd.accountHolderName || employee.name || "");
+      setEditBankName(bd.bankName || "State Bank of India");
+      setEditBankAccNo(bd.accountNumber || "");
+      setEditBankIfsc(bd.ifscCode || "");
+      setEditBankBranch(bd.branchName || "Main Branch");
+      setEditBankType(bd.accountType || "Savings");
+    } else {
+      setEditBankHolder(employee.name || "");
+      setEditBankName("State Bank of India");
+      setEditBankAccNo("");
+      setEditBankIfsc("");
+      setEditBankBranch("Main Branch");
+      setEditBankType("Savings");
+    }
+
+    setEditTab("PERSONAL");
+    setEditProfileError("");
+    setShowEditProfileModal(true);
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEditProfileError("");
+
+    if (!editName.trim()) {
+      setEditProfileError("Employee full name is required.");
+      return;
+    }
+    if (!editEmail.trim()) {
+      setEditProfileError("Work email is required.");
+      return;
+    }
+
+    try {
+      setIsSavingProfile(true);
+      const res = await fetch(`/api/admin/employees/${encodeURIComponent(employeeIdParam)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editName.trim(),
+          email: editEmail.trim(),
+          phone: editPhone.trim(),
+          role: editRole,
+          departmentId: editDepartmentId || null,
+          salary: Number(editSalary) || 0,
+          isActive: editIsActive,
+          joiningDate: editJoiningDate,
+          emergencyContact: editEmergencyContact.trim(),
+          avatarUrl: editAvatarUrl.trim() || null,
+          bankDetail: editBankAccNo
+            ? {
+                accountHolderName: editBankHolder.trim() || editName.trim(),
+                bankName: editBankName,
+                accountNumber: editBankAccNo.trim(),
+                ifscCode: editBankIfsc.trim().toUpperCase(),
+                branchName: editBankBranch.trim(),
+                accountType: editBankType,
+              }
+            : undefined,
+        }),
+      });
+
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setToastMsg(`✓ Profile & details for ${editName} updated successfully!`);
+        setShowEditProfileModal(false);
+        fetchEmployeeData();
+      } else {
+        setEditProfileError(json.error || "Failed to update employee details.");
+      }
+    } catch (err: any) {
+      setEditProfileError("Network error while updating employee profile.");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
   const fetchEmployeeData = async () => {
     try {
       setLoading(true);
@@ -513,63 +643,89 @@ export default function AdminEmployeeDetailsPage() {
 
           {/* Quick Actions */}
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setShowRecordPaymentModal(true)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
-            >
-              <span>💳</span>
-              <span>+ Record Payment</span>
-            </button>
+            {!employee.isTeamLeaderView && (
+              <>
+                <button
+                  onClick={openEditProfileModal}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+                  title="Edit Employee Profile, Role, Salary & Master Details"
+                >
+                  <span>✏️</span>
+                  <span>Edit Profile & Details</span>
+                </button>
+                <button
+                  onClick={() => setShowRecordPaymentModal(true)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>💳</span>
+                  <span>+ Record Payment</span>
+                </button>
+              </>
+            )}
             <button
               onClick={() => setShowAddTaskModal(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition cursor-pointer"
+              className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
             >
-              + Assign Task
+              <span>📋</span>
+              <span>+ Assign Task / Section Work</span>
             </button>
-            <button
-              onClick={handleTakeAccess}
-              className="bg-slate-100 hover:bg-slate-200 text-black font-extrabold text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 transition cursor-pointer"
-            >
-              🔑 Take Access
-            </button>
-            <button
-              onClick={handleToggleStatus}
-              className={`px-3.5 py-2.5 rounded-xl font-extrabold text-xs transition cursor-pointer ${
-                employee.isActive !== false
-                  ? "bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white border border-rose-200"
-                  : "bg-emerald-600 text-white hover:bg-emerald-700"
-              }`}
-            >
-              {employee.isActive !== false ? "Deactivate Account" : "Reactivate Account"}
-            </button>
+            {!employee.isTeamLeaderView && (
+              <>
+                <button
+                  onClick={handleTakeAccess}
+                  className="bg-slate-100 hover:bg-slate-200 text-black font-extrabold text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 transition cursor-pointer"
+                >
+                  🔑 Take Access
+                </button>
+                <button
+                  onClick={handleToggleStatus}
+                  className={`px-3.5 py-2.5 rounded-xl font-extrabold text-xs transition cursor-pointer ${
+                    employee.isActive !== false
+                      ? "bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white border border-rose-200"
+                      : "bg-emerald-600 text-white hover:bg-emerald-700"
+                  }`}
+                >
+                  {employee.isActive !== false ? "Deactivate Account" : "Reactivate Account"}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* 🏦 BANK DETAILS & SALARY ACCOUNT SECTION                                  */}
+      {/* 🏦 BANK DETAILS & SALARY ACCOUNT SECTION (ADMIN / HR / FINANCE ONLY)       */}
       {/* ========================================================================= */}
-      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-md space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
-          <div>
-            <h2 className="text-xl font-black text-black tracking-tight flex items-center gap-2">
-              <span>🏦</span> Bank Details & Salary Account Information
-            </h2>
-            <p className="text-xs text-slate-600 mt-0.5">
+      {!employee.isTeamLeaderView && employee.bankDetail && (
+        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-md space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+            <div>
+              <h2 className="text-xl font-black text-black tracking-tight flex items-center gap-2">
+                <span>🏦</span> Bank Details & Salary Account Information
+              </h2>
+              <p className="text-xs text-slate-600 mt-0.5">
               Verified banking details utilized for monthly automated salary disbursements and PDF payslip generation.
             </p>
           </div>
 
-          <button
-            onClick={() => setShowEditBankModal(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5 w-fit"
-          >
-            <span>✏️</span>
-            <span>Edit Bank Details</span>
-          </button>
+          {!employee.isConfidentialMasked && (
+            <button
+              onClick={() => setShowEditBankModal(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5 w-fit"
+            >
+              <span>✏️</span>
+              <span>Edit Bank Details</span>
+            </button>
+          )}
+          {employee.isConfidentialMasked && (
+            <span className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5">
+              <span>🔒</span>
+              <span>Confidential Financial Data (Masked)</span>
+            </span>
+          )}
         </div>
 
-        {/* Bank Details Grid Card (White theme, black text, light gray borders) */}
+        {/* Bank Details Grid Card */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
             <span className="text-slate-500 font-extrabold uppercase text-[10px] tracking-wider block">
@@ -598,22 +754,28 @@ export default function AdminEmployeeDetailsPage() {
               <span className="text-slate-500 font-extrabold uppercase text-[10px] tracking-wider block">
                 Account Number
               </span>
-              <button
-                type="button"
-                onClick={() => setShowFullAccountNo(!showFullAccountNo)}
-                className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
-              >
-                {showFullAccountNo ? "Hide" : "Show Full"}
-              </button>
+              {!employee.isConfidentialMasked && (
+                <button
+                  type="button"
+                  onClick={() => setShowFullAccountNo(!showFullAccountNo)}
+                  className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
+                >
+                  {showFullAccountNo ? "Hide" : "Show Full"}
+                </button>
+              )}
             </div>
             <p className="text-sm font-black text-black font-mono">
-              {showFullAccountNo
+              {employee.isConfidentialMasked
+                ? employee.bankDetail?.accountNumberMasked || (employee.bankDetail?.accountNumber ? `••••••••${employee.bankDetail.accountNumber.slice(-4)}` : "••••••••••••")
+                : showFullAccountNo
                 ? employee.bankDetail?.accountNumber || "••••••••1234"
                 : employee.bankDetail?.accountNumber
                 ? `••••••••${employee.bankDetail.accountNumber.slice(-4)}`
                 : "••••••••1234"}
             </p>
-            <span className="text-[10px] text-slate-500 font-bold block">Protected Financial Credential</span>
+            <span className="text-[10px] text-slate-500 font-bold block">
+              {employee.isConfidentialMasked ? "🔒 Masked for Employee Privacy" : "Protected Financial Credential"}
+            </span>
           </div>
 
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
@@ -648,20 +810,22 @@ export default function AdminEmployeeDetailsPage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* ========================================================================= */}
-      {/* 💳 1. SALARY & PAYMENTS SECTION (MONTHLY PAYMENT SLIP SYSTEM)           */}
+      {/* 💳 1. SALARY & PAYMENTS SECTION (ADMIN / HR / FINANCE ONLY)               */}
       {/* ========================================================================= */}
-      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-md space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
-          <div>
-            <h2 className="text-xl font-black text-black tracking-tight flex items-center gap-2">
-              <span>💳</span> Salary & Monthly Payment Slips
-            </h2>
-            <p className="text-xs text-slate-600 mt-0.5">
-              Comprehensive payroll history, earnings/deductions breakdown, and printable monthly salary slips.
-            </p>
-          </div>
+      {!employee.isTeamLeaderView && (
+        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-md space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+            <div>
+              <h2 className="text-xl font-black text-black tracking-tight flex items-center gap-2">
+                <span>💳</span> Salary & Monthly Payment Slips
+              </h2>
+              <p className="text-xs text-slate-600 mt-0.5">
+                Comprehensive payroll history, earnings/deductions breakdown, and printable monthly salary slips.
+              </p>
+            </div>
 
           <div className="flex items-center gap-3">
             {/* Payment Schedule Config Dropdown */}
@@ -878,6 +1042,7 @@ export default function AdminEmployeeDetailsPage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* ========================================================================= */}
       {/* 2. BASIC INFORMATION & ATTENDANCE SECTIONS                                */}
@@ -1574,6 +1739,363 @@ export default function AdminEmployeeDetailsPage() {
                 >
                   {isSavingBank ? "Saving..." : "✓ Save Bank Details"}
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* ✏️ EDIT EMPLOYEE PROFILE & MASTER DETAILS MODAL                           */}
+      {/* ========================================================================= */}
+      {showEditProfileModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 font-sans overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowEditProfileModal(false);
+          }}
+        >
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl border border-slate-200 space-y-6 text-black my-8 animate-in fade-in duration-200">
+            {/* Modal Header */}
+            <div className="flex justify-between items-start border-b border-slate-100 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="p-2 rounded-xl bg-indigo-50 text-indigo-700 text-lg">✏️</span>
+                  <div>
+                    <h3 className="font-black text-lg text-black">
+                      Edit Employee Profile & Details
+                    </h3>
+                    <p className="text-xs text-slate-500 font-mono">
+                      {employee?.employeeId} • {employee?.name}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowEditProfileModal(false)}
+                className="h-8 w-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-sm flex items-center justify-center transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Error Notification */}
+            {editProfileError && (
+              <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2">
+                <span>⚠️</span>
+                <span>{editProfileError}</span>
+              </div>
+            )}
+
+            {/* Navigation Tabs */}
+            <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+              <button
+                type="button"
+                onClick={() => setEditTab("PERSONAL")}
+                className={`px-4 py-2 rounded-xl font-black text-xs transition cursor-pointer flex items-center gap-1.5 ${
+                  editTab === "PERSONAL"
+                    ? "bg-indigo-600 text-white shadow-xs"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+              >
+                <span>👤</span>
+                <span>Personal & Contact</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditTab("COMPANY")}
+                className={`px-4 py-2 rounded-xl font-black text-xs transition cursor-pointer flex items-center gap-1.5 ${
+                  editTab === "COMPANY"
+                    ? "bg-indigo-600 text-white shadow-xs"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+              >
+                <span>🏢</span>
+                <span>Company & Role</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditTab("BANK")}
+                className={`px-4 py-2 rounded-xl font-black text-xs transition cursor-pointer flex items-center gap-1.5 ${
+                  editTab === "BANK"
+                    ? "bg-indigo-600 text-white shadow-xs"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+              >
+                <span>💳</span>
+                <span>Bank & Payout</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProfile} className="space-y-4 text-xs">
+              {/* TAB 1: PERSONAL & CONTACT */}
+              {editTab === "PERSONAL" && (
+                <div className="space-y-4 animate-in fade-in duration-150">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-bold text-black mb-1">Full Legal Name *</label>
+                      <input
+                        type="text"
+                        required
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        placeholder="e.g. Roushan Verma"
+                        className="w-full rounded-xl border border-slate-300 p-2.5 font-bold text-black focus:border-indigo-600 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-black mb-1">Work Email Address *</label>
+                      <input
+                        type="email"
+                        required
+                        value={editEmail}
+                        onChange={(e) => setEditEmail(e.target.value)}
+                        placeholder="e.g. roushan@global1.com"
+                        className="w-full rounded-xl border border-slate-300 p-2.5 font-bold text-black focus:border-indigo-600 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-bold text-black mb-1">Verified Mobile Number *</label>
+                      <input
+                        type="tel"
+                        value={editPhone}
+                        onChange={(e) => setEditPhone(e.target.value)}
+                        placeholder="e.g. +91 98765 43210"
+                        className="w-full rounded-xl border border-slate-300 p-2.5 font-mono font-bold text-black focus:border-indigo-600 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-black mb-1">Emergency Contact Info</label>
+                      <input
+                        type="text"
+                        value={editEmergencyContact}
+                        onChange={(e) => setEditEmergencyContact(e.target.value)}
+                        placeholder="e.g. +91 98765 11111 (Family)"
+                        className="w-full rounded-xl border border-slate-300 p-2.5 font-bold text-black focus:border-indigo-600 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-black mb-1">Profile Photo URL (Optional)</label>
+                    <input
+                      type="url"
+                      value={editAvatarUrl}
+                      onChange={(e) => setEditAvatarUrl(e.target.value)}
+                      placeholder="e.g. https://images.unsplash.com/photo-..."
+                      className="w-full rounded-xl border border-slate-300 p-2.5 font-mono text-black focus:border-indigo-600 focus:outline-none"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Leave empty to automatically use smart color-coded initials.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: COMPANY & ROLE */}
+              {editTab === "COMPANY" && (
+                <div className="space-y-4 animate-in fade-in duration-150">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-bold text-black mb-1">Designation / Role *</label>
+                      <select
+                        value={editRole}
+                        onChange={(e) => setEditRole(e.target.value)}
+                        className="w-full rounded-xl border border-slate-300 p-2.5 font-bold text-black focus:border-indigo-600 focus:outline-none"
+                      >
+                        <option value="DEVELOPER">Developer / Software Engineer</option>
+                        <option value="TEAM_LEADER">Team Leader / Module Lead</option>
+                        <option value="PROJECT_MANAGER">Project Manager</option>
+                        <option value="UI_UX_DESIGNER">UI/UX Designer</option>
+                        <option value="GRAPHIC_DESIGNER">Graphic Designer</option>
+                        <option value="VIDEO_EDITOR">Video Editor</option>
+                        <option value="CAMERA_TEAM">Camera & Media Specialist</option>
+                        <option value="HR">HR Specialist / Recruiter</option>
+                        <option value="FINANCE">Finance & Accounts Executive</option>
+                        <option value="SALES_MANAGER">Sales Manager</option>
+                        <option value="SALES_EXECUTIVE">Sales Executive</option>
+                        <option value="DIGITAL_MARKETING_MANAGER">Growth & Marketing Lead</option>
+                        <option value="SEO_EXECUTIVE">SEO Executive</option>
+                        <option value="CONTENT_WRITER">Content Writer</option>
+                        <option value="INTERN">Engineering / HR Intern</option>
+                        <option value="DIRECTOR">Director</option>
+                        {employee?.role === "SUPER_ADMIN" && (
+                          <option value="SUPER_ADMIN">Super Administrator</option>
+                        )}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-black mb-1">Department</label>
+                      <select
+                        value={editDepartmentId}
+                        onChange={(e) => setEditDepartmentId(e.target.value)}
+                        className="w-full rounded-xl border border-slate-300 p-2.5 font-bold text-black focus:border-indigo-600 focus:outline-none"
+                      >
+                        <option value="">Select Department</option>
+                        {departmentsList.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name} ({d.code})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block font-bold text-black mb-1">Monthly Base Salary (₹) *</label>
+                      <input
+                        type="number"
+                        required
+                        value={editSalary}
+                        onChange={(e) => setEditSalary(e.target.value)}
+                        placeholder="e.g. 45000"
+                        className="w-full rounded-xl border border-slate-300 p-2.5 font-mono font-bold text-black focus:border-indigo-600 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-black mb-1">Date of Joining</label>
+                      <input
+                        type="date"
+                        value={editJoiningDate}
+                        onChange={(e) => setEditJoiningDate(e.target.value)}
+                        className="w-full rounded-xl border border-slate-300 p-2.5 font-bold text-black focus:border-indigo-600 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-black mb-1">Employment Status *</label>
+                      <select
+                        value={editIsActive ? "ACTIVE" : "INACTIVE"}
+                        onChange={(e) => setEditIsActive(e.target.value === "ACTIVE")}
+                        className="w-full rounded-xl border border-slate-300 p-2.5 font-bold text-black focus:border-indigo-600 focus:outline-none"
+                      >
+                        <option value="ACTIVE">🟢 Active Employee</option>
+                        <option value="INACTIVE">🔴 Inactive / Suspended</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: BANK & PAYOUT */}
+              {editTab === "BANK" && (
+                <div className="space-y-4 animate-in fade-in duration-150">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-bold text-black mb-1">Account Holder Name</label>
+                      <input
+                        type="text"
+                        value={editBankHolder}
+                        onChange={(e) => setEditBankHolder(e.target.value)}
+                        placeholder="e.g. Roushan Verma"
+                        className="w-full rounded-xl border border-slate-300 p-2.5 font-bold text-black focus:border-indigo-600 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-black mb-1">Bank Name</label>
+                      <select
+                        value={editBankName}
+                        onChange={(e) => setEditBankName(e.target.value)}
+                        className="w-full rounded-xl border border-slate-300 p-2.5 font-bold text-black focus:border-indigo-600 focus:outline-none"
+                      >
+                        <option value="State Bank of India">State Bank of India</option>
+                        <option value="HDFC Bank">HDFC Bank</option>
+                        <option value="ICICI Bank">ICICI Bank</option>
+                        <option value="Axis Bank">Axis Bank</option>
+                        <option value="Kotak Mahindra Bank">Kotak Mahindra Bank</option>
+                        <option value="Punjab National Bank">Punjab National Bank</option>
+                        <option value="Bank of Baroda">Bank of Baroda</option>
+                        <option value="Other">Other Bank</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-bold text-black mb-1">Account Number</label>
+                      <input
+                        type="text"
+                        value={editBankAccNo}
+                        onChange={(e) => setEditBankAccNo(e.target.value.replace(/\D/g, ""))}
+                        placeholder="e.g. 50100432198765"
+                        className="w-full rounded-xl border border-slate-300 p-2.5 font-mono font-bold text-black focus:border-indigo-600 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-black mb-1">IFSC Code</label>
+                      <input
+                        type="text"
+                        maxLength={11}
+                        value={editBankIfsc}
+                        onChange={(e) => setEditBankIfsc(e.target.value.toUpperCase())}
+                        placeholder="e.g. SBIN0001001"
+                        className="w-full rounded-xl border border-slate-300 p-2.5 font-mono font-bold uppercase text-black focus:border-indigo-600 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-bold text-black mb-1">Branch Name</label>
+                      <input
+                        type="text"
+                        value={editBankBranch}
+                        onChange={(e) => setEditBankBranch(e.target.value)}
+                        placeholder="e.g. Cyber City Branch"
+                        className="w-full rounded-xl border border-slate-300 p-2.5 font-bold text-black focus:border-indigo-600 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-black mb-1">Account Type</label>
+                      <select
+                        value={editBankType}
+                        onChange={(e) => setEditBankType(e.target.value)}
+                        className="w-full rounded-xl border border-slate-300 p-2.5 font-bold text-black focus:border-indigo-600 focus:outline-none"
+                      >
+                        <option value="Savings">Savings Account</option>
+                        <option value="Salary">Salary Account</option>
+                        <option value="Current">Current Account</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Modal Footer Controls */}
+              <div className="flex justify-between items-center pt-4 border-t border-slate-100">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    All updates persist immediately to TiDB Database
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowEditProfileModal(false)}
+                    className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold hover:bg-slate-50 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingProfile}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-black px-6 py-2.5 rounded-xl shadow-md transition cursor-pointer disabled:opacity-50 flex items-center gap-2"
+                  >
+                    <span>{isSavingProfile ? "Saving..." : "✓ Save All Changes"}</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>

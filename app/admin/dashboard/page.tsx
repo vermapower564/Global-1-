@@ -171,7 +171,7 @@ export default function AdminDashboardPage() {
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight mt-1">
-            Welcome back, {user?.name || "Administrator"}
+            Welcome, {user?.name || "Administrator"} 👋
           </h1>
           <p className="text-xs text-gray-500 mt-1">
             High-level executive overview of organization health, active project delivery, and member work tracking.

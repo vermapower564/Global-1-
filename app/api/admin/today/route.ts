@@ -13,6 +13,14 @@ export async function GET(request: NextRequest) {
       return authResult.response || NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
     }
 
+    const authUser = authResult.user;
+    if (!ADMIN_ROLES.includes(authUser.role)) {
+      return NextResponse.json(
+        { success: false, error: "Forbidden: Admin authorization required." },
+        { status: 403 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const statusFilter = searchParams.get("status") || "ALL"; // 'ALL' | 'IN_PROGRESS' | 'COMPLETED' | 'BLOCKED' | 'ASSIGNED' | 'PENDING'
     const searchQuery = searchParams.get("search") || "";

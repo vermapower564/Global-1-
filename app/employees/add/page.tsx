@@ -25,7 +25,6 @@ const SYSTEM_ROLES = [
   { value: "SEO_EXECUTIVE", label: "SEO Executive" },
   { value: "CONTENT_WRITER", label: "Content Writer" },
   { value: "DIRECTOR", label: "Director (Executive Level)" },
-  { value: "SUPER_ADMIN", label: "Super Administrator" },
 ];
 
 export default function AddEmployeePage() {

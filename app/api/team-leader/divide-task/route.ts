@@ -62,9 +62,12 @@ export async function POST(request: NextRequest) {
         estimatedHours = 8,
       } = sub;
 
-      if (!title || !title.trim() || !assignedToUserId) {
-        continue;
-      }
+      // Resolve assignedToUserId to cuid if employeeId passed
+      const userRows = await queryDb<any[]>(
+        `SELECT id FROM user WHERE id = ? OR employeeId = ? LIMIT 1`,
+        [assignedToUserId, assignedToUserId]
+      );
+      const resolvedUserId = userRows && userRows.length > 0 ? userRows[0].id : assignedToUserId;
 
       const subtaskId = `TSK-SUB-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
 
@@ -85,7 +88,7 @@ export async function POST(request: NextRequest) {
           section.trim(),
           mainTask.projectId,
           mainTaskId,
-          assignedToUserId,
+          resolvedUserId,
           authUser.id,
           priority,
           dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 3600 * 1000),
@@ -94,11 +97,11 @@ export async function POST(request: NextRequest) {
       );
 
       // Ensure member is linked in _assignedstaffprojects
-      if (mainTask.projectId && assignedToUserId) {
+      if (mainTask.projectId && resolvedUserId) {
         try {
           await queryDb(`INSERT IGNORE INTO _assignedstaffprojects (A, B) VALUES (?, ?)`, [
             mainTask.projectId,
-            assignedToUserId,
+            resolvedUserId,
           ]);
         } catch {}
       }

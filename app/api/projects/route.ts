@@ -183,11 +183,23 @@ export async function GET(request: NextRequest) {
       // Matching customer review
       const review = reviewRows.find((r) => r.projectId === p.id || r.projectName === p.projectTitle);
 
+      const now = new Date();
+      let projectHealth: "HEALTHY" | "AT_RISK" | "CRITICAL" = "HEALTHY";
+      const isOverdue = p.endDate && new Date(p.endDate) < now && p.status !== "COMPLETED";
+      const daysRemaining = p.endDate ? Math.ceil((new Date(p.endDate).getTime() - now.getTime()) / (1000 * 3600 * 24)) : 30;
+
+      if (isOverdue || blockedTasks >= 2 || (totalTasks > 0 && overallProgress < 40 && daysRemaining <= 7)) {
+        projectHealth = "CRITICAL";
+      } else if (blockedTasks >= 1 || (totalTasks > 0 && overallProgress < 60 && daysRemaining <= 14) || daysRemaining <= 3) {
+        projectHealth = "AT_RISK";
+      }
+
       const isUserTeamLeader = p.teamLeaderId === authUser.id;
       const isUserMember = projectMembers.some((m) => m.id === authUser.id) || isUserTeamLeader;
 
       return {
         id: p.id,
+        projectCode: p.projectCode || p.id,
         projectTitle: p.projectTitle,
         description: p.description || `Enterprise deliverable for ${p.projectTitle}.`,
         clientCompany: p.clientCompany,
@@ -198,6 +210,14 @@ export async function GET(request: NextRequest) {
         endDate: p.endDate,
         contractValue: p.contractValue,
         status: p.status,
+        priority: p.priority || "MEDIUM",
+        projectType: p.projectType || "WEB_APPLICATION",
+        requiredSkills: p.requiredSkills || "React, Next.js, Node.js, MySQL, UI/UX",
+        requiredRoles: p.requiredRoles || "Developer, UI/UX Designer, QA",
+        techStack: p.techStack || "React, Next.js, MySQL",
+        expectedTeamSize: p.expectedTeamSize || 5,
+        projectHealth,
+        daysRemaining,
         createdAt: p.createdAt,
         teamLeader: tl,
         teamLeaderId: p.teamLeaderId,
@@ -213,6 +233,7 @@ export async function GET(request: NextRequest) {
           inReviewTasks,
           pendingTasks,
           overallProgress,
+          projectHealth,
         },
         customerReview: review || null,
         isUserTeamLeader,
@@ -240,7 +261,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST: Admin creates a new project with Team Leader and Member assignments
+// POST: Project Manager or Admin creates a new project with Team Leader and Skill specifications
 export async function POST(req: NextRequest) {
   try {
     const authResult = await authenticateRequest(req);
@@ -249,11 +270,11 @@ export async function POST(req: NextRequest) {
     }
 
     const authUser = authResult.user;
-    const isAdmin = ADMIN_ROLES.includes(authUser.role);
+    const canCreateProject = ["SUPER_ADMIN", "DIRECTOR", "PROJECT_MANAGER"].includes((authUser.role || "").toUpperCase());
 
-    if (!isAdmin) {
+    if (!canCreateProject) {
       return NextResponse.json(
-        { success: false, error: "Forbidden: Only Administrators can create new projects." },
+        { success: false, error: "Forbidden: Only Project Managers and Super Admins can create new projects." },
         { status: 403 }
       );
     }
@@ -261,6 +282,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const {
       projectTitle,
+      projectCode,
       description,
       clientCompany,
       clientContactPerson,
@@ -269,7 +291,13 @@ export async function POST(req: NextRequest) {
       startDate,
       endDate,
       contractValue,
-      status = "IN_PROGRESS",
+      status = "ACTIVE",
+      priority = "MEDIUM",
+      projectType = "WEB_APPLICATION",
+      requiredSkills = "React, Next.js, Node.js, MySQL, UI/UX",
+      requiredRoles = "Developer, UI/UX Designer, QA Tester",
+      techStack = "React, Next.js, Node.js, Tailwind CSS",
+      expectedTeamSize = 5,
       teamLeaderId,
       memberUserIds = [],
     } = body;
@@ -278,25 +306,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Project title is required." }, { status: 400 });
     }
 
-    const projectId = `PRJ-${Date.now().toString(36).toUpperCase()}`;
+    const projectId = projectCode ? `PRJ-${projectCode.trim().toUpperCase()}` : `PRJ-${Date.now().toString(36).toUpperCase()}`;
 
     await queryDb(
       `INSERT INTO project (
-        id, projectTitle, description, clientCompany, clientContactPerson, clientEmail,
-        clientPhone, startDate, endDate, contractValue, status, teamLeaderId, createdAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        id, projectCode, projectTitle, description, clientCompany, clientContactPerson, clientEmail,
+        clientPhone, startDate, endDate, contractValue, status, priority, projectType,
+        requiredSkills, requiredRoles, techStack, expectedTeamSize, projectManagerId, teamLeaderId, createdAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         projectId,
+        projectCode ? projectCode.trim().toUpperCase() : projectId,
         projectTitle.trim(),
-        description ? description.trim() : `Enterprise project: ${projectTitle.trim()}`,
-        clientCompany ? clientCompany.trim() : "Global Enterprise Client",
+        description ? description.trim() : `Enterprise deliverable: ${projectTitle.trim()}`,
+        clientCompany ? clientCompany.trim() : "Enterprise Client",
         clientContactPerson ? clientContactPerson.trim() : "Client Representative",
         clientEmail ? clientEmail.trim() : "client@enterprise.com",
         clientPhone ? clientPhone.trim() : "+91 98765 00000",
         startDate ? new Date(startDate) : new Date(),
         endDate ? new Date(endDate) : new Date(Date.now() + 60 * 24 * 3600 * 1000),
-        parseFloat(contractValue) || 250000,
+        parseFloat(contractValue) || 0,
         status,
+        priority,
+        projectType,
+        requiredSkills ? requiredSkills.trim() : null,
+        requiredRoles ? requiredRoles.trim() : null,
+        techStack ? techStack.trim() : null,
+        parseInt(expectedTeamSize) || 5,
+        authUser.id,
         teamLeaderId || null,
       ]
     );
@@ -321,15 +358,23 @@ export async function POST(req: NextRequest) {
     logAuditEvent(
       authUser.id,
       "PROJECT_CREATED",
-      `Created project '${projectTitle.trim()}' with Team Leader ${teamLeaderId || "unassigned"} and ${allMemberIds.size} member(s)`,
+      `Project Manager ${(authUser as any).name || authUser.email} created project '${projectTitle.trim()}' (Code: ${projectId}) with Team Leader ${teamLeaderId || "unassigned"}`,
       req.headers.get("x-forwarded-for") || "127.0.0.1"
     );
 
     return NextResponse.json(
       {
         success: true,
-        message: "✓ Project successfully created with Team Leader & members!",
-        data: { id: projectId, projectTitle, teamLeaderId, memberCount: allMemberIds.size },
+        message: "✓ Project created successfully!",
+        project: {
+          id: projectId,
+          projectCode: projectId,
+          projectTitle,
+          status,
+          priority,
+          teamLeaderId,
+          memberCount: allMemberIds.size,
+        },
       },
       { status: 201 }
     );

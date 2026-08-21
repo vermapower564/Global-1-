@@ -243,19 +243,10 @@ export default function EmployeePreviewDrawer({
                   </span>
                 </div>
 
-                <div className="flex justify-between items-center border-b border-slate-200 pb-2">
-                  <span className="text-slate-500 font-bold uppercase text-[10px]">Base Compensation</span>
-                  <span className="font-mono font-black text-slate-900">
-                    ₹{Number(employee.salary || 95000).toLocaleString("en-IN")} /mo
-                  </span>
-                </div>
-
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-500 font-bold uppercase text-[10px]">Salary Bank Deposit</span>
-                  <span className="font-mono font-bold text-slate-800 text-[11px]">
-                    {employee.bankDetail?.bankName
-                      ? `${employee.bankDetail.bankName} (••••${employee.bankDetail.accountNumber?.slice(-4) || "1234"})`
-                      : "HDFC Bank (Verified Direct Deposit)"}
+                  <span className="text-slate-500 font-bold uppercase text-[10px]">Work Status</span>
+                  <span className="font-bold text-emerald-600">
+                    Active On Duty
                   </span>
                 </div>
               </div>
@@ -374,9 +365,9 @@ export default function EmployeePreviewDrawer({
             <Link
               href={`/admin/employees/${empId}`}
               onClick={onClose}
-              className="flex-1 text-center bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs py-3.5 rounded-2xl shadow-md transition"
+              className="flex-1 text-center bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs py-3.5 rounded-2xl shadow-md transition flex items-center justify-center gap-1.5"
             >
-              Open Full 360° Management Profile →
+              <span>Open Profile & Edit Details →</span>
             </Link>
           </div>
         </div>

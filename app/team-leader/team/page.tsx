@@ -170,12 +170,35 @@ export default function TeamLeaderMembersPage() {
                       </td>
 
                       <td className="p-3.5 text-right">
-                        <Link
-                          href={`/team-leader/assign-work?employeeId=${m.id}`}
-                          className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition inline-block shadow-2xs"
-                        >
-                          + Assign Work
-                        </Link>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Link
+                            href={`/team-leader/assign-work?employeeId=${m.id}`}
+                            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition inline-block shadow-2xs"
+                          >
+                            + Assign Work
+                          </Link>
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Are you sure you want to deactivate ${m.name}'s account?`)) return;
+                              const res = await fetch("/api/team-leader/toggle-employee-status", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ employeeId: m.id, isActive: false }),
+                              });
+                              const json = await res.json();
+                              if (json.success) {
+                                alert(json.message);
+                                window.location.reload();
+                              } else {
+                                alert(json.error || "Failed to deactivate account");
+                              }
+                            }}
+                            className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 font-bold text-xs transition cursor-pointer border border-rose-200 shadow-2xs"
+                            title="Deactivate employee access"
+                          >
+                            Deactivate
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

@@ -67,7 +67,7 @@ export default function EmployeeProjectDetailPage() {
       if (pJson.success && Array.isArray(pJson.projects || pJson.data)) {
         const list = pJson.projects || pJson.data || [];
         const found = list.find((p: any) => p.id === projectId || p.projectTitle?.toLowerCase().includes(projectId?.toLowerCase()));
-        const targetProj = found || list[0] || null;
+        const targetProj = found || null;
         setProject(targetProj);
 
         if (targetProj) {
@@ -225,16 +225,31 @@ export default function EmployeeProjectDetailPage() {
     );
   }
 
-  const proj = project || {
-    id: projectId,
-    projectTitle: "OMS Enterprise Deliverable",
-    clientCompany: "Enterprise Client",
-    status: "IN_PROGRESS",
-    teamLeader: { name: "Team Lead", employeeId: "EMP-001" },
-    teamMembers: [],
-    metrics: { overallProgress: 50, totalTasks: 0, completedTasks: 0 },
-  };
+  if (!project) {
+    return (
+      <div className="max-w-xl mx-auto my-16 p-8 bg-white border border-rose-200 rounded-3xl shadow-lg text-center space-y-4 font-sans text-black">
+        <div className="h-14 w-14 rounded-2xl bg-rose-50 text-rose-600 font-black text-2xl flex items-center justify-center mx-auto">
+          🚫
+        </div>
+        <h2 className="text-xl font-black text-slate-900 tracking-tight">
+          403 — Project Access Restricted
+        </h2>
+        <p className="text-xs text-slate-600 leading-relaxed">
+          You are not an assigned member or team leader for this project. Under strict project isolation policy, employee workspaces are restricted to assigned projects only.
+        </p>
+        <div className="pt-2">
+          <Link
+            href="/employee/projects"
+            className="inline-block bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl transition"
+          >
+            ← Back to My Projects
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
+  const proj = project;
   const isCompleted = proj.status === "COMPLETED" || (proj.metrics?.overallProgress || 0) >= 100;
   const leader = proj.teamLeader;
   const members = proj.teamMembers || [];
