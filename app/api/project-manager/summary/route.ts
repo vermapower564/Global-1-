@@ -108,6 +108,11 @@ export async function GET(request: NextRequest) {
         projectIds
       );
     }
+    if (teamLeaders.length === 0) {
+      teamLeaders = await queryDb<any[]>(
+        `SELECT id, name, employeeId, email, role, avatarUrl FROM user WHERE role = 'TEAM_LEADER' AND isActive = 1 ORDER BY name ASC`
+      );
+    }
 
     // 5. Fetch Blockers across PM's projects
     let projectBlockers: any[] = [];

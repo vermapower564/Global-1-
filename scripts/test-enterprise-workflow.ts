@@ -54,7 +54,6 @@ async function testEnterpriseWorkflow() {
         projectCode: testProjectCode,
         clientCompany: "Global Retailers Ltd",
         projectManagerId: "EMP-8222", // Vikram Singh (PM)
-        teamLeaderId: "EMP-7592", // Amit Patel (TL)
         contractValue: 1200000,
         status: "ACTIVE",
       }),
@@ -84,16 +83,34 @@ async function testEnterpriseWorkflow() {
   }
 
   // ------------------------------------------------------------------------
-  // TEST 3: PM assigns/manages project for Team Leader
+  // TEST 3: PM attempts to assign project directly to an Employee (Rejected)
   // ------------------------------------------------------------------------
-  console.log("\n[3] TEST 3: PM manages project and assigns Team Leader:");
+  console.log("\n[3] TEST 3: PM attempts to assign project directly to an Employee (Rejected):");
   {
     const req = new NextRequest("http://localhost:3000/api/projects", {
       method: "PUT",
       headers: { Authorization: `Bearer ${pmToken}`, Cookie: `oms_session=${pmToken}` },
       body: JSON.stringify({
         id: createdProjectId,
-        teamLeaderId: "EMP-7592",
+        teamLeaderId: "EMP-6841", // Rajesh Khanna (Employee)
+        status: "IN_PROGRESS",
+      }),
+    });
+    const res = await putProjects(req);
+    assert(res.status === 400 || res.status === 403, "Backend rejected direct assignment of employee as Team Leader (400/403)");
+  }
+
+  // ------------------------------------------------------------------------
+  // TEST 4: PM assigns project to legitimate Team Leader
+  // ------------------------------------------------------------------------
+  console.log("\n[4] TEST 4: PM assigns project to Team Leader:");
+  {
+    const req = new NextRequest("http://localhost:3000/api/projects", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${pmToken}`, Cookie: `oms_session=${pmToken}` },
+      body: JSON.stringify({
+        id: createdProjectId,
+        teamLeaderId: "EMP-7592", // Amit Patel (Team Leader)
         status: "IN_PROGRESS",
       }),
     });

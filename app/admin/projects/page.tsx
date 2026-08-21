@@ -60,27 +60,27 @@ export default function AdminProjectsPage() {
     fetchData();
   }, []);
 
-  // Eligible Project Managers (Strictly exclude HR, Finance, and non-PM roles)
+  const getDeptUpper = (e: any): string => {
+    if (!e) return "";
+    if (typeof e.department === "string") return e.department.toUpperCase();
+    if (e.department && typeof e.department === "object" && typeof e.department.name === "string") return e.department.name.toUpperCase();
+    if (typeof e.departmentName === "string") return e.departmentName.toUpperCase();
+    return "";
+  };
+
+  // 1. Eligible Project Managers: Strictly users whose actual role is PROJECT_MANAGER
   const eligibleProjectManagers = useMemo(() => {
     return employees.filter((e) => {
       const roleUpper = (e.role || "").toUpperCase();
-      const deptUpper = (e.department || e.departmentName || "").toUpperCase();
-      if (roleUpper === "HR" || deptUpper.includes("HUMAN RESOURCES") || deptUpper === "HR" || roleUpper === "FINANCE") {
-        return false;
-      }
-      return roleUpper === "PROJECT_MANAGER" || roleUpper === "SUPER_ADMIN" || roleUpper === "DIRECTOR" || roleUpper === "ADMIN_HR";
+      return roleUpper === "PROJECT_MANAGER";
     });
   }, [employees]);
 
-  // Compute Team Leader workloads and sort by freest first (Strictly exclude HR, Finance)
-  const teamLeadersWithWorkload = useMemo(() => {
+  // 2. Eligible Team Leaders: Strictly users whose actual role is TEAM_LEADER (Auto-sorted by lowest workload)
+  const eligibleTeamLeaders = useMemo(() => {
     const tls = employees.filter((e) => {
       const roleUpper = (e.role || "").toUpperCase();
-      const deptUpper = (e.department || e.departmentName || "").toUpperCase();
-      if (roleUpper === "HR" || deptUpper.includes("HUMAN RESOURCES") || deptUpper === "HR" || roleUpper === "FINANCE") {
-        return false;
-      }
-      return roleUpper === "TEAM_LEADER" || roleUpper === "DEVELOPER" || roleUpper === "UI_UX_DESIGNER";
+      return roleUpper === "TEAM_LEADER";
     });
     const mapped = tls.map((tl) => {
       const activeCount = projects.filter(
@@ -88,19 +88,18 @@ export default function AdminProjectsPage() {
       ).length;
       return { ...tl, activeCount };
     });
-    // Sort ascending: 0 active projects, 1 active project, etc.
+    // Freest first (0 active projects, 1 active project, etc.)
     mapped.sort((a, b) => a.activeCount - b.activeCount);
     return mapped;
   }, [employees, projects]);
 
-  // Eligible Project Members (Strictly exclude HR from project execution allocation)
-  const eligibleProjectMembers = useMemo(() => {
-    return employees.filter((e) => {
-      const roleUpper = (e.role || "").toUpperCase();
-      const deptUpper = (e.department || e.departmentName || "").toUpperCase();
-      return roleUpper !== "HR" && !deptUpper.includes("HUMAN RESOURCES") && deptUpper !== "HR";
-    });
-  }, [employees]);
+  // Modal State for PM Assigning Team Leader
+  const [isAssignTLModalOpen, setIsAssignTLModalOpen] = useState(false);
+  const [assignTLProject, setAssignTLProject] = useState<any | null>(null);
+  const [selectedTLId, setSelectedTLId] = useState("");
+  const [assignTLError, setAssignTLError] = useState("");
+  const [assignTLSuccess, setAssignTLSuccess] = useState("");
+  const [assignTLSubmitting, setAssignTLSubmitting] = useState(false);
 
   const openCreateModal = () => {
     setIsEditMode(false);
@@ -116,9 +115,7 @@ export default function AdminProjectsPage() {
     setFormStatus("IN_PROGRESS");
     const defaultPM = eligibleProjectManagers[0];
     setFormProjectManagerId(defaultPM?.id || "");
-    // Pre-select the freest Team Leader (0 or 1 active project)
-    const freestTL = teamLeadersWithWorkload[0];
-    setFormTeamLeaderId(freestTL?.id || "");
+    setFormTeamLeaderId("");
     setFormMemberIds([]);
     setFormError("");
     setFormSuccess("");
@@ -146,14 +143,59 @@ export default function AdminProjectsPage() {
     setIsCreateModalOpen(true);
   };
 
+  const openAssignTLModal = (proj: any) => {
+    setAssignTLProject(proj);
+    const currentTLId = proj.teamLeaderId || proj.teamLeader?.id || "";
+    setSelectedTLId(currentTLId || (eligibleTeamLeaders[0]?.id || ""));
+    setAssignTLError("");
+    setAssignTLSuccess("");
+    setIsAssignTLModalOpen(true);
+  };
+
+  const handleAssignTeamLeader = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTLId) {
+      setAssignTLError("Please select a Team Leader.");
+      return;
+    }
+    setAssignTLSubmitting(true);
+    setAssignTLError("");
+    setAssignTLSuccess("");
+
+    try {
+      const res = await fetch("/api/projects", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: assignTLProject.id,
+          teamLeaderId: selectedTLId,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setAssignTLSuccess(data.message || "✓ Project successfully assigned to Team Leader!");
+        setTimeout(() => {
+          setIsAssignTLModalOpen(false);
+          fetchData();
+        }, 800);
+      } else {
+        setAssignTLError(data.error || "Failed to assign Team Leader.");
+      }
+    } catch (err: any) {
+      setAssignTLError(err.message || "Network error. Please try again.");
+    } finally {
+      setAssignTLSubmitting(false);
+    }
+  };
+
   const handleSaveProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formTitle.trim()) {
       setFormError("Project Title is required.");
       return;
     }
-    if (!formTeamLeaderId) {
-      setFormError("Please select a Team Leader for the project.");
+    if (!formProjectManagerId) {
+      setFormError("Please select a Project Manager.");
       return;
     }
 
@@ -176,9 +218,7 @@ export default function AdminProjectsPage() {
         endDate: formEndDate,
         contractValue: formContractValue,
         status: formStatus,
-        projectManagerId: formProjectManagerId || undefined,
-        teamLeaderId: formTeamLeaderId,
-        memberUserIds: formMemberIds,
+        projectManagerId: formProjectManagerId,
       };
 
       const res = await fetch(url, {
@@ -189,7 +229,7 @@ export default function AdminProjectsPage() {
       const data = await res.json();
 
       if (res.ok && data.success) {
-        setFormSuccess(isEditMode ? "✓ Project successfully updated!" : "✓ Project created with Project Manager & Team Leader!");
+        setFormSuccess(isEditMode ? "✓ Project successfully updated!" : "✓ Project created and assigned to Project Manager!");
         setTimeout(() => {
           setIsCreateModalOpen(false);
           fetchData();
@@ -450,14 +490,22 @@ export default function AdminProjectsPage() {
                     onClick={() => setSelectedProject(proj)}
                     className="flex-1 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-800 font-extrabold text-xs border border-slate-200 transition cursor-pointer shadow-2xs text-center"
                   >
-                    📊 Monitor Details & Progress →
+                    📊 Monitor Details →
+                  </button>
+
+                  <button
+                    onClick={() => openAssignTLModal(proj)}
+                    className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs border border-indigo-200 transition cursor-pointer"
+                    title="Assign or Reassign Team Leader"
+                  >
+                    👑 {proj.teamLeader ? "Reassign TL" : "Assign TL"}
                   </button>
 
                   <button
                     onClick={() => openEditModal(proj)}
-                    className="px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-extrabold text-xs border border-blue-200 transition cursor-pointer"
+                    className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs border border-slate-200 transition cursor-pointer"
                   >
-                    ✏️ Edit / Reassign
+                    ✏️ Edit
                   </button>
                 </div>
               </div>
@@ -466,17 +514,17 @@ export default function AdminProjectsPage() {
         </div>
       )}
 
-      {/* CREATE / EDIT PROJECT MODAL */}
+      {/* CREATE / EDIT PROJECT MODAL (ADMIN -> PROJECT MANAGER ONLY) */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
           <div className="relative w-full max-w-2xl bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-lg font-black text-slate-900">
-                  {isEditMode ? "Edit Project Configuration" : "Create New Project"}
+                  {isEditMode ? "Edit Project Configuration" : "Create New Project (Admin → Project Manager)"}
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Assign a dedicated Team Leader and select contributing project members.
+                  Enterprise governance: Assign project to authorized <strong>Project Manager</strong>.
                 </p>
               </div>
               <button
@@ -591,95 +639,27 @@ export default function AdminProjectsPage() {
                 </div>
               </div>
 
-              {/* PROJECT MANAGER SELECTION */}
+              {/* PROJECT MANAGER SELECTION ONLY (ADMIN -> PM) */}
               <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200 space-y-2">
                 <label className="block font-black text-indigo-950">
-                  👔 Select Project Manager *
+                  👔 Select Project Manager * (Admin Assignment)
                 </label>
                 <p className="text-[11px] text-indigo-700 font-medium">
-                  Authorized project management personnel responsible for overall deliverable execution.
+                  Strict Hierarchy: Admin assigns project to <strong>Project Manager ONLY</strong>. Project Manager will subsequently assign a Team Leader.
                 </p>
                 <select
+                  required
                   value={formProjectManagerId}
                   onChange={(e) => setFormProjectManagerId(e.target.value)}
                   className="w-full rounded-xl border border-indigo-300 bg-white px-3.5 py-2 text-xs font-black text-slate-900 focus:border-indigo-600 focus:outline-none cursor-pointer"
                 >
-                  <option value="">-- Choose Project Manager --</option>
+                  <option value="">-- Select Project Manager --</option>
                   {eligibleProjectManagers.map((pm: any) => (
                     <option key={pm.id} value={pm.id}>
-                      {pm.name} ({pm.employeeId || "EMP"}) — {pm.role?.replace(/_/g, " ")}
+                      {pm.name} ({pm.employeeId || "EMP"}) — Project Manager
                     </option>
                   ))}
                 </select>
-              </div>
-
-              {/* TEAM LEADER SELECTION */}
-              <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200 space-y-2">
-                <label className="block font-black text-blue-900">
-                  👑 Select Project Team Leader *
-                </label>
-                <p className="text-[11px] text-blue-700 font-medium">
-                  Auto-sorted by lowest workload. Freest Team Leader (0 or 1 project) is recommended and pre-selected.
-                </p>
-                <select
-                  required
-                  value={formTeamLeaderId}
-                  onChange={(e) => setFormTeamLeaderId(e.target.value)}
-                  className="w-full rounded-xl border border-blue-300 bg-white px-3.5 py-2 text-xs font-black text-slate-900 focus:border-blue-600 focus:outline-none cursor-pointer"
-                >
-                  <option value="">-- Choose Team Leader --</option>
-                  {teamLeadersWithWorkload.map((tl: any) => (
-                    <option key={tl.id} value={tl.id}>
-                      {tl.name} ({tl.employeeId || "EMP"}) • {tl.activeCount} Active Project{tl.activeCount === 1 ? "" : "s"} {tl.activeCount === 0 ? "— 🟢 Available (0 Projects)" : tl.activeCount === 1 ? "— 🟡 Optimal (1 Project)" : "— 🔴 Busy"}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* PROJECT MEMBERS MULTI-SELECT */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <label className="block font-black text-slate-900">
-                    👥 Select Project Employees ({formMemberIds.length} Selected)
-                  </label>
-                  <span className="text-[11px] text-slate-400 font-medium">
-                    Check employees who belong to this project
-                  </span>
-                </div>
-
-                <div className="max-h-40 overflow-y-auto rounded-2xl border border-slate-200 p-2 space-y-1 bg-slate-50">
-                  {eligibleProjectMembers.map((emp) => {
-                    const isSelected = formMemberIds.includes(emp.id);
-                    const isLeader = formTeamLeaderId === emp.id;
-
-                    return (
-                      <label
-                        key={emp.id}
-                        className={`flex items-center justify-between p-2 rounded-xl text-xs cursor-pointer transition ${
-                          isSelected || isLeader
-                            ? "bg-blue-50 text-blue-900 font-bold border border-blue-200"
-                            : "hover:bg-white text-slate-700 font-medium"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <input
-                            type="checkbox"
-                            checked={isSelected || isLeader}
-                            disabled={isLeader}
-                            onChange={() => toggleMemberSelection(emp.id)}
-                            className="rounded text-blue-600 focus:ring-0 cursor-pointer"
-                          />
-                          <span>
-                            {emp.name} ({emp.employeeId})
-                          </span>
-                        </div>
-                        <span className="text-[10px] font-semibold text-slate-500 uppercase">
-                          {isLeader ? "👑 Team Leader" : emp.role?.replace(/_/g, " ")}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
               </div>
 
               <div className="flex gap-3 pt-2">
@@ -695,7 +675,7 @@ export default function AdminProjectsPage() {
                   disabled={submitting}
                   className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs transition shadow-md cursor-pointer"
                 >
-                  {submitting ? "Saving..." : isEditMode ? "✓ Save Changes" : "✓ Create Project"}
+                  {submitting ? "Saving..." : isEditMode ? "✓ Save Project" : "✓ Create & Assign PM"}
                 </button>
               </div>
             </form>
@@ -728,6 +708,12 @@ export default function AdminProjectsPage() {
 
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => openAssignTLModal(selectedProject)}
+                  className="px-3.5 py-1.5 rounded-xl bg-indigo-50 text-indigo-700 font-extrabold text-xs border border-indigo-200 hover:bg-indigo-100 transition cursor-pointer"
+                >
+                  👑 {selectedProject.teamLeader ? "Reassign Team Leader" : "Assign Team Leader"}
+                </button>
+                <button
                   onClick={() => openEditModal(selectedProject)}
                   className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 font-bold text-xs border border-blue-200 hover:bg-blue-100 transition cursor-pointer"
                 >
@@ -744,17 +730,17 @@ export default function AdminProjectsPage() {
 
             {/* Quick Metrics Bar */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80">
-                <span className="text-[10px] font-bold text-slate-400 uppercase">Team Leader</span>
-                <p className="font-extrabold text-blue-700 text-xs mt-0.5">
-                  👑 {selectedProject.teamLeader?.name || "Unassigned"}
+              <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200">
+                <span className="text-[10px] font-bold text-indigo-500 uppercase">Project Manager</span>
+                <p className="font-extrabold text-indigo-900 text-xs mt-0.5">
+                  👔 {selectedProject.projectManager?.name ? `${selectedProject.projectManager.name} (${selectedProject.projectManager.employeeId || "PM"})` : "Unassigned"}
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80">
-                <span className="text-[10px] font-bold text-slate-400 uppercase">Team Members</span>
-                <p className="font-extrabold text-slate-900 text-xs mt-0.5">
-                  👥 {selectedProject.teamMembers?.length || 0} Employees
+              <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200">
+                <span className="text-[10px] font-bold text-blue-500 uppercase">Current Team Leader</span>
+                <p className="font-extrabold text-blue-900 text-xs mt-0.5">
+                  👑 {selectedProject.teamLeader?.name ? `${selectedProject.teamLeader.name} (${selectedProject.teamLeader.employeeId || "TL"})` : "Unassigned"}
                 </p>
               </div>
 
@@ -851,6 +837,82 @@ export default function AdminProjectsPage() {
                 Close Monitor
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ASSIGN TEAM LEADER MODAL (PROJECT MANAGER -> TEAM LEADER ONLY) */}
+      {isAssignTLModalOpen && assignTLProject && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="relative w-full max-w-lg bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-lg font-black text-slate-900">
+                  👑 Assign Team Leader
+                </h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Project: <strong className="text-slate-800">{assignTLProject.projectTitle}</strong>
+                </p>
+              </div>
+              <button
+                onClick={() => setIsAssignTLModalOpen(false)}
+                className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {assignTLError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold">
+                ⚠️ {assignTLError}
+              </div>
+            )}
+            {assignTLSuccess && (
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
+                {assignTLSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleAssignTeamLeader} className="space-y-4 text-xs font-bold text-slate-700">
+              <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200 space-y-2">
+                <label className="block font-black text-blue-900">
+                  Team Leader *
+                </label>
+                <p className="text-[11px] text-blue-700 font-medium">
+                  Select an authorized Team Leader. Workloads are calculated automatically.
+                </p>
+                <select
+                  required
+                  value={selectedTLId}
+                  onChange={(e) => setSelectedTLId(e.target.value)}
+                  className="w-full rounded-xl border border-blue-300 bg-white px-3.5 py-2.5 text-xs font-black text-slate-900 focus:border-blue-600 focus:outline-none cursor-pointer"
+                >
+                  <option value="">-- Select Team Leader --</option>
+                  {eligibleTeamLeaders.map((tl: any) => (
+                    <option key={tl.id} value={tl.id}>
+                      {tl.name} ({tl.employeeId || "EMP"}) • {tl.activeCount} Active Projects {tl.activeCount === 0 ? "— 🟢 Available" : tl.activeCount === 1 ? "— 🟡 Optimal" : "— 🔴 Busy"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAssignTLModalOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={assignTLSubmitting}
+                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs transition shadow-md cursor-pointer"
+                >
+                  {assignTLSubmitting ? "Assigning..." : "✓ ASSIGN"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

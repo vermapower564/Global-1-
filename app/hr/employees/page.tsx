@@ -46,8 +46,9 @@ export default function HREmployeesPage() {
   const departments = useMemo(() => {
     const set = new Set<string>();
     employees.forEach((e) => {
-      if (e.department || e.departmentName) {
-        set.add(e.department || e.departmentName);
+      const deptName = typeof e.department === "string" ? e.department : e.department?.name || e.departmentName;
+      if (deptName) {
+        set.add(deptName);
       }
     });
     return Array.from(set);
@@ -66,7 +67,11 @@ export default function HREmployeesPage() {
 
       // 2. Department filter
       if (deptFilter !== "ALL") {
-        const empDept = (emp.department || emp.departmentName || "").toUpperCase();
+        const empDept = (
+          typeof emp.department === "string"
+            ? emp.department
+            : emp.department?.name || emp.departmentName || ""
+        ).toUpperCase();
         if (empDept !== deptFilter.toUpperCase()) return false;
       }
 

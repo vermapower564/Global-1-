@@ -27,9 +27,10 @@ export default function TeamLeadersManagementPage() {
       if (pJson.success && Array.isArray(pJson.projects || pJson.data)) {
         setProjects(pJson.projects || pJson.data || []);
       }
-      if (eJson.success && Array.isArray(eJson.data)) {
-        const eligible = eJson.data.filter(
-          (e: any) => e.role === "TEAM_LEADER" || e.role === "DEVELOPER" || e.role === "PROJECT_MANAGER"
+      if (eJson.success && Array.isArray(eJson.employees || eJson.data)) {
+        const list = eJson.employees || eJson.data || [];
+        const eligible = list.filter(
+          (e: any) => (e.role || "").toUpperCase() === "TEAM_LEADER"
         );
         setTeamLeaders(eligible);
       }

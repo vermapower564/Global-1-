@@ -276,7 +276,7 @@ export async function GET(request: NextRequest) {
 export async function validateProjectRoleAssignment(
   userId: string | null | undefined,
   expectedRole: "PROJECT_MANAGER" | "TEAM_LEADER"
-): Promise<{ valid: boolean; resolvedId: string | null; error?: string }> {
+): Promise<{ valid: boolean; resolvedId: string | null; user?: any; error?: string }> {
   if (!userId) return { valid: true, resolvedId: null };
 
   const rows = await queryDb<any[]>(
@@ -306,38 +306,26 @@ export async function validateProjectRoleAssignment(
   }
 
   const roleUpper = (u.role || "").toUpperCase();
-  const deptUpper = (u.departmentName || "").toUpperCase();
-
-  // Strict HR Check: HR employees must NOT be assigned as PM or Team Leader
-  if (roleUpper === "HR" || deptUpper.includes("HUMAN RESOURCES") || deptUpper === "HR") {
-    return {
-      valid: false,
-      resolvedId: null,
-      error: "HR employees cannot be assigned as Project Manager or Team Leader.",
-    };
-  }
 
   if (expectedRole === "PROJECT_MANAGER") {
-    const allowedPMRoles = ["PROJECT_MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN_HR"];
-    if (!allowedPMRoles.includes(roleUpper)) {
+    if (roleUpper !== "PROJECT_MANAGER") {
       return {
         valid: false,
         resolvedId: null,
-        error: "This employee is not authorised for project management.",
+        error: "Validation failed: Only users with the PROJECT_MANAGER role can be assigned as Project Manager.",
       };
     }
   } else if (expectedRole === "TEAM_LEADER") {
-    const forbiddenTLRoles = ["FINANCE", "HR", "CLIENT"];
-    if (forbiddenTLRoles.includes(roleUpper) || deptUpper.includes("FINANCE") || deptUpper.includes("ACCOUNTS")) {
+    if (roleUpper !== "TEAM_LEADER") {
       return {
         valid: false,
         resolvedId: null,
-        error: "This employee is not authorised for Team Leader role.",
+        error: "Forbidden: Projects can only be assigned to a user with the TEAM_LEADER role. Direct assignment to Employees, Developers, HR, or other roles is strictly prohibited.",
       };
     }
   }
 
-  return { valid: true, resolvedId: u.id };
+  return { valid: true, resolvedId: u.id, user: u };
 }
 
 // POST: Project Manager or Admin creates a new project or saves a draft with Team Leader and Skill specifications
@@ -682,7 +670,23 @@ export async function PUT(req: NextRequest) {
     let auditAction = "PROJECT_UPDATED";
     let auditDetail = `Updated project ${id} configuration`;
 
-    if (proj.status === "DRAFT" && status && status !== "DRAFT") {
+    if (resolvedTLId !== undefined && resolvedTLId !== proj.teamLeaderId) {
+      const actorName = (authUser as any).name || authUser.email || "Project Manager";
+      const actorRole = (authUser.role || "PROJECT_MANAGER").replace(/_/g, " ");
+      const formattedActor = `${actorName} (${actorRole})`;
+
+      const tlRows = await queryDb<any[]>(`SELECT name, role, employeeId FROM user WHERE id = ? LIMIT 1`, [resolvedTLId]);
+      const tlUser = tlRows && tlRows.length > 0 ? tlRows[0] : null;
+      const tlFormatted = tlUser ? `${tlUser.name} (${tlUser.role?.replace(/_/g, " ") || "Team Leader"})` : "Team Leader";
+
+      if (!proj.teamLeaderId) {
+        auditAction = "PROJECT_ASSIGNED_TO_TEAM_LEADER";
+        auditDetail = `${formattedActor} assigned project '${proj.projectTitle}' to ${tlFormatted}`;
+      } else {
+        auditAction = "TEAM_LEADER_REASSIGNED";
+        auditDetail = `${formattedActor} reassigned project '${proj.projectTitle}' to ${tlFormatted}`;
+      }
+    } else if (proj.status === "DRAFT" && status && status !== "DRAFT") {
       auditAction = "PROJECT_DRAFT_PUBLISHED";
       auditDetail = `Project Manager ${authUser.email} published draft project '${proj.projectTitle}' (ID: ${id}) to status ${status}`;
     } else if (proj.status === "DRAFT") {
@@ -699,7 +703,13 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: auditAction === "PROJECT_DRAFT_PUBLISHED" ? "✓ Project draft successfully published & activated!" : "✓ Project successfully updated!",
+      message: auditAction === "PROJECT_ASSIGNED_TO_TEAM_LEADER"
+        ? "✓ Project successfully assigned to Team Leader!"
+        : auditAction === "TEAM_LEADER_REASSIGNED"
+        ? "✓ Project successfully reassigned to new Team Leader!"
+        : auditAction === "PROJECT_DRAFT_PUBLISHED"
+        ? "✓ Project draft successfully published & activated!"
+        : "✓ Project successfully updated!",
     });
   } catch (error: any) {
     console.error("Projects PUT Error:", error);

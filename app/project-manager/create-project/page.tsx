@@ -68,15 +68,7 @@ function CreateProjectForm() {
         if (empRes.success && Array.isArray(empRes.data)) {
           const eligible = empRes.data.filter((e: any) => {
             const roleUpper = (e.role || "").toUpperCase();
-            const deptUpper = (e.department || e.departmentName || "").toUpperCase();
-            if (roleUpper === "HR" || deptUpper.includes("HUMAN RESOURCES") || deptUpper === "HR" || roleUpper === "FINANCE") {
-              return false;
-            }
-            return (
-              e.role === "TEAM_LEADER" ||
-              e.role === "DEVELOPER" ||
-              e.role === "UI_UX_DESIGNER"
-            );
+            return roleUpper === "TEAM_LEADER";
           });
 
           const mappedTLs = eligible.map((tl: any) => {
