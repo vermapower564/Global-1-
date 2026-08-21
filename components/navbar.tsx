@@ -71,14 +71,23 @@ export default function Navbar({ onToggleSidebar }: NavbarProps) {
     return segment.charAt(0).toUpperCase() + segment.slice(1).replace("-", " ");
   };
 
-  const isEmployeePath = pathname?.startsWith("/employee");
-  const isAdminRole = !isEmployeePath && (user?.role ? ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"].includes(user.role) : false);
+  const roleNameMap: Record<string, string> = {
+    SUPER_ADMIN: "Super Admin",
+    PROJECT_MANAGER: "Project Manager",
+    TEAM_LEADER: "Team Leader",
+    DEVELOPER: "Developer",
+    UI_UX_DESIGNER: "UI/UX Designer",
+    QA_TESTER: "QA Tester",
+    HR: "HR Executive",
+    FINANCE: "Finance Officer",
+    INTERN: "Intern",
+    DIRECTOR: "Director",
+  };
+
   const displayName = user?.name || "Employee";
-  
-  // Format role/designation cleanly: NEVER display Administrator when on Employee Workspace pages
-  const displayRoleOrDesignation = isEmployeePath
-    ? (user?.role ? user.role.replace(/_/g, " ") : "Employee User")
-    : (isAdminRole ? (user?.role === "SUPER_ADMIN" ? "Administrator" : user?.role?.replace(/_/g, " ")) : (user?.role?.replace(/_/g, " ") || "Employee User"));
+  const displayRoleOrDesignation = user?.role
+    ? roleNameMap[user.role.toUpperCase()] || user.role.replace(/_/g, " ")
+    : "Employee";
 
   const initials = getInitials(displayName);
   const avatarUrl = user?.avatarUrl;

@@ -26,7 +26,7 @@ interface SidebarProps {
   onClose?: () => void;
 }
 
-const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR"];
+const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR", "ADMIN"];
 
 function getInitials(name: string): string {
   if (!name || !name.trim()) return "U";
@@ -41,7 +41,6 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [imgError, setImgError] = useState(false);
-
   const [isTeamLeader, setIsTeamLeader] = useState(false);
 
   useEffect(() => {
@@ -64,7 +63,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       })
       .catch(() => {});
 
-    // Check if user is a Team Leader
+    // Check if user is a designated Team Leader
     fetch("/api/team-leader/summary")
       .then((res) => res.json())
       .then((json) => {
@@ -78,24 +77,26 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const roleUpper = (user?.role || "").toUpperCase();
   const isSuperAdmin = roleUpper === "SUPER_ADMIN" || roleUpper === "DIRECTOR" || roleUpper === "ADMIN_HR";
   const isPM = roleUpper === "PROJECT_MANAGER";
-  const isTL = roleUpper === "TEAM_LEADER" || (isTeamLeader && !isPM && !isSuperAdmin);
+  const isTL = roleUpper === "TEAM_LEADER" || (isTeamLeader && !isPM && !isSuperAdmin && !isAdmin);
 
-  // 1. SUPER ADMIN (Section 16)
+  // 1. SUPER ADMIN / ADMIN CANONICAL NAVIGATION
   const superAdminSections = [
     {
-      title: "SUPER ADMIN",
+      title: isSuperAdmin ? "SUPER ADMIN" : "ADMINISTRATION",
       items: [
         { name: "Dashboard", href: "/admin/dashboard", icon: IconDashboard },
-        { name: "Employees", href: "/admin/employees", icon: IconUsers },
-        { name: "Project Managers", href: "/admin/project-managers", icon: IconUserCheck },
         { name: "Organisation", href: "/admin/organisation", icon: IconBuilding },
-        { name: "Profile", href: "/employee/profile", icon: IconSettings },
+        { name: "Projects", href: "/admin/projects", icon: IconFolder },
+        { name: "Tasks", href: "/admin/tasks", icon: IconClipboardList },
+        { name: "Attendance", href: "/admin/attendance", icon: IconCalendar },
+        ...(isSuperAdmin ? [{ name: "Audit Logs", href: "/admin/audit-logs", icon: IconHistory }] : []),
         { name: "Settings", href: "/settings", icon: IconSettings },
+        { name: "Profile", href: "/employee/profile", icon: IconSettings },
       ],
     },
   ];
 
-  // 2. PROJECT MANAGER (Section 16)
+  // 2. PROJECT MANAGER CANONICAL NAVIGATION
   const projectManagerSections = [
     {
       title: "PROJECT MANAGER",
@@ -112,7 +113,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     },
   ];
 
-  // 3. TEAM LEADER (Section 16)
+  // 3. TEAM LEADER CANONICAL NAVIGATION
   const teamLeaderSections = [
     {
       title: "TEAM LEADER",
@@ -129,7 +130,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     },
   ];
 
-  // 4. EMPLOYEE (Section 16)
+  // 4. EMPLOYEE CANONICAL NAVIGATION
   const employeeSections = [
     {
       title: "EMPLOYEE",
@@ -137,15 +138,16 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
         { name: "Dashboard", href: "/employee/dashboard", icon: IconDashboard },
         { name: "My Projects", href: "/employee/projects", icon: IconFolder },
         { name: "My Tasks", href: "/employee/tasks", icon: IconClipboardList },
-        { name: "My Work", href: "/employee/work", icon: IconFileEdit },
+        { name: "Daily Work", href: "/employee/work", icon: IconFileEdit },
         { name: "Attendance", href: "/employee/attendance", icon: IconCalendar },
+        { name: "Payslips", href: "/employee/salary", icon: IconFileText },
         { name: "Profile", href: "/employee/profile", icon: IconSettings },
       ],
     },
   ];
 
   let currentSections = employeeSections;
-  if (isSuperAdmin) currentSections = superAdminSections;
+  if (isSuperAdmin || isAdmin) currentSections = superAdminSections;
   else if (isPM) currentSections = projectManagerSections;
   else if (isTL) currentSections = teamLeaderSections;
 
@@ -172,7 +174,18 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     <aside className="w-64 min-h-screen bg-slate-950 text-slate-100 flex flex-col border-r border-slate-800 shrink-0 shadow-2xl fixed lg:static inset-y-0 left-0 z-50 transition-all duration-300 font-sans">
       {/* Enterprise Brand Logo Header */}
       <div className="flex items-center justify-between px-6 py-5 border-b border-slate-800/80 bg-slate-950">
-        <Link href={isAdmin ? ROUTES.ADMIN_HOME : ROUTES.EMPLOYEE_HOME} className="flex items-center gap-3 group">
+        <Link
+          href={
+            isSuperAdmin || isAdmin
+              ? "/admin/dashboard"
+              : isPM
+              ? "/project-manager"
+              : isTL
+              ? "/team-leader"
+              : "/employee/dashboard"
+          }
+          className="flex items-center gap-3 group"
+        >
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-600 text-white font-black text-xl shadow-lg shadow-blue-600/30 group-hover:scale-105 transition-transform">
             O
           </div>
@@ -181,14 +194,20 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
               OMS Enterprise
             </h1>
             <span className="text-[10px] text-blue-400 font-extrabold uppercase tracking-widest mt-1 block">
-              {isAdmin ? "Admin Control Center" : "Employee Workspace"}
+              {isSuperAdmin || isAdmin
+                ? "Admin Control Center"
+                : isPM
+                ? "Project Manager Portal"
+                : isTL
+                ? "Team Leader Portal"
+                : "Employee Workspace"}
             </span>
           </div>
         </Link>
         {onClose && (
           <button
             onClick={onClose}
-            className="lg:hidden text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition text-xs font-bold"
+            className="lg:hidden text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition text-xs font-bold cursor-pointer"
           >
             ✕
           </button>
@@ -206,8 +225,10 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
             {sec.items.map((item) => {
               const isActive =
                 pathname === item.href ||
-                (item.href !== ROUTES.ADMIN_DASHBOARD &&
-                  item.href !== ROUTES.EMPLOYEE_DASHBOARD &&
+                (item.href !== "/admin/dashboard" &&
+                  item.href !== "/employee/dashboard" &&
+                  item.href !== "/project-manager" &&
+                  item.href !== "/team-leader" &&
                   pathname?.startsWith(item.href));
               const IconComponent = item.icon;
 
