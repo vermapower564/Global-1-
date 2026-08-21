@@ -37,6 +37,8 @@ async function testAllRoutes() {
     "/admin/reports",
     "/admin/reviews",
     "/admin/audit-logs",
+    "/admin/project-managers",
+    "/admin/organisation",
     "/employees/add",
   ];
 
@@ -59,6 +61,11 @@ async function testAllRoutes() {
 
   const pmPages = [
     "/project-manager",
+    "/project-manager/create-project",
+    "/project-manager/team-leaders",
+    "/project-manager/performance",
+    "/project-manager/promotions",
+    "/project-manager/reports",
     "/project-manager/tasks",
     "/project-manager/progress",
     "/project-manager/assign-work",
