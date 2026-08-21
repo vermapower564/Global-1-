@@ -132,7 +132,7 @@ export default function AdminDashboardPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const totalProjects = projects.length || 5;
+  const totalProjects = projects.length;
   const activeProjects = projects.filter((p) => p.status !== "COMPLETED");
 
   // Real Database Counts
@@ -179,6 +179,12 @@ export default function AdminDashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <Link
+            href="/admin/feature-requests"
+            className="bg-amber-50 hover:bg-amber-100 text-amber-900 font-extrabold text-xs px-4 py-2.5 rounded-xl border border-amber-300 transition flex items-center gap-1.5 shadow-2xs"
+          >
+            <span>💡 Feature Requests Desk</span>
+          </Link>
           <Link
             href="/admin/today"
             className="bg-gray-100 hover:bg-gray-200 text-black font-extrabold text-xs px-4 py-2.5 rounded-xl border border-gray-300 transition flex items-center gap-1.5 shadow-2xs"
