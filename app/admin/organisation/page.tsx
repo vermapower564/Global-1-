@@ -263,22 +263,30 @@ export default function AdminOrganisationPage() {
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                         {selectedPM.teamLeadersManaged.map((tl: any) => (
-                          <div
+                          <button
                             key={tl.id}
-                            className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/60 flex items-center gap-3"
+                            type="button"
+                            onClick={() => {
+                              const foundTL = data.teamLeaders.find((t) => t.id === tl.id || t.employeeId === tl.employeeId);
+                              if (foundTL) {
+                                setActiveTab("TEAM_LEADERS");
+                                setSelectedTL(foundTL);
+                              }
+                            }}
+                            className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/60 hover:bg-indigo-50/60 hover:border-indigo-200 transition flex items-center gap-3 cursor-pointer text-left w-full"
                           >
                             {tl.avatarUrl ? (
                               <img src={tl.avatarUrl} alt={tl.name} className="h-9 w-9 rounded-xl object-cover" />
                             ) : (
-                              <div className="h-9 w-9 rounded-xl bg-indigo-600 text-white font-bold text-xs flex items-center justify-center">
+                              <div className="h-9 w-9 rounded-xl bg-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
                                 {tl.name?.substring(0, 2).toUpperCase()}
                               </div>
                             )}
                             <div className="min-w-0">
-                              <p className="text-xs font-black text-slate-900 truncate">{tl.name}</p>
+                              <p className="text-xs font-black text-slate-900 truncate hover:text-indigo-600">{tl.name} →</p>
                               <p className="text-[10px] text-slate-500 font-mono">{tl.employeeId}</p>
                             </div>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     )}
@@ -646,9 +654,17 @@ export default function AdminOrganisationPage() {
                             </p>
                             <div className="flex flex-wrap gap-2">
                               {proj.members?.map((m: any) => (
-                                <div
+                                <button
                                   key={m.id}
-                                  className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-800 flex items-center gap-2"
+                                  type="button"
+                                  onClick={() => {
+                                    const foundEmp = data.employees.find((e) => e.id === m.id || e.employeeId === m.employeeId);
+                                    if (foundEmp) {
+                                      setActiveTab("EMPLOYEES");
+                                      setSelectedEmp(foundEmp);
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 hover:border-emerald-300 border border-slate-200 text-xs font-bold text-slate-800 flex items-center gap-2 transition cursor-pointer"
                                 >
                                   {m.avatarUrl ? (
                                     <img src={m.avatarUrl} alt={m.name} className="h-5 w-5 rounded-full object-cover" />
@@ -657,9 +673,9 @@ export default function AdminOrganisationPage() {
                                       {m.name?.substring(0, 1).toUpperCase()}
                                     </div>
                                   )}
-                                  <span>{m.name}</span>
+                                  <span className="hover:underline">{m.name}</span>
                                   <span className="text-[10px] text-slate-400 font-mono">({m.employeeId})</span>
-                                </div>
+                                </button>
                               ))}
                             </div>
                           </div>
