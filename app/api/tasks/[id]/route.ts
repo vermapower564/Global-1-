@@ -335,8 +335,16 @@ export async function PATCH(
       if (dueDate) nextDueDate = new Date(dueDate);
     }
 
+    // Strict RBAC: Employees cannot assign, reassign, transfer, or change task owner
+    if (assignedToUserId && assignedToUserId !== existingTask.assignedToUserId && !isAdmin && !isTeamLeader && !isProjectManager) {
+      return NextResponse.json(
+        { success: false, error: "Forbidden: Employees cannot assign, reassign, or transfer tasks to other users." },
+        { status: 403 }
+      );
+    }
+
     // Administrative metadata updates (priority, dates, reassignment)
-    if (isAdmin || isProjectManager) {
+    if (isAdmin || isProjectManager || isTeamLeader) {
       if (priority) nextPriority = priority;
       if (section) nextSection = section;
       if (dueDate) nextDueDate = new Date(dueDate);

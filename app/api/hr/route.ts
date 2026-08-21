@@ -53,7 +53,8 @@ export async function GET(request: NextRequest) {
       queryDbCached<any[]>(`SELECT id, name, code FROM department ORDER BY name ASC`, [], 30),
       // Leave requests
       queryDbCached<any[]>(
-        `SELECT l.*, u.name AS employeeName, u.employeeId, u.role AS employeeRole, d.name AS departmentName
+        `SELECT l.id, l.userId, l.leaveType, l.startDate, l.endDate, l.totalDays, l.reason, l.status, l.appliedAt,
+                u.name AS employeeName, u.employeeId, u.role AS employeeRole, d.name AS departmentName
          FROM leaverequest l
          LEFT JOIN user u ON l.userId = u.id
          LEFT JOIN department d ON u.departmentId = d.id
@@ -63,9 +64,13 @@ export async function GET(request: NextRequest) {
       ),
       // Resignations
       queryDbCached<any[]>(
-        `SELECT r.*, u.name AS employeeName, u.employeeId, d.name AS departmentName
+        `SELECT r.id, r.userId, r.status, r.noticePeriodDays, r.submittedAt, r.lastWorkingDay, r.reason,
+                r.managerRemarks, r.hrRemarks, r.approvedAt, r.rejectedAt,
+                COALESCE(r.employeeName, u.name, 'Employee') AS employeeName,
+                COALESCE(r.employeeId, u.employeeId, r.userId) AS employeeId,
+                COALESCE(r.department, d.name) AS departmentName
          FROM resignation r
-         LEFT JOIN user u ON (r.userId = u.id OR r.employeeId = u.employeeId)
+         LEFT JOIN user u ON (r.userId = u.id)
          LEFT JOIN department d ON u.departmentId = d.id
          ORDER BY r.submittedAt DESC LIMIT 50`,
         [],
@@ -192,9 +197,9 @@ export async function GET(request: NextRequest) {
         },
         {
           id: "act-3",
-          action: "DOCUMENT_VERIFIED",
-          details: "Government ID Proof and Joining Letter verified",
-          timestamp: new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
+          action: "SALARY_SLIP_GENERATED",
+          details: "Monthly payroll slips processed for Engineering Department",
+          timestamp: new Date(Date.now() - 12 * 3600 * 1000).toISOString(),
           userName: "Priya Sharma",
           userRole: "HR",
         },
@@ -209,6 +214,17 @@ export async function GET(request: NextRequest) {
       ];
     }
 
+    // Calculate On Leave Today
+    const today = new Date().toISOString().split("T")[0];
+    const onLeaveToday = (leaveRows || []).filter((l) => {
+      if ((l.status || "").toUpperCase() !== "APPROVED") return false;
+      const s = l.startDate ? (typeof l.startDate === "string" ? l.startDate.split("T")[0] : new Date(l.startDate).toISOString().split("T")[0]) : "";
+      const e = l.endDate ? (typeof l.endDate === "string" ? l.endDate.split("T")[0] : new Date(l.endDate).toISOString().split("T")[0]) : "";
+      return s <= today && today <= e;
+    }).length;
+
+    const upcomingJoiners = (invitationRows || []).filter((inv) => (inv.status || "").toUpperCase() === "PENDING").length;
+
     return NextResponse.json({
       success: true,
       summary: {
@@ -216,25 +232,33 @@ export async function GET(request: NextRequest) {
         activeEmployees,
         inactiveEmployees,
         newJoiners,
+        onLeaveToday,
         pendingLeavesCount: pendingLeaves.length,
+        departmentsCount: deptRows ? deptRows.length : Object.keys(departmentCounts).length,
+        upcomingJoiners,
         pendingResignationsCount: pendingResignations.length,
         todayAttendance: {
           present: todayPresentCount,
           active: activeEmployees,
           ratio: `${todayPresentCount} / ${activeEmployees}`,
-          percentage: activeEmployees > 0 ? Math.round((todayPresentCount / activeEmployees) * 100) : 100,
+          percentage: activeEmployees > 0 ? Math.round((todayPresentCount / activeEmployees) * 100) : 0,
         },
-        trackedDocumentsCount: (docRows || []).length,
-        activeInvitationsCount: (invitationRows || []).filter((i) => i.status === "INVITED").length,
       },
       recentEmployees,
       pendingLeaveRequests: formattedPendingLeaves,
       departmentBreakdown,
       recentActivities,
+      documents: (docRows || []).map((d) => ({
+        id: d.id,
+        title: d.title || "HR Policy Document.pdf",
+        documentType: d.documentType || "POLICY",
+        fileSize: d.fileSize || "1.2 MB",
+        status: d.status || "ACTIVE",
+        createdAt: d.createdAt,
+      })),
     });
   } catch (error: any) {
     console.error("HR GET API Error:", error);
     return NextResponse.json({ success: false, error: error.message || "Failed to retrieve HR data" }, { status: 500 });
   }
 }
-

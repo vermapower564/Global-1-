@@ -99,7 +99,7 @@ export async function GET(request: Request) {
       results: {
         employees,
         tasks,
-        projects: projects.map((p) => ({
+        projects: projects.map((p: any) => ({
           id: p.id,
           name: p.projectTitle,
           status: p.status,

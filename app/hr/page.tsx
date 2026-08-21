@@ -155,70 +155,110 @@ export default function HRDashboardPage() {
         </div>
       )}
 
-      {/* 1. Main KPI Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+      {/* 1. Main KPI Summary Cards (All 9 Real HR Metrics) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
         {/* Card 1: Total Employees */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs hover:border-slate-300 transition">
+        <Link href="/hr/employees" className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs hover:border-indigo-300 transition block">
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Total Employees</span>
-          <div className="flex items-baseline justify-between mt-2">
-            <span className="text-2xl sm:text-3xl font-black text-slate-900">{summary.totalEmployees}</span>
-            <span className="text-xs font-bold text-slate-500">All staff</span>
+          <div className="flex items-baseline justify-between mt-1.5">
+            <span className="text-2xl font-black text-slate-900">{summary.totalEmployees}</span>
+            <span className="text-[10px] font-bold text-slate-400">Headcount</span>
           </div>
-          <p className="text-[11px] text-slate-500 font-medium mt-1">Headcount registered</p>
-        </div>
+          <p className="text-[11px] text-slate-500 font-medium mt-1">All staff registered</p>
+        </Link>
 
         {/* Card 2: Active Employees */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs hover:border-emerald-300 border-l-4 border-l-emerald-500 transition">
+        <Link href="/hr/employees?status=ACTIVE" className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs hover:border-emerald-300 border-l-4 border-l-emerald-500 transition block">
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Active Employees</span>
-          <div className="flex items-baseline justify-between mt-2">
-            <span className="text-2xl sm:text-3xl font-black text-emerald-600">{summary.activeEmployees}</span>
-            <span className="text-[10px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md">
+          <div className="flex items-baseline justify-between mt-1.5">
+            <span className="text-2xl font-black text-emerald-600">{summary.activeEmployees}</span>
+            <span className="text-[10px] font-black bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded">
               {summary.totalEmployees > 0 ? Math.round((summary.activeEmployees / summary.totalEmployees) * 100) : 100}%
             </span>
           </div>
           <p className="text-[11px] text-slate-500 font-medium mt-1">Active workforce</p>
-        </div>
+        </Link>
 
-        {/* Card 3: New Joiners */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs hover:border-blue-300 border-l-4 border-l-blue-500 transition">
+        {/* Card 3: Inactive Employees */}
+        <Link href="/hr/employees?status=INACTIVE" className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs hover:border-slate-300 border-l-4 border-l-slate-400 transition block">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Inactive Employees</span>
+          <div className="flex items-baseline justify-between mt-1.5">
+            <span className="text-2xl font-black text-slate-600">{summary.inactiveEmployees || 0}</span>
+            <span className="text-[10px] font-bold text-slate-400">Dormant</span>
+          </div>
+          <p className="text-[11px] text-slate-500 font-medium mt-1">Deactivated / pending</p>
+        </Link>
+
+        {/* Card 4: New Joiners */}
+        <Link href="/hr/employees?status=NEW_JOINERS" className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs hover:border-blue-300 border-l-4 border-l-blue-500 transition block">
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">New Joiners</span>
-          <div className="flex items-baseline justify-between mt-2">
-            <span className="text-2xl sm:text-3xl font-black text-blue-600">{summary.newJoiners}</span>
-            <span className="text-xs font-bold text-blue-600">Last 60d</span>
+          <div className="flex items-baseline justify-between mt-1.5">
+            <span className="text-2xl font-black text-blue-600">{summary.newJoiners}</span>
+            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Last 60d</span>
           </div>
           <p className="text-[11px] text-slate-500 font-medium mt-1">Recent onboardings</p>
-        </div>
+        </Link>
 
-        {/* Card 4: Pending Leaves */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs hover:border-amber-300 border-l-4 border-l-amber-500 transition">
+        {/* Card 5: On Leave Today */}
+        <Link href="/hr/leave" className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs hover:border-indigo-300 border-l-4 border-l-indigo-500 transition block">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">On Leave Today</span>
+          <div className="flex items-baseline justify-between mt-1.5">
+            <span className="text-2xl font-black text-indigo-600">{summary.onLeaveToday || 0}</span>
+            <span className="text-[10px] font-black bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded">Today</span>
+          </div>
+          <p className="text-[11px] text-slate-500 font-medium mt-1">Approved absences</p>
+        </Link>
+
+        {/* Card 6: Pending Leave Requests */}
+        <Link href="/hr/leave" className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs hover:border-amber-300 border-l-4 border-l-amber-500 transition block">
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Pending Leaves</span>
-          <div className="flex items-baseline justify-between mt-2">
-            <span className="text-2xl sm:text-3xl font-black text-amber-600">{summary.pendingLeavesCount}</span>
-            <span className="text-[10px] font-black bg-amber-50 text-amber-700 px-2 py-0.5 rounded-md">Review</span>
+          <div className="flex items-baseline justify-between mt-1.5">
+            <span className="text-2xl font-black text-amber-600">{summary.pendingLeavesCount}</span>
+            <span className="text-[10px] font-black bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded">Action</span>
           </div>
           <p className="text-[11px] text-slate-500 font-medium mt-1">Awaiting decision</p>
-        </div>
+        </Link>
 
-        {/* Card 5: Pending Resignations */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs hover:border-rose-300 border-l-4 border-l-rose-500 transition">
-          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Pending Resignations</span>
-          <div className="flex items-baseline justify-between mt-2">
-            <span className="text-2xl sm:text-3xl font-black text-rose-600">{summary.pendingResignationsCount}</span>
-            <span className="text-[10px] font-black bg-rose-50 text-rose-700 px-2 py-0.5 rounded-md">Exit</span>
+        {/* Card 7: Departments */}
+        <Link href="/hr/departments" className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs hover:border-indigo-300 border-l-4 border-l-indigo-400 transition block">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Departments</span>
+          <div className="flex items-baseline justify-between mt-1.5">
+            <span className="text-2xl font-black text-slate-900">{summary.departmentsCount || 8}</span>
+            <span className="text-[10px] font-bold text-slate-400">Org units</span>
+          </div>
+          <p className="text-[11px] text-slate-500 font-medium mt-1">Functional teams</p>
+        </Link>
+
+        {/* Card 8: Upcoming Joiners */}
+        <Link href="/hr/onboarding" className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs hover:border-cyan-300 border-l-4 border-l-cyan-500 transition block">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Upcoming Joiners</span>
+          <div className="flex items-baseline justify-between mt-1.5">
+            <span className="text-2xl font-black text-cyan-600">{summary.upcomingJoiners || 0}</span>
+            <span className="text-[10px] font-bold text-cyan-600 bg-cyan-50 px-1.5 py-0.5 rounded">Invited</span>
+          </div>
+          <p className="text-[11px] text-slate-500 font-medium mt-1">Pending onboarding</p>
+        </Link>
+
+        {/* Card 9: Pending Resignations / Exit */}
+        <Link href="/hr/resignation" className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs hover:border-rose-300 border-l-4 border-l-rose-500 transition block">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Exit Requests</span>
+          <div className="flex items-baseline justify-between mt-1.5">
+            <span className="text-2xl font-black text-rose-600">{summary.pendingResignationsCount}</span>
+            <span className="text-[10px] font-black bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded">Exit</span>
           </div>
           <p className="text-[11px] text-slate-500 font-medium mt-1">Notice clearance</p>
-        </div>
+        </Link>
 
-        {/* Card 6: Today's Attendance */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs hover:border-indigo-300 border-l-4 border-l-indigo-500 transition">
+        {/* Card 10: Today's Attendance */}
+        <Link href="/hr/attendance" className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs hover:border-indigo-300 border-l-4 border-l-indigo-600 transition block">
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Today's Attendance</span>
-          <div className="flex items-baseline justify-between mt-2">
+          <div className="flex items-baseline justify-between mt-1.5">
             <span className="text-xl sm:text-2xl font-black text-indigo-600">{summary.todayAttendance.ratio}</span>
           </div>
           <p className="text-[11px] text-slate-500 font-medium mt-1">
             {summary.todayAttendance.percentage}% present today
           </p>
-        </div>
+        </Link>
       </div>
 
       {/* 2. Middle Section: Recent Employees & Pending Leave Requests */}

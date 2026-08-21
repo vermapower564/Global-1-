@@ -401,7 +401,7 @@ export async function POST(req: NextRequest) {
                 COUNT(p.id) AS activeProjectCount
          FROM user u
          LEFT JOIN project p ON u.id = p.teamLeaderId AND p.status IN ('ACTIVE', 'PLANNING', 'IN_PROGRESS', 'DRAFT')
-         WHERE u.role IN ('TEAM_LEADER', 'DEVELOPER') AND u.role != 'HR' AND u.isActive = 1
+         WHERE u.role = 'TEAM_LEADER' AND u.isActive = 1
          GROUP BY u.id, u.employeeId, u.name, u.email
          ORDER BY activeProjectCount ASC, u.createdAt ASC
          LIMIT 1`

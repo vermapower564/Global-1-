@@ -1,25 +1,28 @@
-import mysql from "mysql2/promise";
+import mariadb, { type Pool, type PoolConfig } from "mariadb";
 
 /**
  * Enterprise Ultra-Fast TiDB Cloud Connection Pool
  * Features:
- * - Persistent TCP Keep-Alive & Active Connection Pre-warming
- * - Background keep-alive heartbeat ping every 45s (prevents AWS TCP idle disconnects)
+ * - Powered by native `mariadb` driver (compatible with TiDB Cloud & MySQL)
  * - Sub-millisecond In-Memory Query Cache with automatic invalidation on writes
+ * - Background keep-alive heartbeat ping every 45s
  */
 
-let pool: mysql.Pool | null = null;
+let pool: Pool | null = null;
 const queryCache = new Map<string, { data: any; expiresAt: number }>();
 let warmupTimer: NodeJS.Timeout | null = null;
 
-export function getDbConfig() {
+export function getDbConfig(): PoolConfig {
   const rawUrl =
     process.env.DATABASE_URL ||
     "mysql://4BrXAABTf5SQeKq.root:oF5rWQth8eQANTqp@gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/oms?sslaccept=strict";
 
   try {
     const url = new URL(rawUrl);
-    const isCloudHost = url.hostname.includes("tidbcloud.com") || url.port === "4000" || url.search.includes("ssl");
+    const isCloudHost =
+      url.hostname.includes("tidbcloud.com") ||
+      url.port === "4000" ||
+      url.search.includes("ssl");
 
     return {
       host: url.hostname || "gateway01.ap-southeast-1.prod.aws.tidbcloud.com",
@@ -27,16 +30,11 @@ export function getDbConfig() {
       user: decodeURIComponent(url.username || "4BrXAABTf5SQeKq.root"),
       password: decodeURIComponent(url.password || "oF5rWQth8eQANTqp"),
       database: url.pathname.replace(/^\//, "") || "oms",
-      waitForConnections: true,
       connectionLimit: 30,
-      maxIdle: 20,
-      idleTimeout: 600000, // 10 minutes
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 0,
-      queueLimit: 0,
+      idleTimeout: 600,
+      checkDuplicate: false,
       ssl: isCloudHost
         ? {
-            minVersion: "TLSv1.2",
             rejectUnauthorized: true,
           }
         : undefined,
@@ -48,29 +46,25 @@ export function getDbConfig() {
       user: "4BrXAABTf5SQeKq.root",
       password: "oF5rWQth8eQANTqp",
       database: "oms",
-      waitForConnections: true,
       connectionLimit: 30,
-      maxIdle: 20,
-      idleTimeout: 600000,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 0,
+      idleTimeout: 600,
+      checkDuplicate: false,
       ssl: {
-        minVersion: "TLSv1.2",
         rejectUnauthorized: true,
       },
     };
   }
 }
 
-export function getDbPool(): mysql.Pool {
+export function getDbPool(): Pool {
   if (!pool) {
     const config = getDbConfig();
-    pool = mysql.createPool(config);
+    pool = mariadb.createPool(config);
 
     // Pre-warm connections immediately
     pool.query("SELECT 1").catch(() => {});
 
-    // Periodic Heartbeat to keep all pool connections warm (prevents 100-300ms SSL handshake delays)
+    // Periodic Heartbeat to keep all pool connections warm
     if (!warmupTimer) {
       warmupTimer = setInterval(() => {
         if (pool) {
@@ -113,7 +107,7 @@ export async function queryDb<T = any>(sql: string, params: any[] = []): Promise
     clearQueryCache();
   }
 
-  const [rows] = await p.execute(sql, params);
+  const rows = await p.query(sql, params);
   return rows as T;
 }
 

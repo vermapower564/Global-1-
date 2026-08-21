@@ -13,14 +13,16 @@ export async function GET(
   try {
     // 1. Server-Side Admin Authorization Check
     const authResult = await authenticateRequest(request);
-    if (authResult.response) {
-      const adminRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
-      if (!authResult.user || !adminRoles.includes(authResult.user.role)) {
-        return NextResponse.json(
-          { success: false, error: "Forbidden: Admin authorization required." },
-          { status: 403 }
-        );
-      }
+    if (authResult.response || !authResult.user) {
+      return authResult.response || NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
+    }
+
+    const adminRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR"];
+    if (!adminRoles.includes(authResult.user.role)) {
+      return NextResponse.json(
+        { success: false, error: "Forbidden: Administrative authorization required." },
+        { status: 403 }
+      );
     }
 
     const { employeeId } = await params;
@@ -200,7 +202,7 @@ export async function GET(
       .filter((l) => l.status === "APPROVED")
       .reduce((acc, curr) => acc + (curr.totalDays || 0), 0);
     const pendingLeaves = leaveRows.filter((l) => l.status === "PENDING").length;
-    const totalLeaveQuota = 18;
+    const totalLeaveQuota = 24;
     const remainingLeave = Math.max(0, totalLeaveQuota - approvedLeaves);
 
     const totalTasks = taskRows.length;
@@ -343,6 +345,13 @@ export async function GET(
       success: true,
       employee: employeeObj,
       stats,
+      data: {
+        user: employeeObj,
+        stats,
+        attendanceHistory: employeeObj.attendance,
+        leaveHistory: employeeObj.leaverequest,
+        documents: [],
+      },
     });
   } catch (error: any) {
     console.error("API error fetching employee 360:", error);

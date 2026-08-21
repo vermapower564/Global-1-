@@ -318,6 +318,64 @@ export default function HREmployeeProfilePage() {
                 Remaining Balance: {stats.remainingLeave || 14} / 18 Days
               </span>
             </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+              <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200">
+                <span className="text-[10px] font-black uppercase text-emerald-700 block">Present Shifts</span>
+                <span className="text-xl font-mono font-black text-emerald-900">
+                  {attendanceHistory.filter((a: any) => a.status === "PRESENT").length}
+                </span>
+              </div>
+              <div className="p-3 bg-rose-50 rounded-2xl border border-rose-200">
+                <span className="text-[10px] font-black uppercase text-rose-700 block">Absences</span>
+                <span className="text-xl font-mono font-black text-rose-900">
+                  {attendanceHistory.filter((a: any) => a.status === "ABSENT").length}
+                </span>
+              </div>
+              <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200">
+                <span className="text-[10px] font-black uppercase text-amber-700 block">Late / Half Day</span>
+                <span className="text-xl font-mono font-black text-amber-900">
+                  {attendanceHistory.filter((a: any) => a.status === "LATE" || a.status === "HALF_DAY").length}
+                </span>
+              </div>
+              <div className="p-3 bg-indigo-50 rounded-2xl border border-indigo-200">
+                <span className="text-[10px] font-black uppercase text-indigo-700 block">Attendance Rate</span>
+                <span className="text-xl font-mono font-black text-indigo-900">
+                  {stats.attendancePercentage || (attendanceHistory.length > 0 ? "96%" : "100%")}
+                </span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-center">
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                <span className="text-[10px] font-black uppercase text-slate-500 block">Total Quota</span>
+                <span className="text-xl font-mono font-black text-slate-900">24 Days</span>
+              </div>
+              <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200">
+                <span className="text-[10px] font-black uppercase text-amber-700 block">Used Leave</span>
+                <span className="text-xl font-mono font-black text-amber-900">{stats.approvedLeaves || 0} Days</span>
+              </div>
+              <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200">
+                <span className="text-[10px] font-black uppercase text-emerald-700 block">Remaining</span>
+                <span className="text-xl font-mono font-black text-emerald-900">
+                  {stats.remainingLeave !== undefined ? stats.remainingLeave : Math.max(0, 24 - (stats.approvedLeaves || 0))} Days
+                </span>
+              </div>
+              <div className="p-3 bg-blue-50 rounded-2xl border border-blue-200">
+                <span className="text-[10px] font-black uppercase text-blue-700 block">Pending</span>
+                <span className="text-xl font-mono font-black text-blue-900">{stats.pendingLeaves || 0}</span>
+              </div>
+              <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200">
+                <span className="text-[10px] font-black uppercase text-emerald-700 block">Approved</span>
+                <span className="text-xl font-mono font-black text-emerald-900">
+                  {leaveHistory.filter((l: any) => l.status === "APPROVED").length}
+                </span>
+              </div>
+              <div className="p-3 bg-rose-50 rounded-2xl border border-rose-200">
+                <span className="text-[10px] font-black uppercase text-rose-700 block">Rejected</span>
+                <span className="text-xl font-mono font-black text-rose-900">
+                  {leaveHistory.filter((l: any) => l.status === "REJECTED").length}
+                </span>
+              </div>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
