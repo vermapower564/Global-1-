@@ -421,10 +421,10 @@ export async function GET(req: NextRequest) {
       });
 
     // -------------------------------------------------------------
-    // 3. Process Employees (Strictly non-PM, non-TL, non-SuperAdmin)
+    // 3. Process Employees (Strictly non-PM, non-TL, non-HR, non-SuperAdmin)
     // -------------------------------------------------------------
     const employees = users
-      .filter((u) => u.role !== "SUPER_ADMIN" && u.role !== "PROJECT_MANAGER" && u.role !== "TEAM_LEADER")
+      .filter((u) => u.role !== "SUPER_ADMIN" && u.role !== "PROJECT_MANAGER" && u.role !== "TEAM_LEADER" && u.role !== "HR" && u.role !== "ADMIN_HR")
       .map((emp) => {
         const assignedProjects = enrichedProjects.filter((p) =>
           p.members.some((m: any) => m.id === emp.id)
@@ -578,12 +578,88 @@ export async function GET(req: NextRequest) {
         };
       });
 
+    // -------------------------------------------------------------
+    // 4. Process Human Resources (Strictly role === "HR" || role === "ADMIN_HR")
+    // -------------------------------------------------------------
+    const pendingLeavesCount = Array.from(leaveMap.values()).reduce((acc, l) => acc + (l.pendingLeaves || 0), 0);
+    const activeStaffCount = users.filter((u) => u.isActive && u.role !== "SUPER_ADMIN").length;
+
+    const humanResources = users
+      .filter((u) => u.role === "HR" || u.role === "ADMIN_HR")
+      .map((hr) => {
+        const bankData = bankMap.get(hr.id) || {
+          hasBankDetails: false,
+          bankName: "Not on file",
+          accountHolderNameMasked: "••••••",
+          accountNumberMasked: "••••••••••••",
+          ifscCodeMasked: "•••••••••••",
+          branchName: "N/A",
+          accountType: "Savings",
+          isActive: false,
+        };
+
+        const att = attMap.get(hr.id) || { totalDays: 0, presentDays: 0, totalHours: 0 };
+        const leaves = leaveMap.get(hr.id) || { approvedLeaves: 0, pendingLeaves: 0 };
+
+        // Dynamic Org Hierarchy for HR (Reporting directly to Super Admin)
+        const orgHierarchy = {
+          level1: { role: "ADMIN", title: "Super Admin", user: superAdmin },
+          level2: { role: "HR", title: "Human Resources Specialist", user: hr },
+          level3: users
+            .filter((u) => u.role !== "SUPER_ADMIN" && u.role !== "HR" && u.role !== "ADMIN_HR")
+            .slice(0, 8)
+            .map((u) => ({
+              role: u.role,
+              title: u.role.replace(/_/g, " "),
+              user: u,
+            })),
+        };
+
+        return {
+          id: hr.id,
+          employeeId: hr.employeeId,
+          name: hr.name,
+          email: hr.email,
+          phone: hr.phone || "+91 98765 00000",
+          avatarUrl: hr.avatarUrl,
+          role: "HR",
+          departmentId: hr.departmentId,
+          department: hr.departmentName || "Human Resources",
+          joiningDate: hr.joiningDate,
+          status: hr.isActive ? "ACTIVE" : "INACTIVE",
+          employmentStatus: hr.isResigned ? "RESIGNED" : "REGULAR_FULL_TIME",
+          managerName: superAdmin.name,
+          managerEmpId: superAdmin.employeeId,
+          responsibilities: [
+            "Employee onboarding and offboarding",
+            "Employee records & directory governance",
+            "Leave management & 24-day annual quota approvals",
+            "Attendance & work hours oversight",
+            "Recruitment & onboarding records",
+            "Department & organizational role management",
+            "HR documents & statutory compliance",
+            "Employee performance & rating records",
+            "Resignation & employee exit process",
+          ],
+          metrics: {
+            activeEmployeesCount: activeStaffCount,
+            totalDepartmentsCount: departments.length,
+            pendingLeavesCount,
+          },
+          bankDetails: bankData,
+          attendanceSummary: att,
+          leaveSummary: leaves,
+          orgHierarchy,
+        };
+      });
+
     return NextResponse.json({
       success: true,
       data: {
         projectManagers,
         teamLeaders,
         employees,
+        humanResources,
         projects: enrichedProjects,
         departments,
       },

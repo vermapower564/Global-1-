@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 
-type TabType = "PROJECT_MANAGERS" | "TEAM_LEADERS" | "EMPLOYEES";
+type TabType = "PROJECT_MANAGERS" | "TEAM_LEADERS" | "EMPLOYEES" | "HUMAN_RESOURCES";
 type PersonProfileTab = "WORK_OVERVIEW" | "ORG_STRUCTURE" | "ATTENDANCE_LEAVES" | "ACCOUNT_MANAGEMENT";
 type TaskStatusFilter = "ALL" | "COMPLETED" | "IN_PROGRESS" | "PENDING" | "IN_REVIEW" | "BLOCKED";
 
@@ -15,12 +15,14 @@ export default function AdminOrganisationPage() {
     projectManagers: any[];
     teamLeaders: any[];
     employees: any[];
+    humanResources: any[];
     projects: any[];
     departments: any[];
   }>({
     projectManagers: [],
     teamLeaders: [],
     employees: [],
+    humanResources: [],
     projects: [],
     departments: [],
   });
@@ -53,6 +55,11 @@ export default function AdminOrganisationPage() {
   const [empStatusFilter, setEmpStatusFilter] = useState("ALL");
   const [empPage, setEmpPage] = useState(1);
   const EMP_PER_PAGE = 8;
+
+  // Tab 4 Filters: Human Resources (HR)
+  const [hrSearch, setHrSearch] = useState("");
+  const [hrStatusFilter, setHrStatusFilter] = useState("ALL");
+  const [hrDeptFilter, setHrDeptFilter] = useState("ALL");
 
   // -------------------------------------------------------------
   // Account Management State
@@ -116,6 +123,7 @@ export default function AdminOrganisationPage() {
               ...json.data.projectManagers,
               ...json.data.teamLeaders,
               ...json.data.employees,
+              ...(json.data.humanResources || []),
             ];
             const updated = all.find((p: any) => p.id === selectedPerson.id);
             if (updated) setSelectedPerson(updated);
@@ -257,6 +265,28 @@ export default function AdminOrganisationPage() {
     data.projectManagers.forEach((pm) => pm.department && depts.add(pm.department));
     return Array.from(depts);
   }, [data.projectManagers]);
+
+  // Tab 4 Filtered List: Human Resources (HR)
+  const filteredHRs = useMemo(() => {
+    return (data.humanResources || []).filter((hr) => {
+      const q = hrSearch.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        hr.name?.toLowerCase().includes(q) ||
+        hr.employeeId?.toLowerCase().includes(q);
+      if (!matchesSearch) return false;
+      if (hrStatusFilter !== "ALL" && hr.status !== hrStatusFilter) return false;
+      if (hrDeptFilter !== "ALL" && hr.department !== hrDeptFilter) return false;
+      return true;
+    });
+  }, [data.humanResources, hrSearch, hrStatusFilter, hrDeptFilter]);
+
+  // Unique Departments for HR
+  const uniqueHRDepts = useMemo(() => {
+    const depts = new Set<string>();
+    (data.humanResources || []).forEach((hr) => hr.department && depts.add(hr.department));
+    return Array.from(depts);
+  }, [data.humanResources]);
 
   // -------------------------------------------------------------
   // Employee Workboard Calculations (Scoped to Selected Project)
@@ -465,15 +495,15 @@ export default function AdminOrganisationPage() {
         </div>
       </div>
 
-      {/* 1. THREE MAIN VIEWS TABS (Project Managers | Team Leaders | Employees) */}
-      <div className="bg-slate-100/80 p-1.5 rounded-2xl flex items-center gap-1 border border-slate-200 max-w-lg shadow-2xs">
+      {/* 1. FOUR MAIN VIEWS TABS (Project Managers | Team Leaders | Employees | Human Resources) */}
+      <div className="bg-slate-100/80 p-1.5 rounded-2xl flex flex-wrap items-center gap-1 border border-slate-200 max-w-2xl shadow-2xs">
         <button
           type="button"
           onClick={() => {
             setActiveTab("PROJECT_MANAGERS");
             setSelectedPerson(null);
           }}
-          className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
+          className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
             activeTab === "PROJECT_MANAGERS"
               ? "bg-white text-slate-900 shadow-xs border border-slate-200"
               : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
@@ -488,7 +518,7 @@ export default function AdminOrganisationPage() {
             setActiveTab("TEAM_LEADERS");
             setSelectedPerson(null);
           }}
-          className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
+          className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
             activeTab === "TEAM_LEADERS"
               ? "bg-white text-slate-900 shadow-xs border border-slate-200"
               : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
@@ -503,13 +533,28 @@ export default function AdminOrganisationPage() {
             setActiveTab("EMPLOYEES");
             setSelectedPerson(null);
           }}
-          className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
+          className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
             activeTab === "EMPLOYEES"
               ? "bg-white text-slate-900 shadow-xs border border-slate-200"
               : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
           }`}
         >
           Employees ({data.employees.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab("HUMAN_RESOURCES");
+            setSelectedPerson(null);
+          }}
+          className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
+            activeTab === "HUMAN_RESOURCES"
+              ? "bg-white text-slate-900 shadow-xs border border-slate-200"
+              : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+          }`}
+        >
+          HR (Human Resources) ({(data.humanResources || []).length})
         </button>
       </div>
 
@@ -543,7 +588,7 @@ export default function AdminOrganisationPage() {
                   onClick={() => setSelectedPerson(null)}
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5"
                 >
-                  ← Back to {activeTab === "PROJECT_MANAGERS" ? "Project Managers" : activeTab === "TEAM_LEADERS" ? "Team Leaders" : "Employees"}
+                  ← Back to {activeTab === "PROJECT_MANAGERS" ? "Project Managers" : activeTab === "TEAM_LEADERS" ? "Team Leaders" : activeTab === "HUMAN_RESOURCES" ? "Human Resources" : "Employees"}
                 </button>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold px-3 py-1 bg-slate-100 text-slate-700 rounded-full border border-slate-200">
@@ -764,8 +809,113 @@ export default function AdminOrganisationPage() {
                     </div>
                   )}
 
+                  {/* For HR: Human Resources Operations & Governance */}
+                  {selectedPerson.role === "HR" && (
+                    <div className="space-y-6">
+                      {/* Strategic Operational Metrics */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                        <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50">
+                          <p className="text-[10px] font-bold uppercase text-slate-400">Total Workforce</p>
+                          <p className="text-lg font-black text-slate-900 mt-1">{selectedPerson.metrics?.activeEmployeesCount || 0} Staff</p>
+                        </div>
+                        <div className="p-3.5 rounded-2xl border border-purple-200 bg-purple-50/30">
+                          <p className="text-[10px] font-bold uppercase text-purple-700">Departments</p>
+                          <p className="text-lg font-black text-purple-800 mt-1">{selectedPerson.metrics?.totalDepartmentsCount || 0}</p>
+                        </div>
+                        <div className="p-3.5 rounded-2xl border border-amber-200 bg-amber-50/30">
+                          <p className="text-[10px] font-bold uppercase text-amber-700">Pending Leaves</p>
+                          <p className="text-lg font-black text-amber-800 mt-1">{selectedPerson.metrics?.pendingLeavesCount || 0}</p>
+                        </div>
+                        <div className="p-3.5 rounded-2xl border border-rose-200 bg-rose-50/30">
+                          <p className="text-[10px] font-bold uppercase text-rose-700">Pending Resignations</p>
+                          <p className="text-lg font-black text-rose-800 mt-1">{selectedPerson.metrics?.pendingResignationsCount || 0}</p>
+                        </div>
+                      </div>
+
+                      {/* HR Operations & Responsibilities Portfolio */}
+                      <div className="p-6 rounded-3xl border border-purple-200 bg-purple-50/20 space-y-4">
+                        <div className="flex items-center justify-between border-b border-purple-100 pb-3">
+                          <div>
+                            <h4 className="text-xs font-black uppercase text-purple-950 tracking-wider flex items-center gap-2">
+                              <span>📋</span> Human Resources Operational Portfolio & Responsibilities
+                            </h4>
+                            <p className="text-xs text-slate-500 font-medium">
+                              Core administrative scope, governance functions, and organizational oversight managed by this HR officer.
+                            </p>
+                          </div>
+                          <span className="px-2.5 py-1 bg-purple-100 text-purple-800 text-[10px] font-bold rounded-lg border border-purple-200 uppercase">
+                            HR Operations Desk
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                          {(selectedPerson.responsibilities || [
+                            "Employee onboarding and offboarding",
+                            "Employee records & directory governance",
+                            "Leave management & 24-day annual quota approvals",
+                            "Attendance & work hours oversight",
+                            "Recruitment & onboarding records",
+                            "Department & organizational role management",
+                            "HR documents & statutory compliance",
+                            "Employee performance & rating records",
+                            "Resignation & employee exit process",
+                          ]).map((resp: string, idx: number) => (
+                            <div
+                              key={idx}
+                              className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-2xs flex items-start gap-2.5"
+                            >
+                              <div className="h-6 w-6 rounded-lg bg-purple-100 text-purple-700 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
+                                ✓
+                              </div>
+                              <div>
+                                <p className="text-xs font-bold text-slate-900 leading-snug">{resp}</p>
+                                <p className="text-[10px] text-slate-400 font-medium mt-0.5">Enterprise RBAC Scope</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* HR Quick Actions & Management Links */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <Link
+                          href="/hr/employees"
+                          className="p-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 transition block shadow-2xs group"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-extrabold text-slate-900 group-hover:text-purple-700">Employees Directory →</span>
+                            <span className="text-base">👥</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-1">Manage personnel records, onboarding, and documents</p>
+                        </Link>
+
+                        <Link
+                          href="/hr/leave"
+                          className="p-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 transition block shadow-2xs group"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-extrabold text-slate-900 group-hover:text-purple-700">Leave Approvals →</span>
+                            <span className="text-base">📅</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-1">Review leave applications and quota deductions</p>
+                        </Link>
+
+                        <Link
+                          href="/hr/attendance"
+                          className="p-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 transition block shadow-2xs group"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-extrabold text-slate-900 group-hover:text-purple-700">Attendance Monitoring →</span>
+                            <span className="text-base">⏱️</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-1">Audit daily punches and shift records across departments</p>
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+
                   {/* For Employees: Workboard */}
-                  {selectedPerson.role !== "PROJECT_MANAGER" && selectedPerson.role !== "TEAM_LEADER" && employeeWorkboardData && (
+                  {selectedPerson.role !== "PROJECT_MANAGER" && selectedPerson.role !== "TEAM_LEADER" && selectedPerson.role !== "HR" && employeeWorkboardData && (
                     <div className="space-y-4">
                       {/* Workboard Scope & Status Tabs */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-2">
@@ -1778,6 +1928,151 @@ export default function AdminOrganisationPage() {
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Human Resources (HR) View */}
+              {activeTab === "HUMAN_RESOURCES" && (
+                <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs space-y-4 p-5 sm:p-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-sm font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
+                        <span>👥</span> Human Resources ({filteredHRs.length})
+                      </h2>
+                      <p className="text-xs text-slate-500 font-medium">
+                        Click on any HR personnel name or ID to open their complete authorized profile and operations scope.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <input
+                      type="text"
+                      placeholder="Search HR Name or Employee ID..."
+                      value={hrSearch}
+                      onChange={(e) => setHrSearch(e.target.value)}
+                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-medium text-black focus:border-slate-900 focus:outline-none"
+                    />
+
+                    <select
+                      value={hrStatusFilter}
+                      onChange={(e) => setHrStatusFilter(e.target.value)}
+                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-slate-900 focus:outline-none"
+                    >
+                      <option value="ALL">All Statuses</option>
+                      <option value="ACTIVE">Active</option>
+                      <option value="INACTIVE">Inactive</option>
+                    </select>
+
+                    <select
+                      value={hrDeptFilter}
+                      onChange={(e) => setHrDeptFilter(e.target.value)}
+                      className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-black focus:border-slate-900 focus:outline-none"
+                    >
+                      <option value="ALL">All Departments</option>
+                      {uniqueHRDepts.map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-black tracking-wider">
+                        <tr>
+                          <th className="py-3.5 px-4">Profile & Name</th>
+                          <th className="py-3.5 px-4">HR Employee ID</th>
+                          <th className="py-3.5 px-4">Role / Department</th>
+                          <th className="py-3.5 px-4 text-center">Joining Date</th>
+                          <th className="py-3.5 px-4 text-center">Employment</th>
+                          <th className="py-3.5 px-4">Email & Contact</th>
+                          <th className="py-3.5 px-4 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                        {filteredHRs.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="py-8 text-center text-slate-400 font-bold">
+                              No Human Resources personnel registered.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredHRs.map((hr) => (
+                            <tr key={hr.id} className="hover:bg-slate-50/80 transition">
+                              <td className="py-3.5 px-4">
+                                <div className="flex items-center gap-3">
+                                  {hr.avatarUrl ? (
+                                    <img src={hr.avatarUrl} alt={hr.name} className="h-8 w-8 rounded-xl object-cover" />
+                                  ) : (
+                                    <div className="h-8 w-8 rounded-xl bg-purple-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                                      {hr.name?.substring(0, 2).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectPerson(hr)}
+                                    className="font-extrabold text-slate-900 hover:text-purple-600 hover:underline cursor-pointer text-left"
+                                  >
+                                    {hr.name}
+                                  </button>
+                                </div>
+                              </td>
+
+                              <td className="py-3.5 px-4 font-mono font-bold">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectPerson(hr)}
+                                  className="text-slate-700 hover:text-purple-600 hover:underline cursor-pointer"
+                                >
+                                  {hr.employeeId}
+                                </button>
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                <div>
+                                  <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-800 border border-purple-300">
+                                    HR
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-slate-500 mt-0.5 font-medium">{hr.department || "Human Resources"}</div>
+                              </td>
+
+                              <td className="py-3.5 px-4 text-center font-mono">
+                                {hr.joiningDate
+                                  ? new Date(hr.joiningDate).toLocaleDateString("en-IN", {
+                                      day: "2-digit",
+                                      month: "short",
+                                      year: "numeric",
+                                    })
+                                  : "N/A"}
+                              </td>
+
+                              <td className="py-3.5 px-4 text-center">
+                                <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                                  {hr.employmentStatus || "REGULAR_FULL_TIME"}
+                                </span>
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                <div className="font-bold text-slate-800">{hr.email}</div>
+                                <div className="text-[10px] text-slate-500 font-mono">{hr.phone || "+91 98765 00000"}</div>
+                              </td>
+
+                              <td className="py-3.5 px-4 text-center">
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                                  hr.status === "ACTIVE"
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    : "bg-rose-50 text-rose-700 border-rose-200"
+                                }`}>
+                                  {hr.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
             </div>
