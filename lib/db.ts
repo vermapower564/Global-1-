@@ -31,12 +31,14 @@ export function getDbConfig(): PoolConfig {
       user: decodeURIComponent(url.username),
       password: decodeURIComponent(url.password),
       database: url.pathname.replace(/^\//, ""),
-      connectionLimit: 30,
-      idleTimeout: 600,
+      connectionLimit: 20,
+      connectTimeout: 15000,
+      idleTimeout: 300,
       checkDuplicate: false,
       ssl: isCloudHost
         ? {
-            rejectUnauthorized: true,
+            minVersion: "TLSv1.2",
+            rejectUnauthorized: false,
           }
         : undefined,
     };

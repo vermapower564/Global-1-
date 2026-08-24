@@ -37,7 +37,7 @@ async function resetEmployeePasswords() {
 
   try {
     // 1. Generate secure bcrypt hash for the temporary password
-    const temporaryPassword = "Roushan@123";
+    const temporaryPassword = "Roushan@1234";
     const hashedPassword = await hashPassword(temporaryPassword);
 
     // 2. Query all existing employee accounts

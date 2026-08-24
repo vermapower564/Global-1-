@@ -31,7 +31,7 @@ async function testEmployeeFlow() {
   console.log("==================================================================\n");
 
   const testEmpId = "EMP-8225"; // Rahul Mehra (DEVELOPER)
-  const testPassword = "Roushan@123";
+  const testPassword = "Roushan@1234";
 
   console.log(`[1] Testing Live Login API with Employee ID: ${testEmpId}...`);
 

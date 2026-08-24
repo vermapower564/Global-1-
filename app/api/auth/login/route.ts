@@ -33,46 +33,45 @@ export async function POST(request: NextRequest) {
     const cleanLower = cleanIdentity.toLowerCase();
     const cleanUpper = cleanIdentity.toUpperCase();
 
-    // 3. Query TiDB Database for User (Search by Email OR Employee ID)
+    // 3. Query Database for User (Search by Email OR Employee ID)
     let dbUser: any = null;
     let dbErrorOccurred = false;
-    let dbErrorMessage = "";
 
     try {
-      const rows: any = await queryDb(
-        `SELECT u.*, d.name AS departmentName 
-         FROM user u 
-         LEFT JOIN department d ON u.departmentId = d.id 
-         WHERE LOWER(u.email) = ? OR u.employeeId = ? OR u.employeeId = ? OR u.employeeId = ? OR u.id = ?
-         LIMIT 1`,
-        [cleanLower, cleanIdentity, cleanUpper, cleanLower, cleanIdentity]
-      );
-
-      if (rows && rows.length > 0) {
-        dbUser = {
-          ...rows[0],
-          department: rows[0].departmentName ? { name: rows[0].departmentName } : null,
-        };
-      }
-    } catch (dbError: any) {
-      console.warn("TiDB login query error, trying Prisma fallback:", dbError?.message);
+      const { prisma } = await import("@/lib/prisma");
+      dbUser = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email: { equals: cleanLower } },
+            { employeeId: { equals: cleanIdentity } },
+            { employeeId: { equals: cleanUpper } },
+            { employeeId: { equals: cleanLower } },
+            { id: { equals: cleanIdentity } },
+          ],
+        },
+        include: { department: true },
+      });
+    } catch (prismaError: any) {
+      console.warn("Prisma login query warning, trying queryDb fallback:", prismaError?.message);
       try {
-        const { prisma } = await import("@/lib/prisma");
-        dbUser = await prisma.user.findFirst({
-          where: {
-            OR: [
-              { email: { equals: cleanLower } },
-              { employeeId: { equals: cleanIdentity } },
-              { employeeId: { equals: cleanUpper } },
-              { employeeId: { equals: cleanLower } },
-            ],
-          },
-          include: { department: true },
-        });
-      } catch (prismaError: any) {
-        console.error("Prisma fallback error:", prismaError?.message);
+        const rows: any = await queryDb(
+          `SELECT u.*, d.name AS departmentName 
+           FROM user u 
+           LEFT JOIN department d ON u.departmentId = d.id 
+           WHERE LOWER(u.email) = ? OR u.employeeId = ? OR u.employeeId = ? OR u.employeeId = ? OR u.id = ?
+           LIMIT 1`,
+          [cleanLower, cleanIdentity, cleanUpper, cleanLower, cleanIdentity]
+        );
+
+        if (rows && rows.length > 0) {
+          dbUser = {
+            ...rows[0],
+            department: rows[0].departmentName ? { name: rows[0].departmentName } : null,
+          };
+        }
+      } catch (dbError: any) {
+        console.error("Database connection error in login route:", dbError?.message);
         dbErrorOccurred = true;
-        dbErrorMessage = prismaError?.message || dbError?.message;
       }
     }
 
