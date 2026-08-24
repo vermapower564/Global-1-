@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { comparePassword, generateToken } from "@/lib/authService";
-import { queryDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -33,12 +33,9 @@ export async function POST(request: NextRequest) {
     const cleanLower = cleanIdentity.toLowerCase();
     const cleanUpper = cleanIdentity.toUpperCase();
 
-    // 3. Query Database for User (Search by Email OR Employee ID)
+    // 3. Query Database for User via Prisma Client (Search by Email OR Employee ID OR CUID)
     let dbUser: any = null;
-    let dbErrorOccurred = false;
-
     try {
-      const { prisma } = await import("@/lib/prisma");
       dbUser = await prisma.user.findFirst({
         where: {
           OR: [
@@ -49,34 +46,12 @@ export async function POST(request: NextRequest) {
             { id: { equals: cleanIdentity } },
           ],
         },
-        include: { department: true },
+        include: {
+          department: true,
+        },
       });
-    } catch (prismaError: any) {
-      console.warn("Prisma login query warning, trying queryDb fallback:", prismaError?.message);
-      try {
-        const rows: any = await queryDb(
-          `SELECT u.*, d.name AS departmentName 
-           FROM user u 
-           LEFT JOIN department d ON u.departmentId = d.id 
-           WHERE LOWER(u.email) = ? OR u.employeeId = ? OR u.employeeId = ? OR u.employeeId = ? OR u.id = ?
-           LIMIT 1`,
-          [cleanLower, cleanIdentity, cleanUpper, cleanLower, cleanIdentity]
-        );
-
-        if (rows && rows.length > 0) {
-          dbUser = {
-            ...rows[0],
-            department: rows[0].departmentName ? { name: rows[0].departmentName } : null,
-          };
-        }
-      } catch (dbError: any) {
-        console.error("Database connection error in login route:", dbError?.message);
-        dbErrorOccurred = true;
-      }
-    }
-
-    // 4. Handle Database Connection Error (Do NOT mask database errors as invalid credentials)
-    if (!dbUser && dbErrorOccurred) {
+    } catch (dbError: any) {
+      console.error("[Prisma Login Error] Database query failed:", dbError?.message || dbError);
       return NextResponse.json(
         {
           success: false,
@@ -86,7 +61,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 5. Verify Account Existence
+    // 4. Verify Account Existence
     if (!dbUser) {
       return NextResponse.json(
         { success: false, error: "Invalid Employee ID or password." },
@@ -104,36 +79,39 @@ export async function POST(request: NextRequest) {
     }
 
     // 6. Verify Active Account Status
-    if (dbUser.isActive === false || dbUser.isActive === 0 || dbUser.isResigned) {
+    if (dbUser.isActive === false || dbUser.isResigned) {
       return NextResponse.json(
         { success: false, error: "Account deactivated: Please contact HR administrator." },
         { status: 403 }
       );
     }
 
-    // 7. Automatic Server-Side Role Detection & Exact Role Page Redirection
-    const userRole = (dbUser.role || "").toUpperCase();
-    const privilegedAdminRoles = ["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR", "ADMIN"];
-    const isAdmin = privilegedAdminRoles.includes(userRole);
-    let redirectTo = "/employee/dashboard";
+    // 7. Determine Role-Based Redirection Target
+    const userRole = (dbUser.role || "EMPLOYEE").toUpperCase();
+    const isAdmin = ADMIN_ROLES.includes(userRole);
 
-    if (userRole === "HR") {
+    let redirectTo = "/employee/dashboard";
+    if (userRole === "HR" || userRole === "ADMIN_HR") {
       redirectTo = "/hr";
-    } else if (isAdmin) {
+    } else if (["SUPER_ADMIN", "DIRECTOR", "ADMIN"].includes(userRole)) {
       redirectTo = "/admin/dashboard";
     } else if (userRole === "PROJECT_MANAGER") {
       redirectTo = "/project-manager";
     } else if (userRole === "TEAM_LEADER") {
       redirectTo = "/team-leader";
     } else {
-      // Check if user is a designated Team Leader for projects in TiDB
-      const tlCheck = await queryDb<any[]>(
-        `SELECT id FROM project WHERE teamLeaderId = ? LIMIT 1`,
-        [dbUser.id]
-      );
-      if (tlCheck && tlCheck.length > 0) {
-        redirectTo = "/team-leader";
-      } else {
+      // Check if user is a designated Team Leader for projects via Prisma
+      try {
+        const ledProject = await prisma.project.findFirst({
+          where: { teamLeaderId: dbUser.id },
+          select: { id: true },
+        });
+        if (ledProject) {
+          redirectTo = "/team-leader";
+        } else {
+          redirectTo = "/employee/dashboard";
+        }
+      } catch {
         redirectTo = "/employee/dashboard";
       }
     }
@@ -145,7 +123,7 @@ export async function POST(request: NextRequest) {
       name: dbUser.name,
       email: dbUser.email,
       role: dbUser.role,
-      department: dbUser.department?.name || dbUser.departmentName || "Operations",
+      department: dbUser.department?.name || "Operations",
       avatarUrl: dbUser.avatarUrl || null,
     };
 
@@ -174,17 +152,17 @@ export async function POST(request: NextRequest) {
       maxAge: 60 * 60, // 1 Hour Inactivity Timeout (3600s)
     });
 
-    // Async Audit Logging
-    queryDb(
-      "INSERT INTO auditlog (id, userId, action, details, ipAddress, timestamp) VALUES (?, ?, ?, ?, ?, NOW())",
-      [
-        `AUD-${Date.now()}`,
-        dbUser.id,
-        "USER_LOGIN",
-        `User ${dbUser.name} (${dbUser.email} / ${dbUser.employeeId}) logged in successfully as ${dbUser.role}`,
-        request.headers.get("x-forwarded-for") || "127.0.0.1",
-      ]
-    ).catch(() => {});
+    // 11. Async Non-blocking Login Audit Log via Prisma
+    prisma.auditlog
+      .create({
+        data: {
+          userId: dbUser.id,
+          action: "USER_LOGIN",
+          details: `User ${dbUser.name} (${dbUser.email} / ${dbUser.employeeId}) logged in successfully as ${dbUser.role}`,
+          ipAddress: request.headers.get("x-forwarded-for") || "127.0.0.1",
+        },
+      })
+      .catch(() => {});
 
     return response;
   } catch (error: any) {
