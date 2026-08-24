@@ -98,7 +98,7 @@ async function runLoginApiFlowTest() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       identity: "EMP-8225",
-      password: "Roushan@1234",
+      password: "Roushan@123",
     }),
   });
 
