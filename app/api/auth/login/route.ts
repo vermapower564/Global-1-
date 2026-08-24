@@ -35,6 +35,8 @@ export async function POST(request: NextRequest) {
 
     // 3. Query TiDB Database for User (Search by Email OR Employee ID)
     let dbUser: any = null;
+    let dbErrorOccurred = false;
+    let dbErrorMessage = "";
 
     try {
       const rows: any = await queryDb(
@@ -69,10 +71,23 @@ export async function POST(request: NextRequest) {
         });
       } catch (prismaError: any) {
         console.error("Prisma fallback error:", prismaError?.message);
+        dbErrorOccurred = true;
+        dbErrorMessage = prismaError?.message || dbError?.message;
       }
     }
 
-    // 4. Verify Account Existence
+    // 4. Handle Database Connection Error (Do NOT mask database errors as invalid credentials)
+    if (!dbUser && dbErrorOccurred) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Database service is temporarily unavailable. Please try again in a few moments.",
+        },
+        { status: 503 }
+      );
+    }
+
+    // 5. Verify Account Existence
     if (!dbUser) {
       return NextResponse.json(
         { success: false, error: "Invalid Employee ID or password." },
@@ -99,11 +114,13 @@ export async function POST(request: NextRequest) {
 
     // 7. Automatic Server-Side Role Detection & Exact Role Page Redirection
     const userRole = (dbUser.role || "").toUpperCase();
-    const privilegedAdminRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR", "ADMIN"];
+    const privilegedAdminRoles = ["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR", "ADMIN"];
     const isAdmin = privilegedAdminRoles.includes(userRole);
     let redirectTo = "/employee/dashboard";
 
-    if (isAdmin) {
+    if (userRole === "HR") {
+      redirectTo = "/hr";
+    } else if (isAdmin) {
       redirectTo = "/admin/dashboard";
     } else if (userRole === "PROJECT_MANAGER") {
       redirectTo = "/project-manager";

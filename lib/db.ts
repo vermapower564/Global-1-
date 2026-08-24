@@ -13,9 +13,10 @@ const queryCache = new Map<string, { data: any; expiresAt: number }>();
 let warmupTimer: NodeJS.Timeout | null = null;
 
 export function getDbConfig(): PoolConfig {
-  const rawUrl =
-    process.env.DATABASE_URL ||
-    "mysql://4BrXAABTf5SQeKq.root:oF5rWQth8eQANTqp@gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/oms?sslaccept=strict";
+  const rawUrl = process.env.DATABASE_URL;
+  if (!rawUrl) {
+    throw new Error("DATABASE_URL environment variable is missing. Please configure it in your environment settings.");
+  }
 
   try {
     const url = new URL(rawUrl);
@@ -25,11 +26,11 @@ export function getDbConfig(): PoolConfig {
       url.search.includes("ssl");
 
     return {
-      host: url.hostname || "gateway01.ap-southeast-1.prod.aws.tidbcloud.com",
-      port: url.port ? parseInt(url.port, 10) : 4000,
-      user: decodeURIComponent(url.username || "4BrXAABTf5SQeKq.root"),
-      password: decodeURIComponent(url.password || "oF5rWQth8eQANTqp"),
-      database: url.pathname.replace(/^\//, "") || "oms",
+      host: url.hostname,
+      port: url.port ? parseInt(url.port, 10) : 3306,
+      user: decodeURIComponent(url.username),
+      password: decodeURIComponent(url.password),
+      database: url.pathname.replace(/^\//, ""),
       connectionLimit: 30,
       idleTimeout: 600,
       checkDuplicate: false,
@@ -39,20 +40,8 @@ export function getDbConfig(): PoolConfig {
           }
         : undefined,
     };
-  } catch {
-    return {
-      host: "gateway01.ap-southeast-1.prod.aws.tidbcloud.com",
-      port: 4000,
-      user: "4BrXAABTf5SQeKq.root",
-      password: "oF5rWQth8eQANTqp",
-      database: "oms",
-      connectionLimit: 30,
-      idleTimeout: 600,
-      checkDuplicate: false,
-      ssl: {
-        rejectUnauthorized: true,
-      },
-    };
+  } catch (err: any) {
+    throw new Error(`Invalid DATABASE_URL configuration: ${err?.message}`);
   }
 }
 

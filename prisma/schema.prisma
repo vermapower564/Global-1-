@@ -623,8 +623,10 @@ model customerreview {
 
 enum user_role {
   SUPER_ADMIN
+  ADMIN
   DIRECTOR
   HR
+  ADMIN_HR
   FINANCE
   SALES_MANAGER
   SALES_EXECUTIVE
@@ -635,6 +637,7 @@ enum user_role {
   VIDEO_EDITOR
   CAMERA_TEAM
   PROJECT_MANAGER
+  TEAM_LEADER
   DEVELOPER
   UI_UX_DESIGNER
   INTERN
