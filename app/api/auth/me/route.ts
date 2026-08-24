@@ -42,29 +42,37 @@ export async function GET(req: NextRequest) {
       return res;
     }
 
-    // Verify user exists and is active in TiDB Database (cached for 15s)
+    // Verify user exists and is active via Prisma Client
     let dbUser: any = null;
     try {
-      const rows: any = await queryDbCached(
-        `SELECT u.*, d.name AS departmentName, d.code AS departmentCode 
-         FROM user u 
-         LEFT JOIN department d ON u.departmentId = d.id 
-         WHERE u.id = ? OR u.employeeId = ? OR u.email = ? 
-         LIMIT 1`,
-        [decoded.id, decoded.id, decoded.email || decoded.id],
-        15
-      );
-
-      if (rows && rows.length > 0) {
-        dbUser = {
-          ...rows[0],
-          department: rows[0].departmentName
-            ? { name: rows[0].departmentName, code: rows[0].departmentCode }
-            : null,
-        };
-      }
+      const { prisma } = await import("@/lib/prisma");
+      dbUser = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { id: decoded.id },
+            { employeeId: decoded.id },
+            { email: decoded.email || decoded.id },
+          ],
+        },
+        select: {
+          id: true,
+          employeeId: true,
+          name: true,
+          email: true,
+          role: true,
+          isActive: true,
+          isResigned: true,
+          avatarUrl: true,
+          department: {
+            select: {
+              name: true,
+              code: true,
+            },
+          },
+        },
+      });
     } catch (dbErr: any) {
-      console.warn("TiDB auth validation error:", dbErr.message);
+      console.warn("Prisma auth validation error:", dbErr.message);
     }
 
     if (!dbUser || dbUser.isActive === false || dbUser.isActive === 0) {

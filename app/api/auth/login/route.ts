@@ -39,15 +39,28 @@ export async function POST(request: NextRequest) {
       dbUser = await prisma.user.findFirst({
         where: {
           OR: [
-            { email: { equals: cleanLower } },
-            { employeeId: { equals: cleanIdentity } },
-            { employeeId: { equals: cleanUpper } },
-            { employeeId: { equals: cleanLower } },
-            { id: { equals: cleanIdentity } },
+            { email: cleanLower },
+            { employeeId: cleanIdentity },
+            { employeeId: cleanUpper },
+            { employeeId: cleanLower },
+            { id: cleanIdentity },
           ],
         },
-        include: {
-          department: true,
+        select: {
+          id: true,
+          employeeId: true,
+          name: true,
+          email: true,
+          password: true,
+          role: true,
+          isActive: true,
+          isResigned: true,
+          avatarUrl: true,
+          department: {
+            select: {
+              name: true,
+            },
+          },
         },
       });
     } catch (dbError: any) {
