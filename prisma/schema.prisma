@@ -621,6 +621,25 @@ model customerreview {
   @@index([status], map: "idx_customerreview_status")
 }
 
+model featurerequest {
+  id             String    @id @default(cuid())
+  userId         String
+  userName       String
+  userEmail      String
+  userRole       String
+  title          String    @db.VarChar(255)
+  description    String    @db.Text
+  useCase        String    @db.Text
+  priority       String    @default("MEDIUM") @db.VarChar(50)
+  status         String    @default("SUBMITTED") @db.VarChar(50)
+  adminRemarks   String?   @db.Text
+  reviewedById   String?
+  reviewedByName String?
+  reviewedAt     DateTime?
+  createdAt      DateTime? @default(now())
+  updatedAt      DateTime? @default(now()) @updatedAt
+}
+
 enum user_role {
   SUPER_ADMIN
   ADMIN
