@@ -8,10 +8,19 @@ const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGE
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { success: false, error: "Invalid request format. Please provide valid JSON." },
+        { status: 400 }
+      );
+    }
+
     const identityInput =
-      body.identity || body.email || body.employeeId || body.loginIdentity || body.username || "";
-    const inputPassword = body.password || "";
+      body?.identity || body?.email || body?.employeeId || body?.loginIdentity || body?.username || "";
+    const inputPassword = body?.password || "";
 
     // 1. Validate required inputs
     if (!identityInput || !identityInput.toString().trim()) {
