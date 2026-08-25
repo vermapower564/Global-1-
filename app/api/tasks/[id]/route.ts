@@ -4,7 +4,7 @@ import { queryDb, clearQueryCache } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
+const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR", "PROJECT_MANAGER"];
 
 export async function GET(
   request: NextRequest,

@@ -350,9 +350,71 @@ export async function POST(request: Request) {
         request.headers.get("x-forwarded-for") || "127.0.0.1"
       );
 
+      // Dispatch Real Welcome & Account Activation Email via Nodemailer SMTP
+      try {
+        const activationToken = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 Hours Expiration
+
+        await queryDb(
+          `INSERT INTO otptoken (id, email, otpHash, expiresAt, attempts, createdAt) VALUES (?, ?, ?, ?, 0, NOW())`,
+          [`otp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`, normalizedEmail, activationToken, expiresAt]
+        ).catch(() => {});
+
+        const { getAppBaseUrl, sendSmtpEmail } = await import("@/lib/smtpTransporter");
+        const appBaseUrl = getAppBaseUrl(request);
+        const activationLink = `${appBaseUrl}/auth/forgot-password?token=${encodeURIComponent(activationToken)}&email=${encodeURIComponent(normalizedEmail)}&identity=${encodeURIComponent(employeeId)}`;
+
+        sendSmtpEmail({
+          to: normalizedEmail,
+          subject: `🎉 Welcome to OMS Enterprise! Activate Your Employee Account (${employeeId})`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; border: 2px solid #0f172a; padding: 28px; border-radius: 12px; background-color: #ffffff; color: #0f172a;">
+              <div style="background-color: #0f172a; color: #ffffff; padding: 20px; text-align: center; border-radius: 8px;">
+                <h1 style="margin: 0; font-size: 22px; text-transform: uppercase;">WELCOME TO OMS ENTERPRISE</h1>
+                <p style="margin-top: 4px; font-size: 12px; color: #93c5fd;">Corporate Employee Onboarding Service</p>
+              </div>
+
+              <div style="padding: 20px 0;">
+                <h2 style="color: #0f172a; font-size: 18px;">Congratulations, ${name.trim()}! 🎉</h2>
+                <p style="font-size: 13px; color: #334155; line-height: 1.6;">
+                  Your corporate employee profile has been provisioned on OMS Enterprise. Please click the button below to activate your account and configure your secure password.
+                </p>
+
+                <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #2563eb; padding: 16px; margin: 20px 0; border-radius: 6px;">
+                  <h3 style="margin: 0 0 10px 0; font-size: 13px; color: #0f172a; text-transform: uppercase;">🪪 Official Employee Details</h3>
+                  <p style="margin: 4px 0; font-size: 13px;"><strong>Employee Name:</strong> ${name.trim()}</p>
+                  <p style="margin: 4px 0; font-size: 13px;"><strong>Assigned Employee ID:</strong> <span style="font-family: monospace; color: #2563eb; font-weight: bold;">${employeeId}</span></p>
+                  <p style="margin: 4px 0; font-size: 13px;"><strong>Department:</strong> ${department || "Operations & Technology"}</p>
+                  <p style="margin: 4px 0; font-size: 13px;"><strong>Designation / Role:</strong> ${requestedRole}</p>
+                  <p style="margin: 4px 0; font-size: 13px;"><strong>Corporate Email:</strong> <span style="font-family: monospace; color: #0284c7; font-weight: bold;">${normalizedEmail}</span></p>
+                </div>
+
+                <div style="text-align: center; margin: 28px 0;">
+                  <a href="${activationLink}" style="background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: bold; font-size: 14px; display: inline-block; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+                    🚀 Activate Account & Set Password →
+                  </a>
+                </div>
+
+                <p style="font-size: 12px; color: #64748b; line-height: 1.5;">
+                  Or copy and paste this activation link into your browser:<br/>
+                  <a href="${activationLink}" style="color: #2563eb; word-break: break-all;">${activationLink}</a>
+                </p>
+              </div>
+
+              <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;"/>
+              <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">
+                OMS Enterprise Human Resources Desk • DLF Cyber City, Gurugram
+              </p>
+            </div>
+          `,
+        }).catch((e) => console.warn("Welcome email dispatch warning:", e));
+      } catch (emailErr) {
+        console.warn("Activation email dispatch fallback:", emailErr);
+      }
+
       return NextResponse.json({
         success: true,
-        message: `${requestedRole === "HR" ? "HR" : "Employee"} user registered successfully on TiDB Cloud.`,
+        message: `${requestedRole === "HR" ? "HR" : "Employee"} user registered successfully on TiDB Cloud and welcome activation email dispatched.`,
         data: { id: newUserId, employeeId, name: name.trim(), email: normalizedEmail, role: requestedRole },
       });
     } catch (dbErr: any) {

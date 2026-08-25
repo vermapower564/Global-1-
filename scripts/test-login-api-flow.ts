@@ -120,8 +120,100 @@ async function runLoginApiFlowTest() {
 
   console.log("\n==================================================================");
   console.log("  ALL LOGIN API REQUIREMENTS VERIFIED & PASSED 100%");
+  console.log("==================================================================\n");
+
+  // Run RBAC & Organisational Rule Enforcement Suite
+  console.log("==================================================================");
+  console.log("  TESTING ORGANISATIONAL RBAC ENFORCEMENT ACROSS ALL ROLES");
+  console.log("==================================================================\n");
+
+  const adminToken = data1.token;
+  const empToken = data3.token;
+
+  async function testApi(
+    role: string,
+    actionName: string,
+    token: string,
+    method: string,
+    path: string,
+    body?: any,
+    expectedStatus: number = 200
+  ) {
+    const res = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        Cookie: `oms_session=${token}`,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const passed = res.status === expectedStatus;
+    const json = await res.json().catch(() => ({}));
+    console.log(`[${passed ? "✓ PASS" : "✗ FAIL"}] ${role.padEnd(16)} | ${actionName.padEnd(50)} | Status: ${res.status} (Expected ${expectedStatus})`);
+    if (!passed) {
+      console.error(`  Error details:`, json);
+      process.exit(1);
+    }
+  }
+
+  console.log("--- 1. EMPLOYEE RESTRICTION TESTS (Must be rejected with 403 Forbidden) ---");
+  await testApi("EMPLOYEE", "Create Project (POST /api/projects)", empToken, "POST", "/api/projects", {
+    projectTitle: "Unauthorized Project",
+    projectCode: "PRJ-UNAUTH",
+  }, 403);
+
+  await testApi("EMPLOYEE", "Divide Main Task (POST /api/project-manager/divide-task)", empToken, "POST", "/api/project-manager/divide-task", {
+    mainTaskId: "TSK-001",
+    sections: [{ title: "Subtask 1" }],
+  }, 403);
+
+  await testApi("EMPLOYEE", "Divide Task (POST /api/team-leader/divide-task)", empToken, "POST", "/api/team-leader/divide-task", {
+    mainTaskId: "TSK-001",
+    subtasks: [{ title: "Subtask 1" }],
+  }, 403);
+
+  await testApi("EMPLOYEE", "Create & Assign Task (POST /api/tasks)", empToken, "POST", "/api/tasks", {
+    title: "Unauthorized Task Assignment",
+    assignedToUserId: "some-user",
+  }, 403);
+
+  await testApi("EMPLOYEE", "Access Admin Organisation (GET /api/admin/organisation)", empToken, "GET", "/api/admin/organisation", undefined, 403);
+
+  await testApi("EMPLOYEE", "Modify Employee Role (PATCH /api/admin/employees/EMP-8595)", empToken, "PATCH", "/api/admin/employees/EMP-8595", {
+    role: "DEVELOPER",
+  }, 403);
+
+  await testApi("EMPLOYEE", "Create Client (POST /api/clients)", empToken, "POST", "/api/clients", {
+    companyName: "Unauthorized Client Inc",
+    email: "client@unauth.com",
+  }, 403);
+
+  await testApi("EMPLOYEE", "Create Department (POST /api/departments)", empToken, "POST", "/api/departments", {
+    name: "Unauthorized Department",
+  }, 403);
+
+  console.log("\n--- 2. EMPLOYEE PERMITTED SELF-SERVICE TESTS (Must succeed with 200/201) ---");
+  await testApi("EMPLOYEE", "View Assigned Tasks (GET /api/tasks)", empToken, "GET", "/api/tasks", undefined, 200);
+  await testApi("EMPLOYEE", "View Assigned Projects (GET /api/projects)", empToken, "GET", "/api/projects", undefined, 200);
+  await testApi("EMPLOYEE", "Submit Own Daily Work (POST /api/daily-work)", empToken, "POST", "/api/daily-work", {
+    projectName: "OMS Cloud Platform",
+    hoursWorked: 8,
+    description: "Completed assigned frontend verification and bug fixes.",
+  }, 201);
+  await testApi("EMPLOYEE", "View Own Profile (GET /api/auth/me)", empToken, "GET", "/api/auth/me", undefined, 200);
+
+  console.log("\n--- 3. SUPER ADMIN AUTHORITY TESTS (Must succeed with 200/201) ---");
+  await testApi("SUPER_ADMIN", "Access Admin Organisation (GET /api/admin/organisation)", adminToken, "GET", "/api/admin/organisation", undefined, 200);
+  await testApi("SUPER_ADMIN", "View All Projects (GET /api/projects)", adminToken, "GET", "/api/projects", undefined, 200);
+  await testApi("SUPER_ADMIN", "View All Tasks (GET /api/tasks)", adminToken, "GET", "/api/tasks", undefined, 200);
+
+  console.log("\n==================================================================");
+  console.log("  ALL RBAC & ORGANISATIONAL ENFORCEMENT TESTS PASSED 100%");
   console.log("==================================================================");
   process.exit(0);
 }
 
 runLoginApiFlowTest();
+

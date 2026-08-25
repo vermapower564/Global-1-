@@ -65,10 +65,35 @@ export async function GET(request: NextRequest) {
 
     // RBAC Scoping:
     // - HR / Super Admin: Can view all leave requests or filter across any employee
-    // - Non-HR (PM, Team Leader, Employee): Strictly sees own leave requests
+    // - Team Leader: Can view own leave requests + leave requests of their project team members
+    // - Employee: Strictly sees own leave requests
+    const isTeamLeader = resolvedUser.role === "TEAM_LEADER" || authUser.role === "TEAM_LEADER";
+    const isProjectManager = resolvedUser.role === "PROJECT_MANAGER" || authUser.role === "PROJECT_MANAGER";
+    const scopeParam = searchParams.get("scope");
+
+    let teamMemberIds: string[] = [];
+    if (isTeamLeader || isProjectManager) {
+      const managedTeamRows = await queryDb<any[]>(
+        `SELECT B AS memberId FROM _assignedstaffprojects WHERE A IN (
+           SELECT id FROM project WHERE teamLeaderId = ? OR projectManagerId = ?
+         )
+         UNION
+         SELECT id AS memberId FROM user WHERE managerId = ?`,
+        [resolvedUser.id, resolvedUser.id, resolvedUser.id]
+      );
+      teamMemberIds = (managedTeamRows || []).map((m) => m.memberId).filter(Boolean);
+    }
+
     if (!isHrApprover) {
-      sql += ` AND (l.userId = ? OR l.userId = ?)`;
-      params.push(resolvedUser.id, authUser.id);
+      if ((isTeamLeader || isProjectManager) && (scopeParam === "team" || scopeParam === "all")) {
+        const allowedIds = Array.from(new Set([resolvedUser.id, authUser.id, ...teamMemberIds]));
+        const placeholders = allowedIds.map(() => "?").join(",");
+        sql += ` AND l.userId IN (${placeholders})`;
+        params.push(...allowedIds);
+      } else {
+        sql += ` AND (l.userId = ? OR l.userId = ?)`;
+        params.push(resolvedUser.id, authUser.id);
+      }
     } else {
       if (employeeIdParam && employeeIdParam !== "ALL") {
         sql += ` AND (l.userId = ? OR u.employeeId = ? OR u.id = ?)`;
@@ -138,12 +163,57 @@ export async function GET(request: NextRequest) {
       rejectedLeave: rejectedDays,
     };
 
+    // Calculate Team Availability & Conflict Warning for Team Leader / Manager
+    let teamAvailability: any = null;
+    if (isTeamLeader || isProjectManager || isHrApprover) {
+      const totalTeamSize = teamMemberIds.length > 0 ? teamMemberIds.length : 1;
+      const dateMap: { [dateStr: string]: { date: string; employees: string[]; count: number } } = {};
+
+      (rawRows || []).forEach((req) => {
+        if (["APPROVED", "PENDING"].includes(req.status)) {
+          const s = new Date(req.startDate);
+          const e = new Date(req.endDate);
+          const cur = new Date(s);
+          while (cur <= e) {
+            const dStr = cur.toISOString().split("T")[0];
+            if (!dateMap[dStr]) {
+              dateMap[dStr] = { date: dStr, employees: [], count: 0 };
+            }
+            if (!dateMap[dStr].employees.includes(req.employeeName || req.user_id)) {
+              dateMap[dStr].employees.push(req.employeeName || req.user_id);
+              dateMap[dStr].count += 1;
+            }
+            cur.setDate(cur.getDate() + 1);
+          }
+        }
+      });
+
+      const conflicts = Object.values(dateMap)
+        .filter((d) => totalTeamSize > 1 && d.count / totalTeamSize >= 0.4)
+        .map((d) => ({
+          date: d.date,
+          absentCount: d.count,
+          totalTeamSize,
+          affectedEmployees: d.employees,
+          warningMessage: `⚠️ Team Availability Warning: ${d.count} of ${totalTeamSize} team members have requested leave for ${d.date}. Critical project coverage may be affected.`,
+        }));
+
+      teamAvailability = {
+        totalTeamSize,
+        dailyAbsences: Object.values(dateMap),
+        conflicts,
+        hasConflicts: conflicts.length > 0,
+      };
+    }
+
     return NextResponse.json({
       success: true,
       total: (rawRows || []).length,
       data: rawRows || [],
       leaveBalance,
+      teamAvailability,
       isHrApprover,
+      isTeamLeader,
     });
   } catch (error: any) {
     console.error("Failed to fetch leave requests:", error);
@@ -373,7 +443,45 @@ export async function PATCH(request: NextRequest) {
 
     clearQueryCache();
 
-    // 3. Notify Requester
+    // 3. Attendance Integration: Automatically mark attendance as ON_LEAVE for the approved dates
+    if (targetStatus === "APPROVED") {
+      try {
+        const start = new Date(currentReq.startDate);
+        const end = new Date(currentReq.endDate);
+        const cur = new Date(start);
+        while (cur <= end) {
+          const dateStr = cur.toISOString().split("T")[0];
+          const attRows = await queryDb<any[]>(
+            `SELECT id FROM attendance WHERE userId = ? AND DATE(date) = ? LIMIT 1`,
+            [currentReq.userId, dateStr]
+          );
+          if (attRows && attRows.length > 0) {
+            await queryDb(
+              `UPDATE attendance SET status = 'ON_LEAVE', hoursWorked = 8.0 WHERE id = ?`,
+              [attRows[0].id]
+            );
+          } else {
+            const attId = `ATT-LV-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`.toUpperCase();
+            await queryDb(
+              `INSERT INTO attendance (id, userId, date, checkInTime, checkOutTime, hoursWorked, status, createdAt)
+               VALUES (?, ?, ?, ?, ?, 8.0, 'ON_LEAVE', NOW(3))`,
+              [
+                attId,
+                currentReq.userId,
+                new Date(`${dateStr}T00:00:00Z`),
+                new Date(`${dateStr}T09:00:00Z`),
+                new Date(`${dateStr}T17:00:00Z`),
+              ]
+            );
+          }
+          cur.setDate(cur.getDate() + 1);
+        }
+      } catch (attErr) {
+        console.warn("Failed integrating approved leave with attendance:", attErr);
+      }
+    }
+
+    // 4. Notify Requester
     try {
       const notifId = `NOTIF-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`.toUpperCase();
       const notifTitle = targetStatus === "APPROVED" ? "✅ Leave Request Approved" : "❌ Leave Request Rejected";
@@ -390,7 +498,7 @@ export async function PATCH(request: NextRequest) {
       console.warn("Failed sending requester notification:", notifErr);
     }
 
-    // 4. Record Audit Log
+    // 5. Record Audit Log
     const auditAction = targetStatus === "APPROVED" ? "LEAVE_REQUEST_APPROVED" : "LEAVE_REQUEST_REJECTED";
     logAuditEvent(
       resolvedUser.id,

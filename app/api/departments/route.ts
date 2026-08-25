@@ -47,8 +47,24 @@ export async function GET() {
   }
 }
 
+import { authenticateRequest } from "@/lib/authMiddleware";
+
 export async function POST(request: Request) {
   try {
+    const authResult = await authenticateRequest(request);
+    if (authResult.response || !authResult.user) {
+      return authResult.response || NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
+    }
+
+    const authUser = authResult.user;
+    const canCreateDept = ["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR", "HR"].includes((authUser.role || "").toUpperCase());
+    if (!canCreateDept) {
+      return NextResponse.json(
+        { success: false, error: "Forbidden: Only HR and Super Admins can create departments." },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const { name, code, headName, budget } = body;
 

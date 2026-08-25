@@ -241,9 +241,13 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const avatarUrl = user?.avatarUrl;
 
   return (
-    <aside className="w-64 min-h-screen bg-slate-950 text-slate-100 flex flex-col border-r border-slate-800 shrink-0 shadow-2xl fixed lg:static inset-y-0 left-0 z-50 transition-all duration-300 font-sans">
+    <aside
+      className={`w-64 h-screen max-h-screen sticky top-0 bg-slate-950 text-slate-100 flex flex-col border-r border-slate-800 shrink-0 shadow-2xl z-40 transition-transform duration-300 font-sans fixed lg:sticky inset-y-0 left-0 ${
+        isOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+      }`}
+    >
       {/* Enterprise Brand Logo Header */}
-      <div className="flex items-center justify-between px-6 py-5 border-b border-slate-800/80 bg-slate-950">
+      <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-slate-800/80 bg-slate-950">
         <Link
           href={
             isSuperAdmin
@@ -258,11 +262,11 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
           }
           className="flex items-center gap-3 group"
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-600 text-white font-black text-xl shadow-lg shadow-blue-600/30 group-hover:scale-105 transition-transform">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white font-black text-lg shadow-lg shadow-blue-600/30 group-hover:scale-105 transition-transform">
             O
           </div>
           <div>
-            <h1 className="font-black text-white tracking-tight text-base leading-none">
+            <h1 className="font-black text-white tracking-tight text-sm leading-none">
               OMS Enterprise
             </h1>
             <span className="text-[10px] text-blue-400 font-extrabold uppercase tracking-widest mt-1 block">
@@ -289,10 +293,10 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       </div>
 
       {/* Enterprise Categorized Navigation Links */}
-      <nav className="flex-1 px-3 py-4 space-y-6 overflow-y-auto custom-scrollbar">
+      <nav className="flex-1 px-3 py-3 space-y-4 overflow-y-auto custom-scrollbar">
         {currentSections.map((sec) => (
           <div key={sec.title} className="space-y-1">
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-3 block mb-2">
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-3 block mb-1.5">
               {sec.title}
             </span>
 
@@ -327,7 +331,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
                     onClick={() => {
                       if (window.innerWidth < 1024 && onClose) onClose();
                     }}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all duration-150 border ${
+                    className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-150 border ${
                       isItemActive && !isSubItemActive
                         ? "bg-blue-600/20 text-blue-400 border-blue-500/40 shadow-inner font-extrabold"
                         : isSubItemActive
@@ -336,7 +340,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
                     }`}
                   >
                     <div
-                      className={`flex h-6 w-6 items-center justify-center rounded-lg transition-all ${
+                      className={`flex h-5 w-5 items-center justify-center rounded-lg transition-all ${
                         isItemActive || isSubItemActive ? "text-blue-400" : "text-slate-400"
                       }`}
                     >
@@ -389,11 +393,11 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       </nav>
 
       {/* User Profile Mini-Card & Sign Out Footer */}
-      <div className="p-4 border-t border-slate-800/80 bg-slate-900/50 space-y-3">
+      <div className="shrink-0 p-3.5 border-t border-slate-800/80 bg-slate-950/90 space-y-2.5">
         {/* User Mini-Card */}
         <Link
           href="/employee/profile"
-          className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800/80 border border-slate-800 transition group cursor-pointer"
+          className="flex items-center gap-3 p-2 rounded-xl bg-slate-900 hover:bg-slate-800/80 border border-slate-800 transition group cursor-pointer"
           title="View Your Profile"
         >
           <div className="relative shrink-0">
@@ -402,14 +406,14 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
                 src={avatarUrl}
                 alt={displayName}
                 onError={() => setImgError(true)}
-                className="h-9 w-9 rounded-full object-cover border border-slate-700 shadow-sm"
+                className="h-8 w-8 rounded-full object-cover border border-slate-700 shadow-sm"
               />
             ) : (
-              <div className="h-9 w-9 rounded-full bg-blue-600 text-white font-black text-xs flex items-center justify-center border border-slate-700 shadow-sm">
+              <div className="h-8 w-8 rounded-full bg-blue-600 text-white font-black text-xs flex items-center justify-center border border-slate-700 shadow-sm">
                 {initials}
               </div>
             )}
-            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-slate-900" title="Online & Active"></span>
+            <span className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-emerald-500 border-2 border-slate-900" title="Online & Active"></span>
           </div>
 
           <div className="min-w-0 flex-1">

@@ -247,10 +247,85 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // 9. Fetch Team Leave Requests & Team Availability
+    let teamLeaveRequests: any[] = [];
+    let teamAvailability: any = null;
+    if (memberUserIds.length > 0) {
+      teamLeaveRequests = await queryDb<any[]>(
+        `SELECT l.*, u.name AS employeeName, u.employeeId, u.email AS employeeEmail, u.role AS employeeRole
+         FROM leaverequest l
+         JOIN user u ON l.userId = u.id
+         WHERE l.userId IN (${memberUserIds.map(() => "?").join(",")})
+         ORDER BY l.appliedAt DESC LIMIT 20`,
+        memberUserIds
+      );
+
+      const totalTeamSize = memberUserIds.length || 1;
+      const dateMap: { [dateStr: string]: { date: string; employees: string[]; count: number } } = {};
+
+      (teamLeaveRequests || []).forEach((req) => {
+        if (["APPROVED", "PENDING"].includes(req.status)) {
+          const s = new Date(req.startDate);
+          const e = new Date(req.endDate);
+          const cur = new Date(s);
+          while (cur <= e) {
+            const dStr = cur.toISOString().split("T")[0];
+            if (!dateMap[dStr]) {
+              dateMap[dStr] = { date: dStr, employees: [], count: 0 };
+            }
+            if (!dateMap[dStr].employees.includes(req.employeeName || req.userId)) {
+              dateMap[dStr].employees.push(req.employeeName || req.userId);
+              dateMap[dStr].count += 1;
+            }
+            cur.setDate(cur.getDate() + 1);
+          }
+        }
+      });
+
+      const conflicts = Object.values(dateMap)
+        .filter((d) => totalTeamSize > 1 && d.count / totalTeamSize >= 0.4)
+        .map((d) => ({
+          date: d.date,
+          absentCount: d.count,
+          totalTeamSize,
+          affectedEmployees: d.employees,
+          warningMessage: `⚠️ Team Availability Warning: ${d.count} of ${totalTeamSize} team members have requested leave for ${d.date}. Critical project coverage may be affected.`,
+        }));
+
+      teamAvailability = {
+        totalTeamSize,
+        dailyAbsences: Object.values(dateMap),
+        conflicts,
+        hasConflicts: conflicts.length > 0,
+      };
+    }
+
+    // 10. Fetch Team Resignations
+    let teamResignations: any[] = [];
+    if (memberUserIds.length > 0) {
+      teamResignations = await queryDb<any[]>(
+        `SELECT r.*, u.name AS employeeName, u.employeeId, u.role AS employeeRole, d.name AS departmentName
+         FROM resignation r
+         LEFT JOIN user u ON (r.userId = u.id OR r.employeeId = u.employeeId)
+         LEFT JOIN department d ON u.departmentId = d.id
+         WHERE r.userId IN (${memberUserIds.map(() => "?").join(",")})
+         ORDER BY r.submittedAt DESC LIMIT 10`,
+        memberUserIds
+      );
+    }
+
+    // 11. Fetch Team Blockers
+    const teamBlockers = allSubtasks.filter((t) => t.status === "BLOCKED");
+
     return NextResponse.json({
       success: true,
       isTeamLeader: true,
-      summary,
+      summary: {
+        ...summary,
+        teamBlockersCount: teamBlockers.length,
+        teamResignationsCount: teamResignations.filter((r) => r.status === "SUBMITTED" || r.status === "UNDER_REVIEW").length,
+        teamPendingLeavesCount: teamLeaveRequests.filter((l) => l.status === "PENDING").length,
+      },
       ledProjects: ledProjects.map((p) => ({
         id: p.id,
         projectTitle: p.projectTitle,
@@ -335,6 +410,10 @@ export async function GET(request: NextRequest) {
         reviewNotes: t.reviewNotes,
         updatedAt: t.updatedAt,
       })),
+      teamLeaveRequests,
+      teamAvailability,
+      teamResignations,
+      teamBlockers,
     });
   } catch (error: any) {
     console.error("GET /api/team-leader/summary error:", error);

@@ -183,24 +183,41 @@ export async function POST(request: Request) {
       `;
     }
 
+    const smtpConfig = getSmtpConfig();
     const result = await sendSmtpEmail({
-      to,
+      to: to.trim(),
       subject: emailSubject,
       html: htmlContent,
     });
 
+    if (!result.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: result.error || "Failed to dispatch email via SMTP.",
+          smtpDetails: {
+            mode: result.mode,
+            sender: smtpConfig.fromEmail,
+            receiver: to.trim(),
+          },
+        },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
-      message: `✓ Nodemailer SMTP email dispatched successfully to ${to}!`,
+      message: `✓ SMTP email dispatched successfully to ${to.trim()}!`,
       smtpDetails: {
         mode: result.mode,
         messageId: result.messageId,
-        host: getSmtpConfig().host,
-        port: getSmtpConfig().port,
-        sender: getSmtpConfig().fromEmail,
+        host: smtpConfig.host,
+        port: smtpConfig.port,
+        sender: smtpConfig.fromEmail,
+        receiver: to.trim(),
       },
     });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || "Failed to dispatch Nodemailer SMTP email." }, { status: 500 });
+    return NextResponse.json({ success: false, error: error.message || "Failed to dispatch SMTP email." }, { status: 500 });
   }
 }

@@ -205,20 +205,30 @@ export default function EmployeeSalaryPage() {
                     </td>
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-2">
+                        <Link
+                          href={`/salary-slips/${encodeURIComponent(slip.id || slip.monthKey)}`}
+                          className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[11px] px-3 py-1 rounded-lg transition shadow-xs flex items-center gap-1"
+                          title="Open Full Salary Slip Page"
+                        >
+                          <span>Full View</span>
+                          <span>📄</span>
+                        </Link>
                         <button
                           onClick={() => {
                             setSelectedSlip(slip);
                             setShowSlipModal(true);
                           }}
-                          className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[11px] px-3 py-1 rounded-lg transition cursor-pointer"
+                          title="Quick Print Preview"
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] px-2 py-1 rounded-lg transition cursor-pointer border border-slate-200"
                         >
-                          View Slip
+                          🖨️
                         </button>
                         <a
-                          href={`/api/salary-slips/${slip.id || slip.monthKey}/pdf`}
+                          href={`/api/salary-slips/${encodeURIComponent(slip.id || slip.monthKey)}/pdf`}
                           target="_blank"
                           rel="noreferrer"
-                          className="bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-600 hover:text-white font-extrabold text-[11px] px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1"
+                          title="Download Official PDF"
+                          className="bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-600 hover:text-white font-extrabold text-[11px] px-2 py-1 rounded-lg transition cursor-pointer flex items-center gap-1"
                         >
                           <span>📥</span>
                           <span>PDF</span>

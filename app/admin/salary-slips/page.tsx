@@ -434,15 +434,26 @@ export default function AdminSalarySlipsFolderPage() {
                     </td>
 
                     <td className="py-4 px-5 text-right">
-                      <button
-                        onClick={() => {
-                          setSelectedSlip(slip);
-                          setShowSlipModal(true);
-                        }}
-                        className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs transition cursor-pointer shadow-xs"
-                      >
-                        View Slip 📄
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <Link
+                          href={`/salary-slips/${encodeURIComponent(slip.id)}`}
+                          className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs transition shadow-xs flex items-center gap-1"
+                          title="Open Full Salary Slip Page"
+                        >
+                          <span>Full View</span>
+                          <span>📄</span>
+                        </Link>
+                        <button
+                          onClick={() => {
+                            setSelectedSlip(slip);
+                            setShowSlipModal(true);
+                          }}
+                          title="Quick Print Preview"
+                          className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer border border-slate-200"
+                        >
+                          🖨️
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

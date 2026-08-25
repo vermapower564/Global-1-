@@ -4,7 +4,7 @@ import { queryDb, queryDbCached, clearQueryCache } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
+const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR"];
 
 // Helper to get initials
 function getInitials(name: string): string {
@@ -23,7 +23,9 @@ export async function GET(request: NextRequest) {
     }
 
     const authUser = authResult.user;
-    const isAdmin = ADMIN_ROLES.includes(authUser.role);
+    const roleUpper = (authUser.role || "").toUpperCase();
+    const isAdmin = ADMIN_ROLES.includes(roleUpper);
+    const isPM = roleUpper === "PROJECT_MANAGER";
 
     // Fetch projects from TiDB Cloud
     const dbProjects: any[] = await queryDbCached(
@@ -245,8 +247,6 @@ export async function GET(request: NextRequest) {
     // Scoping:
     // 1. Admin sees all projects (including drafts).
     // 2. Project Manager sees active projects they belong to/lead + their OWN private drafts.
-    // 3. Team Leaders and Employees see only active projects they belong to (NEVER unfinalized drafts).
-    const isPM = authUser.role === "PROJECT_MANAGER";
     const accessibleProjects = enriched.filter((p) => {
       if (p.status === "DRAFT") {
         if (isAdmin) return true;

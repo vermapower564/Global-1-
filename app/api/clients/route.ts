@@ -61,9 +61,25 @@ export async function GET() {
   });
 }
 
+import { authenticateRequest } from "@/lib/authMiddleware";
+
 // POST: Handles Client Form -> POST /api/clients -> Prisma -> MySQL (Client table)
 export async function POST(req: Request) {
   try {
+    const authResult = await authenticateRequest(req);
+    if (authResult.response || !authResult.user) {
+      return authResult.response || NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
+    }
+
+    const authUser = authResult.user;
+    const canCreateClient = ["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR", "SALES_MANAGER", "SALES_EXECUTIVE", "PROJECT_MANAGER"].includes((authUser.role || "").toUpperCase());
+    if (!canCreateClient) {
+      return NextResponse.json(
+        { success: false, error: "Forbidden: Employees do not have permission to manage enterprise clients." },
+        { status: 403 }
+      );
+    }
+
     const body = await req.json();
     const { companyName, contactPerson, email, phone, industry, totalBilled } = body;
 

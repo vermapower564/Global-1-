@@ -383,8 +383,8 @@ async function handleUpdateEmployee(
   try {
     // 1. Check Admin Authorization
     const authResult = await authenticateRequest(request);
-    const adminRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
-    if (authResult.user && !adminRoles.includes(authResult.user.role)) {
+    const adminRoles = ["SUPER_ADMIN", "DIRECTOR", "HR", "ADMIN_HR"];
+    if (!authResult.user || !adminRoles.includes(authResult.user.role)) {
       return NextResponse.json(
         { success: false, error: "Forbidden: Admin authorization required to edit employee details." },
         { status: 403 }

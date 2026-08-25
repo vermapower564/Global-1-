@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { validateAndNormalizeGmail } from "@/lib/emailValidator";
 
-export default function ForgotPasswordPage() {
+function ForgotPasswordContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Wizard Steps: 1 = Enter ID/Email, 2 = Enter OTP, 3 = Enter New Password
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -22,6 +23,21 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+
+  // Check incoming query parameters from SMTP email link
+  useEffect(() => {
+    const token = searchParams.get("token");
+    const email = searchParams.get("email");
+    const identity = searchParams.get("identity");
+
+    if (token && (email || identity)) {
+      const targetId = (identity || email || "").trim();
+      setIdentityInput(targetId);
+      setOtpCode(token.trim());
+      setSuccessMessage("✓ Reset link verified! Please enter your new secure password.");
+      setStep(3);
+    }
+  }, [searchParams]);
 
   // Step 1: Request OTP
   const handleRequestOtp = async (e: React.FormEvent) => {
@@ -310,5 +326,13 @@ export default function ForgotPasswordPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ForgotPasswordPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-slate-100"><div className="h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div></div>}>
+      <ForgotPasswordContent />
+    </Suspense>
   );
 }

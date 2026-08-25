@@ -4,7 +4,7 @@ import { queryDb, queryDbCached, clearQueryCache } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const ADMIN_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER", "ADMIN_HR"];
+const EVALUATOR_ROLES = ["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR", "PROJECT_MANAGER", "TEAM_LEADER"];
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     const filterYear = searchParams.get("year");
     const search = searchParams.get("search") || "";
 
-    const isAdmin = ADMIN_ROLES.includes(authUser.role);
+    const isManager = EVALUATOR_ROLES.includes(authUser.role);
 
     let sql = `
       SELECT 
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     const params: any[] = [];
 
     // Worker role visibility scoping
-    if (!isAdmin) {
+    if (!isManager) {
       sql += ` AND w.userId = ?`;
       params.push(authUser.id);
     } else {
@@ -226,9 +226,9 @@ export async function PATCH(request: NextRequest) {
       return authResult.response || NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
     }
 
-    const isAdmin = ADMIN_ROLES.includes(authResult.user.role);
-    if (!isAdmin) {
-      return NextResponse.json({ success: false, error: "Forbidden: Only managers can evaluate work updates." }, { status: 403 });
+    const isManager = EVALUATOR_ROLES.includes(authResult.user.role);
+    if (!isManager) {
+      return NextResponse.json({ success: false, error: "Forbidden: Only managers and team leaders can evaluate work updates." }, { status: 403 });
     }
 
     const body = await request.json().catch(() => ({}));
