@@ -262,7 +262,7 @@ export default function HRAttendancePage() {
                       <p className="text-[10px] text-slate-400 font-mono">{rec.user?.email}</p>
                     </td>
                     <td className="py-3 px-3 font-mono font-bold text-blue-700">{rec.user?.employeeId || "EMP"}</td>
-                    <td className="py-3 px-3 text-slate-600">{rec.user?.department?.name || "Operations"}</td>
+                    <td className="py-3 px-3 text-slate-600">{typeof rec.user?.department === "object" ? rec.user?.department?.name : (rec.user?.department || "Operations")}</td>
                     <td className="py-3 px-3 font-mono text-slate-800">
                       {rec.date ? new Date(rec.date).toISOString().split("T")[0] : "—"}
                     </td>

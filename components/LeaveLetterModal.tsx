@@ -43,7 +43,7 @@ export default function LeaveLetterModal({
         <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 space-y-4 font-sans leading-relaxed shadow-inner">
           <div className="flex justify-between text-[11px] text-slate-500 border-b border-slate-200 pb-2">
             <span><strong>Date Submitted:</strong> {request.submittedAt}</span>
-            <span><strong>Department:</strong> {request.department}</span>
+            <span><strong>Department:</strong> {typeof request.department === "object" ? (request.department as any)?.name : (request.department || "Operations")}</span>
           </div>
 
           <p><strong>To:</strong> Human Resources Department & Management</p>

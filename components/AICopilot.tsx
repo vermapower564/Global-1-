@@ -234,7 +234,7 @@ export default function AICopilot() {
                       <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-1.5">
                         <span className="text-[10px] font-extrabold uppercase text-slate-500">Department</span>
                         <span className="text-slate-900 dark:text-slate-200 font-bold">
-                          {m.employeeCard.department}
+                          {typeof m.employeeCard.department === "object" ? (m.employeeCard.department as any)?.name : m.employeeCard.department}
                         </span>
                       </div>
 

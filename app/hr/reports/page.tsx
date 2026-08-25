@@ -142,7 +142,7 @@ export default function HRReportsPage() {
           {deptBreakdown.map((dept: any) => (
             <div key={dept.department} className="space-y-1.5">
               <div className="flex justify-between text-xs font-bold">
-                <span className="text-slate-800">{dept.department}</span>
+                <span className="text-slate-800">{typeof dept.department === "object" ? (dept.department as any)?.name : dept.department}</span>
                 <span className="text-slate-500 font-mono">
                   {dept.count} Members ({dept.percentage}%)
                 </span>

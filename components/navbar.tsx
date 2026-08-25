@@ -43,7 +43,7 @@ export default function Navbar({ onToggleSidebar }: NavbarProps) {
             name: json.user.name,
             email: json.user.email,
             role: json.user.role,
-            department: json.user.department || "Operations",
+            department: typeof json.user.department === "object" ? (json.user.department?.name || "Operations") : (json.user.department || "Operations"),
             phone: json.user.phone || null,
             joiningDate: json.user.joiningDate || null,
             avatarUrl: json.user.avatarUrl || null,

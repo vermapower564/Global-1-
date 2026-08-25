@@ -50,7 +50,7 @@ export default function Header() {
             name: json.user.name,
             email: json.user.email,
             role: json.user.role,
-            department: json.user.department || "Operations",
+            department: typeof json.user.department === "object" ? (json.user.department?.name || "Operations") : (json.user.department || "Operations"),
             avatarUrl: json.user.avatarUrl || null,
             activeMode: ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "PROJECT_MANAGER"].includes(json.user.role) ? "ADMIN_HR" : "EMPLOYEE_USER",
             assignedProjectTitle: "OMS Enterprise System",
