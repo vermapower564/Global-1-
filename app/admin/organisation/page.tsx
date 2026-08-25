@@ -624,7 +624,7 @@ export default function AdminOrganisationPage() {
                         <span className="text-slate-400 font-bold">Designation:</span> {selectedPerson.role}
                       </div>
                       <div>
-                        <span className="text-slate-400 font-bold">Department:</span> {selectedPerson.department}
+                        <span className="text-slate-400 font-bold">Department:</span> {typeof selectedPerson.department === "object" ? selectedPerson.department?.name : selectedPerson.department}
                       </div>
                       <div>
                         <span className="text-slate-400 font-bold">Joining Date:</span>{" "}
@@ -1601,7 +1601,7 @@ export default function AdminOrganisationPage() {
 
                               <td className="py-3.5 px-4">
                                 <div className="font-bold text-slate-900">{pm.role}</div>
-                                <div className="text-[10px] text-slate-500">{pm.department}</div>
+                                <div className="text-[10px] text-slate-500">{typeof pm.department === "object" ? pm.department?.name : pm.department}</div>
                               </td>
 
                               <td className="py-3.5 px-4 text-center font-mono font-bold">{pm.totalProjects}</td>
@@ -1722,7 +1722,7 @@ export default function AdminOrganisationPage() {
 
                               <td className="py-3.5 px-4">
                                 <div className="font-bold text-slate-900">{tl.role}</div>
-                                <div className="text-[10px] text-slate-500">{tl.department}</div>
+                                <div className="text-[10px] text-slate-500">{typeof tl.department === "object" ? tl.department?.name : tl.department}</div>
                               </td>
 
                               <td className="py-3.5 px-4 text-center font-mono font-bold">{tl.projectsCount}</td>
@@ -1879,7 +1879,7 @@ export default function AdminOrganisationPage() {
                                     {emp.role}
                                   </span>
                                 </div>
-                                <div className="text-[10px] text-slate-500 mt-0.5 font-medium">{emp.department}</div>
+                                <div className="text-[10px] text-slate-500 mt-0.5 font-medium">{typeof emp.department === "object" ? emp.department?.name : emp.department}</div>
                               </td>
 
                               <td className="py-3.5 px-4 font-bold text-slate-900 line-clamp-1">

@@ -170,7 +170,10 @@ export async function GET(request: Request) {
           emergencyContact: canViewPrivateDetails ? u.emergencyContact : null,
           avatarUrl,
           currentProjectTitle,
-          department: u.departmentName ? { name: u.departmentName, code: u.departmentCode } : null,
+          department: u.departmentName || "Engineering",
+          departmentName: u.departmentName || "Engineering",
+          departmentCode: u.departmentCode || "ENG",
+          dept: u.departmentName ? { name: u.departmentName, code: u.departmentCode } : null,
           bankDetail: canViewPrivateDetails && u.bankName ? {
             accountHolderName: u.accountHolderName,
             accountNumberMasked: u.accountNumber && u.accountNumber.length > 4 

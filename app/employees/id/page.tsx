@@ -216,7 +216,9 @@ export default function EmployeeDetailPage() {
                 {employee.isProfileCompleted ? "Verified Staff 100%" : "Profile Incomplete"}
               </span>
             </div>
-            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">{employee.role} • {employee.department}</p>
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+              {employee.role} • {typeof employee.department === "object" ? (employee.department as any)?.name : employee.department}
+            </p>
             <p className="text-xs font-mono text-slate-500">
               Employee ID: <span className="text-red-600 font-extrabold text-sm">{currentEmpId}</span>
             </p>
@@ -273,7 +275,9 @@ export default function EmployeeDetailPage() {
             </div>
             <div>
               <span className="text-slate-500 block">Department:</span>
-              <span className="font-bold text-slate-900 dark:text-white">{employee.department}</span>
+              <span className="font-bold text-slate-900 dark:text-white">
+                {typeof employee.department === "object" ? (employee.department as any)?.name : employee.department}
+              </span>
             </div>
             <div>
               <span className="text-slate-500 block">Designation:</span>

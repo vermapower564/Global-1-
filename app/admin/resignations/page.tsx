@@ -241,7 +241,7 @@ export default function AdminResignationsPage() {
                       <span className="text-xs font-mono text-gray-500 font-bold">({r.employeeId})</span>
                     </h3>
                     <p className="text-xs text-gray-600 mt-0.5">
-                      {r.role} • <strong className="text-gray-900">{r.department}</strong>
+                      {r.role} • <strong className="text-gray-900">{typeof r.department === "object" ? (r.department as any)?.name : r.department}</strong>
                     </p>
                   </div>
                 </div>
@@ -391,7 +391,7 @@ export default function AdminResignationsPage() {
 
             <p className="text-xs text-gray-600">
               Employee: <strong>{selectedResignation.employeeName}</strong> ({selectedResignation.employeeId}) •{" "}
-              {selectedResignation.department}
+              {typeof selectedResignation.department === "object" ? (selectedResignation.department as any)?.name : selectedResignation.department}
             </p>
 
             <div>

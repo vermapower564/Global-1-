@@ -262,7 +262,7 @@ export default function MonthlySalaryApprovalPage() {
                   </td>
                   <td>
                     <p className="font-semibold text-slate-800">{sal.role}</p>
-                    <p className="text-xs text-slate-500">{sal.department}</p>
+                    <p className="text-xs text-slate-500">{typeof sal.department === "object" ? (sal.department as any)?.name : sal.department}</p>
                   </td>
                   <td className="font-mono text-xs font-semibold text-slate-800">
                     ₹{sal.baseSalary.toLocaleString()}

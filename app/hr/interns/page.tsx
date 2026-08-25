@@ -368,7 +368,7 @@ export default function InternStudentsFolderPage() {
                       <p className="text-[10px] text-blue-600 dark:text-blue-400 font-mono">{student.degree}</p>
                     </td>
                     <td className="p-3">
-                      <p className="font-bold text-slate-800 dark:text-slate-200 text-xs">{student.department}</p>
+                      <p className="font-bold text-slate-800 dark:text-slate-200 text-xs">{typeof student.department === "object" ? (student.department as any)?.name : student.department}</p>
                       <p className="text-[11px] text-purple-600 dark:text-purple-400 font-semibold">{student.mentor}</p>
                     </td>
                     <td className="p-3 font-mono text-xs font-extrabold text-emerald-700 dark:text-emerald-400">

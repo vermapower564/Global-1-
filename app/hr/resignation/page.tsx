@@ -216,7 +216,7 @@ export default function HRResignationPage() {
                 <tr key={r.id} className="hover:bg-slate-50/60 transition">
                   <td className="py-3 px-3 font-bold text-slate-900">{r.employeeName}</td>
                   <td className="py-3 px-3 font-mono font-bold text-blue-700">{r.employeeId}</td>
-                  <td className="py-3 px-3 text-slate-600">{r.department}</td>
+                  <td className="py-3 px-3 text-slate-600">{typeof r.department === "object" ? r.department?.name : r.department}</td>
                   <td className="py-3 px-3 font-mono text-slate-500">{r.submittedAt}</td>
                   <td className="py-3 px-3 font-mono font-bold text-rose-700">{r.lastWorkingDate}</td>
                   <td className="py-3 px-3 max-w-xs text-slate-600 italic line-clamp-2">{r.reason}</td>

@@ -237,7 +237,7 @@ export default function MasterHistoryPage() {
                     </td>
                     <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-extrabold text-slate-900 dark:text-white">
                       {w.employeeName}
-                      <p className="text-[10px] text-slate-500 font-normal">{w.department}</p>
+                      <p className="text-[10px] text-slate-500 font-normal">{typeof w.department === "object" ? (w.department as any)?.name : w.department}</p>
                     </td>
                     <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-extrabold text-slate-900 dark:text-white">
                       {w.clientName}
@@ -284,7 +284,7 @@ export default function MasterHistoryPage() {
                   <tr key={`${a.id}-${idx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
                     <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-mono font-extrabold text-slate-900 dark:text-white">{a.employeeId}</td>
                     <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-extrabold text-slate-900 dark:text-white">{a.name}</td>
-                    <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-semibold text-slate-800 dark:text-slate-300">{a.department}</td>
+                    <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-semibold text-slate-800 dark:text-slate-300">{typeof a.department === "object" ? (a.department as any)?.name : a.department}</td>
                     <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-mono font-bold text-slate-900 dark:text-white">Check-In: {a.checkIn}</td>
                     <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-mono font-bold text-slate-900 dark:text-white">Check-Out: {a.checkOut}</td>
                     <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-mono font-extrabold text-slate-900 dark:text-white">{a.hours}</td>

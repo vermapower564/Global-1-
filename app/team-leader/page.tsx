@@ -517,7 +517,7 @@ export default function TeamLeaderDashboardPage() {
                       </td>
                       <td className="p-3 text-slate-600">
                         <div className="font-bold text-slate-800">{m.role}</div>
-                        <span className="text-[10px] text-slate-400">{m.department}</span>
+                        <span className="text-[10px] text-slate-400">{typeof m.department === "object" ? m.department?.name : m.department}</span>
                       </td>
                       <td className="p-3 text-center font-mono">
                         {m.todayAttendance?.status === "PRESENT" || m.todayAttendance?.checkIn ? (

@@ -327,7 +327,9 @@ export default function AttendancePage() {
                 <tr key={employee.id}>
                   <td className="font-mono text-xs font-bold text-slate-600">{employee.employeeId}</td>
                   <td className="font-bold text-slate-900">{employee.name}</td>
-                  <td className="text-xs text-slate-700 font-medium">{employee.department}</td>
+                  <td className="text-xs text-slate-700 font-medium">
+                    {typeof employee.department === "object" ? (employee.department as any)?.name : employee.department}
+                  </td>
                   <td className="font-mono text-xs text-slate-600">{employee.date}</td>
                   <td className="text-slate-700 font-mono text-xs">{employee.checkIn}</td>
                   <td className="text-slate-700 font-mono text-xs">{employee.checkOut}</td>

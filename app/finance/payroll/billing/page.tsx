@@ -344,7 +344,7 @@ export default function AdminMonthlySalaryBillingPage() {
                 <span className="text-slate-400 font-bold uppercase text-[10px] block">Employee Information</span>
                 <p className="font-extrabold text-slate-900 text-sm mt-0.5">{selectedBillModal.employeeName}</p>
                 <p className="text-slate-600 font-medium">{selectedBillModal.designation}</p>
-                <p className="text-slate-500 font-mono text-[11px] mt-1">ID: {selectedBillModal.employeeId} | Dept: {selectedBillModal.department}</p>
+                <p className="text-slate-500 font-mono text-[11px] mt-1">ID: {selectedBillModal.employeeId} | Dept: {typeof selectedBillModal.department === "object" ? (selectedBillModal.department as any)?.name : selectedBillModal.department}</p>
               </div>
               <div className="text-right">
                 <span className="text-slate-400 font-bold uppercase text-[10px] block">Payment Transfer Details</span>

@@ -144,7 +144,7 @@ export default function TeamLeaderMembersPage() {
 
                       <td className="p-3.5 text-slate-600">
                         <div>{m.role}</div>
-                        <div className="text-[10px] text-slate-400">{m.department}</div>
+                        <div className="text-[10px] text-slate-400">{typeof m.department === "object" ? m.department?.name : m.department}</div>
                       </td>
 
                       <td className="p-3.5 text-center font-mono font-black text-slate-900">

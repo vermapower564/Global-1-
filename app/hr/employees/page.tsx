@@ -292,7 +292,9 @@ export default function HREmployeesPage() {
                       </div>
                     </td>
                     <td className="py-3 px-3 font-mono font-bold text-blue-700">{emp.employeeId}</td>
-                    <td className="py-3 px-3 text-slate-700 font-bold">{emp.department || emp.departmentName || "Engineering"}</td>
+                    <td className="py-3 px-3 text-slate-700 font-bold">
+                      {typeof emp.department === "object" ? emp.department?.name : (emp.department || emp.departmentName || "Engineering")}
+                    </td>
                     <td className="py-3 px-3 text-slate-800 font-semibold">{emp.role?.replace(/_/g, " ")}</td>
                     <td className="py-3 px-3 font-mono text-slate-500">{emp.phone || "—"}</td>
                     <td className="py-3 px-3 font-mono text-slate-500">

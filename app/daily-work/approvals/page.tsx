@@ -136,7 +136,7 @@ export default function ManagerEODApprovalsPage() {
                         <p className="font-bold text-slate-900">{item.employeeName}</p>
                         <p className="text-[10px] font-mono text-slate-400">{item.employeeId}</p>
                       </td>
-                      <td>{item.department}</td>
+                      <td>{typeof item.department === "object" ? (item.department as any)?.name : item.department}</td>
                       <td className="font-bold text-blue-600">{item.hoursWorked} hrs</td>
                       <td>
                         <div className="space-y-1">
@@ -191,7 +191,9 @@ export default function ManagerEODApprovalsPage() {
               <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
                 <span className="text-[10px] font-mono font-bold text-slate-400">{selectedItem.id}</span>
                 <p className="font-bold text-slate-900 text-sm mt-0.5">{selectedItem.employeeName}</p>
-                <p className="text-slate-500">{selectedItem.department} • {selectedItem.hoursWorked} Hours Logged</p>
+                <p className="text-slate-500">
+                  {typeof selectedItem.department === "object" ? (selectedItem.department as any)?.name : selectedItem.department} • {selectedItem.hoursWorked} Hours Logged
+                </p>
               </div>
 
               <div>

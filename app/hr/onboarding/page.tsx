@@ -235,7 +235,7 @@ export default function HROnboardingPage() {
                     </td>
                     <td className="py-3 px-3 font-mono font-bold text-blue-700">{inv.employeeId || "Auto"}</td>
                     <td className="py-3 px-3">
-                      <p className="font-bold text-slate-800">{inv.department}</p>
+                      <p className="font-bold text-slate-800">{typeof inv.department === "object" ? inv.department?.name : inv.department}</p>
                       <p className="text-[10px] text-slate-400">{inv.role}</p>
                     </td>
                     <td className="py-3 px-3">

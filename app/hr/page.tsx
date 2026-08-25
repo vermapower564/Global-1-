@@ -323,7 +323,9 @@ export default function HRDashboardPage() {
                         </div>
                       </td>
                       <td className="py-3 px-3 font-mono font-bold text-blue-700">{emp.employeeId}</td>
-                      <td className="py-3 px-3 text-slate-600 font-bold">{emp.department}</td>
+                      <td className="py-3 px-3 text-slate-600 font-bold">
+                        {typeof emp.department === "object" ? emp.department?.name : (emp.department || emp.departmentName || "Engineering")}
+                      </td>
                       <td className="py-3 px-3 text-slate-800 font-semibold">{emp.designation}</td>
                       <td className="py-3 px-3 font-mono text-slate-500">{emp.joiningDate}</td>
                       <td className="py-3 px-3">
@@ -382,7 +384,9 @@ export default function HRDashboardPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-xs font-black text-slate-900">{leave.employeeName}</p>
-                      <p className="text-[10px] text-slate-400 font-mono">{leave.employeeId} • {leave.department}</p>
+                      <p className="text-[10px] text-slate-400 font-mono">
+                        {leave.employeeId} • {typeof leave.department === "object" ? leave.department?.name : (leave.department || "Operations")}
+                      </p>
                     </div>
                     <span className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-black rounded-md">
                       {leave.leaveType}

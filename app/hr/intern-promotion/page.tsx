@@ -207,7 +207,7 @@ export default function InternPromotionPage() {
                       <p className="text-[11px] text-slate-500">{item.currentRole}</p>
                     </td>
                     <td>
-                      <p className="font-bold text-slate-800 text-xs">{item.department}</p>
+                      <p className="font-bold text-slate-800 text-xs">{typeof item.department === "object" ? (item.department as any)?.name : item.department}</p>
                       <p className="text-[11px] text-purple-600 font-semibold">{item.mentor}</p>
                     </td>
                     <td className="w-44">
@@ -298,10 +298,10 @@ export default function InternPromotionPage() {
               <p className="font-bold text-slate-900">Date: {new Date().toLocaleDateString()}</p>
               <p>Dear <span className="font-bold text-slate-900">{selectedOfferIntern.name}</span>,</p>
               <p>
-                We are thrilled to inform you that upon the successful completion of your internship in our <span className="font-bold text-slate-900">{selectedOfferIntern.department}</span> department with an outstanding rating of <span className="font-bold text-emerald-600">{selectedOfferIntern.performanceScore}/5.0</span>, OMS Enterprise is officially extending a full-time job offer for the position of <span className="font-bold text-slate-900">{selectedOfferIntern.targetRole}</span>.
+                We are thrilled to inform you that upon the successful completion of your internship in our <span className="font-bold text-slate-900">{typeof selectedOfferIntern.department === "object" ? (selectedOfferIntern.department as any)?.name : selectedOfferIntern.department}</span> department with an outstanding rating of <span className="font-bold text-emerald-600">{selectedOfferIntern.performanceScore}/5.0</span>, OMS Enterprise is officially extending a full-time job offer for the position of <span className="font-bold text-slate-900">{selectedOfferIntern.targetRole}</span>.
               </p>
               <div className="bg-white p-3 rounded-lg border space-y-1 font-mono text-xs">
-                <p>• Department: <span className="font-bold text-slate-900">{selectedOfferIntern.department}</span></p>
+                <p>• Department: <span className="font-bold text-slate-900">{typeof selectedOfferIntern.department === "object" ? (selectedOfferIntern.department as any)?.name : selectedOfferIntern.department}</span></p>
                 <p>• Role: <span className="font-bold text-slate-900">{selectedOfferIntern.targetRole}</span></p>
                 <p>• Annual Base Salary: <span className="font-bold text-emerald-700">₹{selectedOfferIntern.offeredFullTimeSalary.toLocaleString()} / Year</span></p>
                 <p>• Employment Status: <span className="font-bold text-blue-600">Full-Time Permanent Staff</span></p>
