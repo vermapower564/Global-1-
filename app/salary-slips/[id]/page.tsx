@@ -90,8 +90,8 @@ function numberToWords(num: number): string {
 export default function FullSalarySlipPage() {
   const params = useParams();
   const router = useRouter();
-  const rawId = params?.id as string;
-  const id = rawId ? decodeURIComponent(rawId) : "";
+  const rawId = Array.isArray(params?.id) ? params.id[0] : (params?.id as string);
+  const id = rawId ? decodeURIComponent(rawId).trim() : "";
 
   const [slip, setSlip] = useState<SalarySlipData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -100,23 +100,34 @@ export default function FullSalarySlipPage() {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
+    setError(null);
+
     fetch(`/api/salary-slips/${encodeURIComponent(id)}`)
-      .then((res) => {
+      .then(async (res) => {
+        const json = await res.json().catch(() => null);
         if (!res.ok) {
-          if (res.status === 403) throw new Error("Access Denied: You do not have permission to view this salary slip.");
-          if (res.status === 404) throw new Error("Salary slip record not found.");
-          throw new Error("Failed to load salary slip.");
+          if (res.status === 401) {
+            throw new Error("Unauthorized: Please sign in to access confidential salary slips.");
+          }
+          if (res.status === 403) {
+            throw new Error(json?.error || "Access Denied: You do not have permission to view this salary slip.");
+          }
+          if (res.status === 404) {
+            throw new Error(json?.error || `Salary slip record "${id}" was not found.`);
+          }
+          throw new Error(json?.error || `Server error (${res.status}): Failed to load salary slip.`);
         }
-        return res.json();
+        return json;
       })
       .then((json) => {
-        if (json.success && (json.data || json.slip)) {
+        if (json && json.success && (json.data || json.slip)) {
           setSlip(json.data || json.slip);
         } else {
-          setError(json.error || "Failed to load salary slip.");
+          setError(json?.error || "Failed to load salary slip.");
         }
       })
       .catch((err) => {
+        console.error("Salary slip fetch error:", err);
         setError(err.message || "Network error loading salary slip.");
       })
       .finally(() => setLoading(false));
@@ -172,26 +183,66 @@ export default function FullSalarySlipPage() {
     );
   }
 
-  const paymentDateFormatted = slip.payment.paymentDate
-    ? new Date(slip.payment.paymentDate).toLocaleDateString("en-IN", {
+  const empName = slip.employeeName || (slip as any).user_name || "Employee";
+  const empId = slip.employeeId || (slip as any).user_employeeId || "EMP001";
+  const empDept = slip.department || (slip as any).department_name || "Development & Engineering";
+  const empRole = (slip.designation || (slip as any).user_role || "Software Developer").replace(/_/g, " ");
+  const empEmail = slip.employeeEmail || (slip as any).user_email || (slip as any).email || "";
+  const salaryMonth = slip.salaryMonth || "August 2026";
+  const slipId = slip.id || slip.monthKey || id;
+
+  // Safe Earnings
+  const basic = Number(slip.earnings?.basicSalary ?? (slip as any).basicSalary) || 0;
+  const hra = Number(slip.earnings?.hra ?? (slip as any).hra) || 0;
+  const allowances = Number(slip.earnings?.allowances ?? (slip as any).allowances) || 0;
+  const bonus = Number(slip.earnings?.bonus ?? (slip as any).bonus) || 0;
+  const overtime = Number(slip.earnings?.overtime ?? (slip as any).overtime) || 0;
+  const gross =
+    Number(slip.earnings?.grossSalary ?? (slip as any).grossSalary) ||
+    basic + hra + allowances + bonus + overtime;
+
+  // Safe Deductions
+  const pf = Number(slip.deductions?.pfDeduction ?? (slip as any).pfDeduction) || 0;
+  const tax = Number(slip.deductions?.taxDeduction ?? (slip as any).taxDeduction) || 0;
+  const other = Number(slip.deductions?.otherDeductions ?? (slip as any).otherDeductions) || 0;
+  const totalDeductions =
+    Number(slip.deductions?.totalDeductions ?? (slip as any).totalDeductions) ||
+    pf + tax + other;
+
+  // Safe Net
+  const net = Number(slip.netSalary) || Math.max(0, gross - totalDeductions);
+
+  // Safe Payment & Banking
+  const paymentStatus = slip.payment?.status || (slip as any).paymentStatus || "PAID";
+  const paymentMethod = slip.payment?.method || (slip as any).paymentMethod || "Direct Bank Transfer";
+  const bankName = slip.payment?.bankName || (slip as any).bankName || null;
+  const accountHolder = slip.payment?.accountHolderName || (slip as any).accountHolderName || empName;
+  const maskedAcc = slip.payment?.accountNumberMasked || (slip as any).accountNumberMasked || null;
+  const ifscCode = slip.payment?.ifscCode || (slip as any).ifscCode || null;
+  const txnRef = slip.payment?.transactionReference || (slip as any).transactionReference || `TXN-OMS-${slipId}`;
+
+  const paymentDateFormatted = slip.payment?.paymentDate || (slip as any).paymentDate
+    ? new Date(slip.payment?.paymentDate || (slip as any).paymentDate).toLocaleDateString("en-IN", {
         day: "2-digit",
         month: "long",
         year: "numeric",
       })
-    : "01 " + slip.salaryMonth;
+    : "01 " + salaryMonth;
 
   const generatedDateFormatted = slip.generatedAt
     ? new Date(slip.generatedAt).toLocaleDateString("en-IN", {
         day: "2-digit",
-        month: "long",
+        month: "short",
         year: "numeric",
       })
     : paymentDateFormatted;
 
+  const pdfUrl = `/api/salary-slips/${encodeURIComponent(slipId)}/pdf`;
+
   return (
-    <div className="max-w-5xl mx-auto py-6 px-4 space-y-6 font-sans">
+    <div className="max-w-5xl mx-auto py-6 px-4 space-y-6 font-sans print:p-0 print:m-0 print:max-w-full">
       {/* Top Action Bar (Hidden in Print) */}
-      <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-white border border-slate-200 rounded-2xl shadow-xs print:hidden">
+      <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-white border border-slate-200 rounded-2xl shadow-xs print:hidden screen-only">
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.back()}
@@ -205,15 +256,15 @@ export default function FullSalarySlipPage() {
               Document View
             </span>
             <span className="text-xs font-black text-slate-900">
-              Salary Slip • {slip.salaryMonth} • {slip.employeeName} ({slip.employeeId})
+              Salary Slip • {salaryMonth} • {empName} ({empId})
             </span>
           </div>
         </div>
 
         <div className="flex items-center gap-2.5">
           <a
-            href={`/api/salary-slips/${encodeURIComponent(slip.id)}/pdf`}
-            download={`Salary_Slip_${slip.employeeId}_${slip.monthKey}.pdf`}
+            href={pdfUrl}
+            download={`Salary_Slip_${empId}_${salaryMonth.replace(/\s+/g, "_")}.pdf`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-xs transition cursor-pointer"
@@ -232,9 +283,9 @@ export default function FullSalarySlipPage() {
       </div>
 
       {/* Main Full-Page Salary Slip Document Card */}
-      <div className="bg-white text-slate-900 border border-slate-200 rounded-3xl shadow-xl overflow-hidden print:border-none print:shadow-none print:rounded-none">
+      <div className="salary-slip-print bg-white text-slate-900 border border-slate-200 rounded-3xl shadow-xl overflow-hidden print:border-none print:shadow-none print:rounded-none print:p-0 print:m-0 print:w-full">
         {/* Document Header */}
-        <div className="p-8 border-b-2 border-slate-900 bg-slate-950 text-white space-y-3">
+        <div className="salary-header salary-section p-8 border-b-2 border-slate-900 bg-slate-950 text-white space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3.5">
               <div className="h-12 w-12 rounded-2xl bg-blue-600 text-white font-black text-2xl flex items-center justify-center shadow-md">
@@ -252,22 +303,22 @@ export default function FullSalarySlipPage() {
 
             <div className="text-right">
               <div className="inline-block px-3.5 py-1 rounded-full bg-blue-500/20 border border-blue-400/40 text-blue-300 font-black text-xs uppercase tracking-wider">
-                PAYSLIP: {slip.salaryMonth.toUpperCase()}
+                PAYSLIP: {salaryMonth.toUpperCase()}
               </div>
               <p className="text-[10px] text-slate-400 mt-1 font-mono">
-                Doc Ref: {slip.id}
+                Doc Ref: {slipId}
               </p>
             </div>
           </div>
           <div className="text-[11px] text-slate-400 pt-1 flex flex-wrap justify-between border-t border-slate-800">
-            <span>Corporate HQ: DLF Cyber City, Tower B, Sector 25, Gurugram, HR 122002</span>
+            <span>Corporate HQ: DLF Cyber City, Sector 25, Gurugram, HR 122002</span>
             <span>CIN: U72200HR2022PTC099881 • PAN: AAAC01928K</span>
           </div>
         </div>
 
         <div className="p-8 space-y-8">
           {/* Employee & Bank Info Dual Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-6 rounded-2xl border border-slate-200">
+          <div className="salary-grid salary-section grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-6 rounded-2xl border border-slate-200">
             {/* Column 1: Employee Details */}
             <div className="space-y-3">
               <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2 border-b border-slate-200 pb-2">
@@ -277,27 +328,29 @@ export default function FullSalarySlipPage() {
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-bold">Employee Name:</span>
-                  <span className="font-extrabold text-slate-900">{slip.employeeName}</span>
+                  <span className="font-extrabold text-slate-900">{empName}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-bold">Employee ID:</span>
-                  <span className="font-mono font-bold text-blue-600">{slip.employeeId}</span>
+                  <span className="font-mono font-bold text-blue-600">{empId}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-bold">Department:</span>
-                  <span className="font-bold text-slate-800">{slip.department}</span>
+                  <span className="font-bold text-slate-800">{empDept}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-bold">Designation / Role:</span>
-                  <span className="font-bold text-slate-800">{slip.designation}</span>
+                  <span className="font-bold text-slate-800">{empRole}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500 font-bold">Official Email:</span>
-                  <span className="font-mono text-slate-700">{slip.employeeEmail}</span>
-                </div>
+                {empEmail && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-bold">Official Email:</span>
+                    <span className="font-mono text-slate-700">{empEmail}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-bold">Salary Period:</span>
-                  <span className="font-extrabold text-slate-900">{slip.salaryMonth}</span>
+                  <span className="font-extrabold text-slate-900">{salaryMonth}</span>
                 </div>
               </div>
             </div>
@@ -311,34 +364,34 @@ export default function FullSalarySlipPage() {
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-bold">Bank Name:</span>
-                  <span className="font-extrabold text-slate-900">{slip.payment.bankName}</span>
+                  <span className="font-extrabold text-slate-900">{bankName || "—"}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-bold">Account Holder:</span>
-                  <span className="font-bold text-slate-800">{slip.payment.accountHolderName}</span>
+                  <span className="font-bold text-slate-800">{accountHolder || "—"}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-bold">Account Number:</span>
-                  <span className="font-mono font-bold text-slate-800">{slip.payment.accountNumberMasked}</span>
+                  <span className="font-mono font-bold text-slate-800">{maskedAcc || "—"}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-bold">IFSC Code:</span>
-                  <span className="font-mono font-bold text-slate-800">{slip.payment.ifscCode}</span>
+                  <span className="font-mono font-bold text-slate-800">{ifscCode || "—"}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-bold">Payment Method:</span>
-                  <span className="font-bold text-slate-800">{slip.payment.method}</span>
+                  <span className="font-bold text-slate-800">{paymentMethod}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-slate-500 font-bold">Disbursement Status:</span>
                   <span
                     className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                      slip.payment.status === "PAID"
+                      paymentStatus === "PAID"
                         ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
                         : "bg-amber-100 text-amber-800 border border-amber-300"
                     }`}
                   >
-                    ● {slip.payment.status}
+                    ● {paymentStatus}
                   </span>
                 </div>
               </div>
@@ -346,7 +399,7 @@ export default function FullSalarySlipPage() {
           </div>
 
           {/* Earnings & Deductions Breakdown Tables */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="salary-tables salary-section grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Earnings Table */}
             <div className="border border-slate-200 rounded-2xl overflow-hidden">
               <div className="bg-slate-900 text-white px-5 py-3 flex justify-between items-center">
@@ -357,38 +410,38 @@ export default function FullSalarySlipPage() {
                 <div className="flex justify-between pt-1">
                   <span className="text-slate-600 font-semibold">Basic Salary</span>
                   <span className="font-mono font-bold text-slate-900">
-                    ₹{slip.earnings.basicSalary.toLocaleString("en-IN")}
+                    ₹{basic.toLocaleString("en-IN")}
                   </span>
                 </div>
                 <div className="flex justify-between pt-2">
                   <span className="text-slate-600 font-semibold">House Rent Allowance (HRA)</span>
                   <span className="font-mono font-bold text-slate-900">
-                    ₹{slip.earnings.hra.toLocaleString("en-IN")}
+                    ₹{hra.toLocaleString("en-IN")}
                   </span>
                 </div>
                 <div className="flex justify-between pt-2">
                   <span className="text-slate-600 font-semibold">Special / Work Allowances</span>
                   <span className="font-mono font-bold text-slate-900">
-                    ₹{slip.earnings.allowances.toLocaleString("en-IN")}
+                    ₹{allowances.toLocaleString("en-IN")}
                   </span>
                 </div>
                 <div className="flex justify-between pt-2">
                   <span className="text-slate-600 font-semibold">Performance Bonus</span>
                   <span className="font-mono font-bold text-slate-900">
-                    ₹{slip.earnings.bonus.toLocaleString("en-IN")}
+                    ₹{bonus.toLocaleString("en-IN")}
                   </span>
                 </div>
                 <div className="flex justify-between pt-2">
                   <span className="text-slate-600 font-semibold">Overtime / Project Incentive</span>
                   <span className="font-mono font-bold text-slate-900">
-                    ₹{slip.earnings.overtime.toLocaleString("en-IN")}
+                    ₹{overtime.toLocaleString("en-IN")}
                   </span>
                 </div>
               </div>
               <div className="bg-slate-100 px-5 py-3 flex justify-between items-center border-t border-slate-200">
                 <span className="text-xs font-black uppercase text-slate-900">Total Gross Earnings</span>
                 <span className="text-sm font-mono font-black text-blue-700">
-                  ₹{slip.earnings.grossSalary.toLocaleString("en-IN")}
+                  ₹{gross.toLocaleString("en-IN")}
                 </span>
               </div>
             </div>
@@ -403,65 +456,65 @@ export default function FullSalarySlipPage() {
                 <div className="flex justify-between pt-1">
                   <span className="text-slate-600 font-semibold">Provident Fund (Employee PF 12%)</span>
                   <span className="font-mono font-bold text-rose-600">
-                    ₹{slip.deductions.pfDeduction.toLocaleString("en-IN")}
+                    ₹{pf.toLocaleString("en-IN")}
                   </span>
                 </div>
                 <div className="flex justify-between pt-2">
                   <span className="text-slate-600 font-semibold">Tax Deducted at Source (TDS / Income Tax)</span>
                   <span className="font-mono font-bold text-rose-600">
-                    ₹{slip.deductions.taxDeduction.toLocaleString("en-IN")}
+                    ₹{tax.toLocaleString("en-IN")}
                   </span>
                 </div>
                 <div className="flex justify-between pt-2">
                   <span className="text-slate-600 font-semibold">Professional Tax / Other Deductions</span>
                   <span className="font-mono font-bold text-rose-600">
-                    ₹{slip.deductions.otherDeductions.toLocaleString("en-IN")}
+                    ₹{other.toLocaleString("en-IN")}
                   </span>
                 </div>
-                <div className="flex justify-between pt-2">
-                  <span className="text-slate-400 font-medium">Voluntary Provident Fund</span>
-                  <span className="font-mono text-slate-400">₹0</span>
+                <div className="flex justify-between pt-2 text-slate-400">
+                  <span className="font-medium">Voluntary Provident Fund</span>
+                  <span className="font-mono">₹0</span>
                 </div>
-                <div className="flex justify-between pt-2">
-                  <span className="text-slate-400 font-medium">Unpaid Leaves / LOP</span>
-                  <span className="font-mono text-slate-400">₹0</span>
+                <div className="flex justify-between pt-2 text-slate-400">
+                  <span className="font-medium">Unpaid Leaves / LOP</span>
+                  <span className="font-mono">₹0</span>
                 </div>
               </div>
               <div className="bg-slate-100 px-5 py-3 flex justify-between items-center border-t border-slate-200">
                 <span className="text-xs font-black uppercase text-slate-900">Total Deductions</span>
                 <span className="text-sm font-mono font-black text-rose-600">
-                  -₹{slip.deductions.totalDeductions.toLocaleString("en-IN")}
+                  -₹{totalDeductions.toLocaleString("en-IN")}
                 </span>
               </div>
             </div>
           </div>
 
           {/* Net Salary Highlight Box with Amount in Words */}
-          <div className="p-6 rounded-2xl bg-gradient-to-r from-blue-900 to-indigo-950 text-white shadow-lg space-y-2">
+          <div className="salary-net-banner salary-section p-6 rounded-2xl bg-gradient-to-r from-blue-900 to-indigo-950 text-white shadow-lg space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-widest text-blue-300 block">
                   NET DISBURSED TAKE-HOME SALARY
                 </span>
                 <p className="text-3xl sm:text-4xl font-black font-mono tracking-tight text-white mt-1">
-                  ₹{slip.netSalary.toLocaleString("en-IN")}
+                  ₹{net.toLocaleString("en-IN")}
                 </p>
               </div>
               <div className="text-right">
                 <span className="text-[10px] font-bold text-blue-300 uppercase block">Disbursement Date</span>
                 <p className="text-xs font-extrabold text-white font-mono">{paymentDateFormatted}</p>
-                <span className="text-[10px] text-blue-300 font-mono block mt-1">Txn: {slip.payment.transactionReference}</span>
+                <span className="text-[10px] text-blue-300 font-mono block mt-1">Txn: {txnRef}</span>
               </div>
             </div>
             <div className="pt-2 border-t border-blue-800/80">
               <span className="text-xs font-bold text-blue-200">
-                Amount in Words: <strong className="text-white italic">{numberToWords(slip.netSalary)}</strong>
+                Amount in Words: <strong className="text-white italic">{numberToWords(net)}</strong>
               </span>
             </div>
           </div>
 
           {/* Verification & Sign-off Footer */}
-          <div className="pt-6 border-t-2 border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center text-xs">
+          <div className="salary-footer salary-section pt-6 border-t-2 border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center text-xs">
             <div className="space-y-1">
               <div className="h-10 flex items-center justify-center font-serif text-slate-600 font-bold text-sm">
                 Roushan Verma

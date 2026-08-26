@@ -325,3 +325,107 @@ html.dark .badge-purple {
   color: #ddd6fe;
   border-color: #6d28d9;
 }
+
+/* ==========================================================================
+   DEDICATED SALARY SLIP & APPLICATION PRINT ARCHITECTURE
+   ========================================================================== */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm 10mm;
+  }
+
+  /* 1. Reset Root, Body & HTML for Clean Unclipped Printing */
+  html,
+  body {
+    background: #ffffff !important;
+    background-image: none !important;
+    color: #0f172a !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 10pt !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* 2. Strictly Hide all Application Shell, Navigation & Screen-Only Elements */
+  aside,
+  header,
+  nav,
+  footer,
+  .sidebar,
+  .navbar,
+  .app-header,
+  .breadcrumb,
+  .screen-only,
+  .print\:hidden,
+  button,
+  [data-screen-only="true"],
+  [aria-label="Toggle OMS Enterprise Menu"],
+  .inactivity-tracker-overlay {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    height: 0 !important;
+    width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+
+  /* 3. Unlock Main Content Overflow & Hierarchy */
+  div,
+  main,
+  section,
+  article {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    position: static !important;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+
+  /* 4. Dedicated Printable Container */
+  .salary-slip-print {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 0 !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* 5. Page Break Prevention on Sections */
+  .salary-section,
+  .salary-header,
+  .salary-grid,
+  .salary-tables,
+  .salary-net-banner,
+  .salary-footer,
+  .pro-card {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* 6. Exact Background and Font Color Preservation */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+}
+

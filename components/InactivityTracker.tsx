@@ -119,7 +119,7 @@ export default function InactivityTracker() {
   const timeFormatted = `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in print:hidden screen-only">
       <div className="bg-white rounded-3xl border border-gray-200 shadow-2xl p-6 sm:p-8 max-w-md w-full text-center space-y-4">
         <div className="h-14 w-14 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center text-2xl mx-auto">
           ⏳

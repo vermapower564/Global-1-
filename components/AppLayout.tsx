@@ -20,11 +20,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const isAuthPage = pathname?.startsWith("/auth") || pathname === "/login";
 
   if (isAuthPage) {
-    return <div className="bg-slate-100 text-slate-900 font-sans min-h-screen antialiased">{children}</div>;
+    return (
+      <div className="bg-slate-100 text-slate-900 font-sans min-h-screen antialiased overflow-y-auto">
+        {children}
+      </div>
+    );
   }
 
   return (
-    <div className="bg-slate-50 text-slate-900 font-sans min-h-screen flex antialiased relative overflow-x-hidden">
+    <div className="bg-slate-50 text-slate-900 font-sans h-screen w-full flex antialiased relative overflow-hidden print:h-auto print:overflow-visible print:block print:bg-white print:p-0 print:m-0">
       {/* 1-Hour Inactivity Tracker & Sliding Heartbeat */}
       <InactivityTracker />
 
@@ -32,7 +36,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {isSidebarOpen && (
         <div
           onClick={() => setIsSidebarOpen(false)}
-          className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-xs lg:hidden transition-opacity"
+          className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-xs lg:hidden transition-opacity print:hidden"
         />
       )}
 
@@ -40,10 +44,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-screen transition-all duration-300">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 h-screen overflow-hidden transition-all duration-300 print:h-auto print:overflow-visible print:block print:p-0 print:m-0">
         <Navbar onToggleSidebar={toggleSidebar} isSidebarOpen={isSidebarOpen} />
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
-        <Footer />
+        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto flex flex-col print:h-auto print:overflow-visible print:block print:p-0 print:m-0">
+          <main className="flex-1 p-4 sm:p-6 lg:p-8 print:p-0 print:m-0 print:block">{children}</main>
+          <Footer />
+        </div>
       </div>
 
       <AICopilot />

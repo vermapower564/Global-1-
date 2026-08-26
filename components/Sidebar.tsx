@@ -16,6 +16,7 @@ import {
   IconSettings,
   IconUserCheck,
   IconUser,
+  IconMegaphone,
 } from "./Icons";
 import { getCurrentUserContext } from "@/utils/userContextStore";
 
@@ -102,6 +103,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       title: isSuperAdmin ? "SUPER ADMIN" : "ADMINISTRATION",
       items: [
         { name: "Dashboard", href: "/admin/dashboard", icon: IconDashboard },
+        { name: "Announcements", href: "/admin/announcements", icon: IconMegaphone },
         { name: "Employees", href: "/admin/employees", icon: IconUsers },
         { name: "Organisation", href: "/admin/organisation", icon: IconBuilding },
         { name: "Projects", href: "/admin/projects", icon: IconFolder },
@@ -128,6 +130,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       title: "HUMAN RESOURCES",
       items: [
         { name: "Dashboard", href: "/hr", icon: IconDashboard },
+        { name: "Announcements", href: "/admin/announcements", icon: IconMegaphone },
         { name: "Employees", href: "/hr/employees", icon: IconUsers },
         { name: "Attendance", href: "/hr/attendance", icon: IconCalendar },
         { name: "Leave Requests", href: "/hr/leave", icon: IconClipboardList },
@@ -242,8 +245,8 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
 
   return (
     <aside
-      className={`w-64 h-screen max-h-screen sticky top-0 bg-slate-950 text-slate-100 flex flex-col border-r border-slate-800 shrink-0 shadow-2xl z-40 transition-transform duration-300 font-sans fixed lg:sticky inset-y-0 left-0 ${
-        isOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+      className={`w-64 h-screen max-h-screen bg-slate-950 text-slate-100 flex flex-col border-r border-slate-800 shrink-0 shadow-2xl z-40 transition-transform duration-300 font-sans overflow-hidden fixed lg:static inset-y-0 left-0 print:hidden sidebar screen-only ${
+        isOpen ? "translate-x-0" : "-translate-x-full lg:hidden"
       }`}
     >
       {/* Enterprise Brand Logo Header */}
@@ -293,7 +296,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       </div>
 
       {/* Enterprise Categorized Navigation Links */}
-      <nav className="flex-1 px-3 py-3 space-y-4 overflow-y-auto custom-scrollbar">
+      <nav className="flex-1 min-h-0 px-3 py-3 space-y-4 overflow-y-auto custom-scrollbar">
         {currentSections.map((sec) => (
           <div key={sec.title} className="space-y-1">
             <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-3 block mb-1.5">

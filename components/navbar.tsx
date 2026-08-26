@@ -96,7 +96,7 @@ export default function Navbar({ onToggleSidebar }: NavbarProps) {
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-xs transition-colors font-sans">
+      <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-xs transition-colors font-sans print:hidden navbar app-header screen-only">
         <div className="flex items-center justify-between h-16 px-4 sm:px-6">
           {/* Left: Sidebar Toggle, Navigation Back/Forward & Page Title */}
           <div className="flex items-center gap-3">

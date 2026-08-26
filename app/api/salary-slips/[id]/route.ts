@@ -5,7 +5,7 @@ import { maskAccountNumber } from "@/lib/bankHelper";
 
 export const dynamic = "force-dynamic";
 
-const PRIVILEGED_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR"];
+const PRIVILEGED_ROLES = ["SUPER_ADMIN", "DIRECTOR", "HR", "FINANCE", "ADMIN_HR", "ADMIN", "PROJECT_MANAGER"];
 
 export async function GET(
   request: NextRequest,
@@ -35,15 +35,16 @@ export async function GET(
               u.role AS user_role, u.phone AS user_phone, u.createdAt AS user_joinedAt, u.salary AS user_baseSalary,
               d.name AS department_name, d.code AS department_code,
               b.accountHolderName AS bank_accountHolderName, b.bankName AS bank_bankName,
-              b.accountNumberMasked AS bank_accountNumberMasked, b.accountNumberEncrypted AS bank_accountNumber,
+              b.accountNumber AS bank_accountNumber,
               b.ifscCode AS bank_ifscCode, b.branchName AS bank_branchName, b.accountType AS bank_accountType
        FROM salaryslip s
-       LEFT JOIN user u ON s.userId = u.id
+       LEFT JOIN user u ON (s.userId = u.id OR s.employeeId = u.employeeId)
        LEFT JOIN department d ON u.departmentId = d.id
-       LEFT JOIN bankdetail b ON u.id = b.userId
-       WHERE s.id = ? OR s.monthKey = ? OR s.employeeId = ?
+       LEFT JOIN bankdetail b ON (u.id = b.userId OR s.userId = b.userId)
+       WHERE s.id = ? OR s.monthKey = ? OR s.employeeId = ? OR s.userId = ?
+       ORDER BY s.monthKey DESC, s.generatedAt DESC
        LIMIT 1`,
-      [cleanId, cleanId, cleanId]
+      [cleanId, cleanId, cleanId, cleanId]
     );
 
     if (!slipRows || slipRows.length === 0) {
@@ -58,8 +59,9 @@ export async function GET(
 
     const isOwner =
       slipUserId === authUser.id ||
-      slipEmpId === (authUser as any).employeeId ||
       slipEmpId === authUser.id ||
+      slipEmpId === (authUser as any).employeeId ||
+      slipUserId === (authUser as any).employeeId ||
       (slipEmail && slipEmail.toLowerCase() === (authUser.email || "").toLowerCase());
     const isPrivileged = PRIVILEGED_ROLES.includes((authUser.role || "").toUpperCase());
 
@@ -87,11 +89,11 @@ export async function GET(
     const totalDeductions = Number(slip.totalDeductions) || (pf + tax + other);
     const net = Number(slip.netSalary) || (gross - totalDeductions);
 
-    const bankName = slip.bankName || slip.bank_bankName || "State Bank of India";
-    const rawAcc = slip.accountNumberMasked || slip.bank_accountNumberMasked || (slip.bank_accountNumber ? maskAccountNumber(slip.bank_accountNumber) : "••••••••5432");
-    const maskedAcc = rawAcc.includes("••••") ? rawAcc : maskAccountNumber(rawAcc);
-    const ifscCode = slip.ifscCode || slip.bank_ifscCode || "SBIN0001001";
-    const accountHolder = slip.accountHolderName || slip.bank_accountHolderName || slip.employeeName || slip.user_name;
+    const bankName = slip.bankName || slip.bank_bankName || null;
+    const rawAcc = slip.accountNumberMasked || (slip.bank_accountNumber ? maskAccountNumber(slip.bank_accountNumber) : null);
+    const maskedAcc = rawAcc ? (rawAcc.includes("••••") ? rawAcc : maskAccountNumber(rawAcc)) : null;
+    const ifscCode = slip.ifscCode || slip.bank_ifscCode || null;
+    const accountHolder = slip.accountHolderName || slip.bank_accountHolderName || slip.employeeName || slip.user_name || null;
 
     const payload = {
       id: slip.id,
@@ -131,13 +133,13 @@ export async function GET(
         status: slip.paymentStatus || "PAID",
         method: slip.paymentMethod || "Direct Bank Transfer",
         paymentDate: slip.paymentDate,
-        transactionReference: slip.transactionReference || `TXN-OMS-${Date.now().toString().slice(-6)}`,
+        transactionReference: slip.transactionReference || `TXN-OMS-${slip.id}`,
         accountHolderName: accountHolder,
         bankName,
         accountNumberMasked: maskedAcc,
         ifscCode,
-        branchName: slip.bank_branchName || "Main Cyber City Branch",
-        accountType: slip.bank_accountType || "SAVINGS",
+        branchName: slip.bank_branchName || null,
+        accountType: slip.bank_accountType || null,
       },
 
       notes: slip.notes || null,

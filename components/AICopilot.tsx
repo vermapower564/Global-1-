@@ -139,7 +139,7 @@ export default function AICopilot() {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 font-sans">
+    <div className="fixed bottom-6 right-6 z-50 font-sans print:hidden screen-only">
       {/* Floating Copilot Button */}
       {!isOpen && (
         <button
