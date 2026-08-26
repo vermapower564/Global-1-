@@ -29,6 +29,7 @@ export default function EmployeeProfilePage() {
   const [editAvatarUrl, setEditAvatarUrl] = useState("");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [editError, setEditError] = useState("");
+  const [viewingPhotoUrl, setViewingPhotoUrl] = useState<string | null>(null);
 
   // Edit Bank Details Modal State
   const [showEditBankModal, setShowEditBankModal] = useState(false);
@@ -238,9 +239,15 @@ export default function EmployeeProfilePage() {
         <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-xs space-y-5 text-black">
           <div className="flex items-center justify-between border-b border-gray-100 pb-4">
             <div className="flex items-center gap-4">
-              <div className="h-16 w-16 rounded-full bg-blue-600 text-white font-black text-xl flex items-center justify-center border-4 border-white shadow-md">
+              <div
+                onClick={() => user?.avatarUrl && setViewingPhotoUrl(user.avatarUrl)}
+                title={user?.avatarUrl ? "Click to view full image" : ""}
+                className={`h-16 w-16 rounded-full bg-blue-600 text-white font-black text-xl flex items-center justify-center border-4 border-white shadow-md overflow-hidden ${
+                  user?.avatarUrl ? "cursor-pointer hover:scale-105 transition-transform" : ""
+                }`}
+              >
                 {user?.avatarUrl ? (
-                  <img src={user.avatarUrl} alt={displayName} className="h-full w-full rounded-full object-cover" />
+                  <img src={user.avatarUrl} alt={displayName} className="h-full w-full object-cover" />
                 ) : (
                   initials
                 )}
@@ -479,7 +486,9 @@ export default function EmployeeProfilePage() {
                     <img
                       src={editAvatarUrl}
                       alt="Avatar Preview"
-                      className="h-16 w-16 rounded-2xl object-cover border-2 border-white shadow-md shrink-0"
+                      onClick={() => setViewingPhotoUrl(editAvatarUrl)}
+                      title="Click to view full photo"
+                      className="h-16 w-16 rounded-2xl object-cover border-2 border-white shadow-md shrink-0 cursor-pointer hover:opacity-90 hover:scale-105 transition-all"
                     />
                   ) : (
                     <div className="h-16 w-16 rounded-2xl bg-blue-600 text-white font-black text-xl flex items-center justify-center shadow-md shrink-0">
@@ -513,21 +522,30 @@ export default function EmployeeProfilePage() {
                       }}
                       className="hidden"
                     />
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <label
                         htmlFor="profile-avatar-upload"
-                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-[11px] cursor-pointer transition shadow-xs"
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-[11px] cursor-pointer transition shadow-xs flex items-center gap-1"
                       >
                         📷 Upload Photo
                       </label>
                       {editAvatarUrl && (
-                        <button
-                          type="button"
-                          onClick={() => setEditAvatarUrl("")}
-                          className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold rounded-xl text-[11px] cursor-pointer transition"
-                        >
-                          Remove
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setViewingPhotoUrl(editAvatarUrl)}
+                            className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-xl text-[11px] cursor-pointer transition flex items-center gap-1 shadow-2xs"
+                          >
+                            👁️ View Image
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditAvatarUrl("")}
+                            className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold rounded-xl text-[11px] cursor-pointer transition"
+                          >
+                            Remove
+                          </button>
+                        </>
                       )}
                     </div>
                     <p className="text-[10px] text-gray-500">Supported: PNG, JPEG, WEBP (Max 5 MB). Clean letter avatar used if empty.</p>
@@ -741,6 +759,69 @@ export default function EmployeeProfilePage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* High-Resolution Profile Photo Lightbox Modal */}
+      {viewingPhotoUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 font-sans animate-in fade-in duration-200"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setViewingPhotoUrl(null);
+          }}
+        >
+          <div className="relative bg-white rounded-3xl p-5 max-w-lg w-full shadow-2xl border border-slate-200 text-black space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-base">📷</span>
+                <div>
+                  <h3 className="font-black text-sm text-black">Profile Photo Preview</h3>
+                  <p className="text-[10px] text-gray-500 font-mono">
+                    {viewingPhotoUrl.includes("res.cloudinary.com") ? "☁️ Hosted on Cloudinary CDN" : "Local Image Source"}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setViewingPhotoUrl(null)}
+                className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-sm flex items-center justify-center transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex items-center justify-center bg-slate-900/5 p-3 rounded-2xl border border-slate-100 overflow-hidden max-h-[60vh]">
+              <img
+                src={viewingPhotoUrl}
+                alt="Profile Full View"
+                className="max-h-[55vh] max-w-full rounded-xl object-contain shadow-md"
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-[11px] text-gray-500 font-bold">
+                {displayName} ({displayId})
+              </span>
+              <div className="flex gap-2">
+                {viewingPhotoUrl.startsWith("http") && (
+                  <a
+                    href={viewingPhotoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-xl text-xs transition flex items-center gap-1 border border-blue-200"
+                  >
+                    ↗ Open Full Size
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setViewingPhotoUrl(null)}
+                  className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -82,12 +82,23 @@ export default function ProfileModal({ isOpen, onClose, user }: ProfileModalProp
         {/* Large Profile Avatar */}
         <div className="relative inline-block pt-2">
           {avatarUrl && !imgError ? (
-            <img
-              src={avatarUrl}
-              alt={displayName}
-              onError={() => setImgError(true)}
-              className="h-28 w-28 rounded-full object-cover border-4 border-white shadow-xl shadow-blue-600/20 mx-auto"
-            />
+            <a
+              href={avatarUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Click to open full high-resolution image"
+              className="block cursor-pointer group"
+            >
+              <img
+                src={avatarUrl}
+                alt={displayName}
+                onError={() => setImgError(true)}
+                className="h-28 w-28 rounded-full object-cover border-4 border-white shadow-xl shadow-blue-600/20 mx-auto group-hover:scale-105 transition-transform"
+              />
+              <span className="text-[10px] text-blue-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity mt-1 block">
+                🔍 View Full Photo
+              </span>
+            </a>
           ) : (
             <div className="h-28 w-28 rounded-full bg-slate-900 text-white font-black text-3xl flex items-center justify-center border-4 border-white shadow-xl mx-auto">
               {initials}
