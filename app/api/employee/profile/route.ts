@@ -163,33 +163,68 @@ async function handleProfileUpdate(request: NextRequest) {
       updateValues.push(emergencyContact.toString().trim() || null);
     }
 
-    // 5. Avatar Photo Validation & Processing
+    // 5. Avatar Photo Validation & Processing (Cloudinary Cloud Storage)
     if (removeAvatar === true) {
+      const oldRows = await queryDb<any[]>(`SELECT avatarUrl FROM user WHERE id = ? LIMIT 1`, [userId]);
+      const oldAvatar = oldRows?.[0]?.avatarUrl;
+      if (oldAvatar && oldAvatar.includes("res.cloudinary.com")) {
+        const { deleteCloudinaryAsset, extractPublicIdFromUrl } = await import("@/lib/cloudinary");
+        const oldPid = extractPublicIdFromUrl(oldAvatar);
+        if (oldPid) deleteCloudinaryAsset(oldPid).catch(() => {});
+      }
       updateFields.push("avatarUrl = ?");
       updateValues.push(null);
     } else if (avatarUrl !== undefined) {
-      const cleanAvatar = avatarUrl ? avatarUrl.toString().trim() : null;
-      if (cleanAvatar) {
-        // If base64 data URL, validate image format and size
-        if (cleanAvatar.startsWith("data:image/")) {
-          const match = cleanAvatar.match(/^data:(image\/(jpeg|png|webp|gif|svg\+xml));base64,/);
+      let finalAvatarUrl: string | null = avatarUrl ? avatarUrl.toString().trim() : null;
+
+      if (finalAvatarUrl) {
+        // If base64 data URL, upload to Cloudinary if configured
+        if (finalAvatarUrl.startsWith("data:image/")) {
+          const match = finalAvatarUrl.match(/^data:(image\/(jpeg|png|webp|gif|svg\+xml));base64,/);
           if (!match) {
             return NextResponse.json(
               { success: false, error: "Invalid image format. Supported formats: JPEG, PNG, WEBP, GIF, SVG." },
               { status: 400 }
             );
           }
-          // Check size (base64 length approx 1.33x byte size, limit to 5MB raw / ~7MB base64)
-          if (cleanAvatar.length > 7 * 1024 * 1024) {
+          if (finalAvatarUrl.length > 7 * 1024 * 1024) {
             return NextResponse.json(
               { success: false, error: "Profile photo must be smaller than 5 MB." },
               { status: 400 }
             );
           }
+
+          try {
+            const { getCloudinaryConfig, uploadBufferToCloudinary, deleteCloudinaryAsset, extractPublicIdFromUrl } = await import("@/lib/cloudinary");
+            const cConfig = getCloudinaryConfig();
+            if (cConfig.isConfigured) {
+              const base64Data = finalAvatarUrl.split(",")[1];
+              const imgBuffer = Buffer.from(base64Data, "base64");
+              const uploadRes = await uploadBufferToCloudinary(imgBuffer, {
+                folder: `oms/users/${userId}/avatar`,
+                resource_type: "image",
+              });
+
+              // Check and cleanup old Cloudinary avatar
+              const oldRows = await queryDb<any[]>(`SELECT avatarUrl FROM user WHERE id = ? LIMIT 1`, [userId]);
+              const oldAvatar = oldRows?.[0]?.avatarUrl;
+              if (oldAvatar && oldAvatar.includes("res.cloudinary.com")) {
+                const oldPid = extractPublicIdFromUrl(oldAvatar);
+                if (oldPid && oldPid !== uploadRes.public_id) {
+                  deleteCloudinaryAsset(oldPid).catch(() => {});
+                }
+              }
+
+              finalAvatarUrl = uploadRes.secure_url;
+            }
+          } catch (cErr: any) {
+            console.warn("Cloudinary avatar upload fallback:", cErr.message);
+          }
         }
       }
+
       updateFields.push("avatarUrl = ?");
-      updateValues.push(cleanAvatar);
+      updateValues.push(finalAvatarUrl);
     }
 
     if (updateFields.length > 0) {
