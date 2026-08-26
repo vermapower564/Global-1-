@@ -42,13 +42,14 @@ export interface EmailDispatchResult {
 }
 
 /**
- * Centrally logs email dispatch outcomes into the database smtplog table.
+ * Centrally logs email dispatch outcomes into the existing database smtplog table.
+ * Never logs plain OTPs, passwords, or security tokens.
  */
 async function logEmailTransaction(params: {
   recipient: string;
   subject: string;
   emailType: string;
-  status: "SENT" | "FAILED";
+  status: "SENT" | "FAILED" | "DISPATCHED";
   messageId?: string | null;
   errorMessage?: string | null;
 }): Promise<void> {
@@ -166,7 +167,7 @@ export async function dispatchEmail(options: DispatchEmailOptions): Promise<Emai
 }
 
 /**
- * Dispatches Employee Welcome & Account Activation Email
+ * Dispatches Employee Welcome Email
  */
 export async function sendWelcomeEmail(
   to: string,
@@ -179,6 +180,23 @@ export async function sendWelcomeEmail(
     html,
     text,
     emailType: "EMPLOYEE_WELCOME",
+  });
+}
+
+/**
+ * Dispatches Account Activation Email (using employeeinvitation token or activation link)
+ */
+export async function sendAccountActivationEmail(
+  to: string,
+  data: WelcomeEmailData
+): Promise<EmailDispatchResult> {
+  const { subject, html, text } = renderWelcomeEmail(data);
+  return dispatchEmail({
+    to,
+    subject: `🔐 Complete Your Account Activation (${data.employeeId}) — OMS Enterprise`,
+    html,
+    text,
+    emailType: "ACCOUNT_ACTIVATION",
   });
 }
 

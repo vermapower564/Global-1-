@@ -16,6 +16,7 @@ function ForgotPasswordContent() {
   const [identityInput, setIdentityInput] = useState("");
   const [maskedEmail, setMaskedEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
+  const [resetToken, setResetToken] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -30,12 +31,13 @@ function ForgotPasswordContent() {
     const email = searchParams.get("email");
     const identity = searchParams.get("identity");
 
-    if (token && (email || identity)) {
+    if (identity || email) {
       const targetId = (identity || email || "").trim();
       setIdentityInput(targetId);
-      setOtpCode(token.trim());
-      setSuccessMessage("✓ Reset link verified! Please enter your new secure password.");
-      setStep(3);
+      if (token) {
+        setOtpCode(token.trim());
+        setStep(2);
+      }
     }
   }, [searchParams]);
 
@@ -76,9 +78,6 @@ function ForgotPasswordContent() {
       if (res.ok && data.success) {
         setMaskedEmail(data.maskedEmail || data.email);
         setSuccessMessage("OTP sent successfully to your registered Gmail address.");
-        if (data.demoOtp) {
-          console.log(`[DEBUG] OTP for testing: ${data.demoOtp}`);
-        }
         setStep(2);
       } else {
         setErrorMessage(data.error || "Account not found for the entered ID or Gmail address.");
@@ -116,6 +115,9 @@ function ForgotPasswordContent() {
       const data = await res.json();
 
       if (res.ok && data.success) {
+        if (data.resetToken) {
+          setResetToken(data.resetToken);
+        }
         setSuccessMessage("OTP verified successfully. Please set your new password.");
         setStep(3);
       } else {
@@ -160,6 +162,7 @@ function ForgotPasswordContent() {
         body: JSON.stringify({
           identityInput: identityInput.trim(),
           otpCode: otpCode.trim(),
+          resetToken,
           newPassword,
         }),
       });

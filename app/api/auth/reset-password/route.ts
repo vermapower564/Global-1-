@@ -1,4 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 import { hashPassword } from "@/lib/authService";
 import { sendPasswordChangedEmail } from "@/lib/email/send";
 import { queryDb } from "@/lib/db";
@@ -9,10 +10,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const identityInput = body.identityInput || body.email || body.employeeId || "";
+    const resetToken = body.resetToken || "";
     const otpCode = body.otpCode || body.otp || "";
     const newPassword = body.newPassword || "";
 
-    if (!identityInput || !newPassword) {
+    if (!identityInput.trim() || !newPassword.trim()) {
       return NextResponse.json(
         { success: false, error: "Employee Email/ID and new password are required." },
         { status: 400 }
@@ -28,11 +30,10 @@ export async function POST(request: NextRequest) {
 
     const cleanIdentity = identityInput.trim();
     const cleanLower = cleanIdentity.toLowerCase();
-    const cleanOtp = otpCode ? otpCode.trim() : "";
 
-    // 1. Find Exact Target User in Database
+    // 1. Find User in Database
     const userRows = await queryDb<any[]>(
-      `SELECT id, employeeId, name, email, password FROM user WHERE email = ? OR employeeId = ? OR employeeId = ? LIMIT 1`,
+      `SELECT id, employeeId, name, email FROM user WHERE email = ? OR employeeId = ? OR employeeId = ? LIMIT 1`,
       [cleanLower, cleanIdentity, cleanIdentity.toUpperCase()]
     );
 
@@ -45,41 +46,59 @@ export async function POST(request: NextRequest) {
 
     const dbUser = userRows[0];
 
-    // 2. Verify OTP Authorization if provided
-    if (cleanOtp) {
-      const otpRows = await queryDb<any[]>(
-        `SELECT id FROM otptoken WHERE email = ? AND otpHash = ? AND expiresAt >= NOW() LIMIT 1`,
-        [dbUser.email, cleanOtp]
-      );
+    // 2. Validate Server-Side Reset Authorization
+    // Check either the reset authorization token or direct OTP hash
+    let authorized = false;
 
-      if (!otpRows || otpRows.length === 0) {
-        return NextResponse.json(
-          { success: false, error: "Invalid or expired verification code." },
-          { status: 400 }
-        );
+    if (resetToken && resetToken.trim()) {
+      const tokenHash = crypto.createHash("sha256").update(resetToken.trim()).digest("hex");
+      const validTokenRows = await queryDb<any[]>(
+        `SELECT id FROM otptoken WHERE email = ? AND otpHash = ? AND expiresAt >= NOW() LIMIT 1`,
+        [dbUser.email, tokenHash]
+      );
+      if (validTokenRows && validTokenRows.length > 0) {
+        authorized = true;
       }
+    }
+
+    if (!authorized && otpCode && otpCode.trim()) {
+      const otpHash = crypto.createHash("sha256").update(otpCode.trim()).digest("hex");
+      const validOtpRows = await queryDb<any[]>(
+        `SELECT id FROM otptoken WHERE email = ? AND otpHash = ? AND expiresAt >= NOW() LIMIT 1`,
+        [dbUser.email, otpHash]
+      );
+      if (validOtpRows && validOtpRows.length > 0) {
+        authorized = true;
+      }
+    }
+
+    if (!authorized) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized: Invalid or expired password reset session. Please verify OTP again." },
+        { status: 403 }
+      );
     }
 
     // 3. Hash New Password securely using bcrypt
     const hashedPassword = await hashPassword(newPassword);
 
-    // 4. EXECUTE DATABASE UPDATE
+    // 4. Update Password in Database
     await queryDb(
       `UPDATE user SET password = ?, updatedAt = NOW() WHERE id = ?`,
       [hashedPassword, dbUser.id]
     );
 
-    // Clean up used OTP tokens for this user's email
+    // 5. Invalidate All OTP and Reset Tokens for this User
     await queryDb(`DELETE FROM otptoken WHERE email = ?`, [dbUser.email]).catch(() => {});
 
-    // Record Security Audit Log in Database
-    const auditId = `aud_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    // 6. Record Audit Log in Database
+    const auditId = `aud_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
     await queryDb(
       `INSERT INTO auditlog (id, userId, action, details, timestamp) VALUES (?, ?, 'PASSWORD_RESET', ?, NOW())`,
-      [auditId, dbUser.id, `Password updated successfully for ${dbUser.name} (${dbUser.employeeId})`]
+      [auditId, dbUser.id, `Password reset completed successfully for ${dbUser.name} (${dbUser.employeeId})`]
     ).catch(() => {});
 
-    // Dispatch Security Confirmation Email
+    // 7. Dispatch Security Confirmation Email via SMTP
     const timestampStr = new Date().toLocaleString("en-IN", {
       timeZone: "Asia/Kolkata",
       day: "numeric",
@@ -94,7 +113,7 @@ export async function POST(request: NextRequest) {
       employeeId: dbUser.employeeId,
       email: dbUser.email,
       timestamp: timestampStr,
-    }).catch((e) => console.warn("SMTP reset email notice warning:", e));
+    }).catch((e) => console.warn("Password changed email dispatch warning:", e));
 
     return NextResponse.json({
       success: true,
@@ -102,6 +121,7 @@ export async function POST(request: NextRequest) {
       userEmail: dbUser.email,
     });
   } catch (error: any) {
+    console.error("POST /api/auth/reset-password error:", error);
     return NextResponse.json(
       { success: false, error: error.message || "Failed to update password in database." },
       { status: 500 }

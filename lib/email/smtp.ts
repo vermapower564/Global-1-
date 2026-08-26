@@ -12,7 +12,7 @@ export interface SmtpConfig {
 
 /**
  * Loads SMTP configuration strictly from server-side environment variables.
- * Never exposes credentials to client-side.
+ * Never exposes credentials to client-side components.
  */
 export function getSmtpConfig(): SmtpConfig {
   const host = process.env.SMTP_HOST || "smtp.gmail.com";
@@ -135,9 +135,12 @@ export async function verifySmtpConnection(): Promise<{
 
 /**
  * Resolves the canonical application base URL dynamically.
- * Works seamlessly in local dev, Vercel preview, and custom domains.
+ * Prioritizes canonical production APP_BASE_URL to avoid spoofing.
  */
 export function getAppBaseUrl(req?: Request | any): string {
+  if (process.env.APP_BASE_URL) {
+    return process.env.APP_BASE_URL.replace(/\/$/, "");
+  }
   if (process.env.NEXT_PUBLIC_APP_URL && !process.env.NEXT_PUBLIC_APP_URL.includes("localhost")) {
     return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
   }

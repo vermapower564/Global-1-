@@ -1,4 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 import { sendPasswordResetEmail } from "@/lib/email/send";
 import { getAppBaseUrl } from "@/lib/email/smtp";
 import { validateAndNormalizeGmail } from "@/lib/emailValidator";
@@ -56,22 +57,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. Generate Secure 6-Digit Verification OTP & Reset Token
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    // 3. Invalidate any existing active OTP tokens for this email
+    await queryDb(`DELETE FROM otptoken WHERE email = ?`, [dbUser.email]).catch(() => {});
+
+    // 4. Generate Cryptographically Secure 6-Digit Verification OTP (No Math.random)
+    const otpCode = crypto.randomInt(100000, 1000000).toString();
+    const otpHash = crypto.createHash("sha256").update(otpCode).digest("hex");
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 Minutes Expiration
 
-    // 4. Store Token in Database otptoken table
-    const tokenId = `otp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    // 5. Store Hashed Token in Database otptoken table (Never store plain OTP)
+    const tokenId = `otp_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
     await queryDb(
       `INSERT INTO otptoken (id, email, otpHash, expiresAt, attempts, createdAt) VALUES (?, ?, ?, ?, 0, NOW())`,
-      [tokenId, dbUser.email, otpCode, expiresAt]
+      [tokenId, dbUser.email, otpHash, expiresAt]
     );
 
-    // 5. Build Dynamic Password Reset Link
+    // 6. Build Clean Reset Link (No OTP in URL parameters)
     const appBaseUrl = getAppBaseUrl(request);
-    const resetLink = `${appBaseUrl}/auth/forgot-password?token=${encodeURIComponent(otpCode)}&email=${encodeURIComponent(dbUser.email)}&identity=${encodeURIComponent(dbUser.employeeId)}`;
+    const resetLink = `${appBaseUrl}/auth/forgot-password?identity=${encodeURIComponent(dbUser.employeeId)}`;
 
-    // 6. Dispatch Email via Real Nodemailer SMTP Transporter
+    // 7. Dispatch Email via Real SMTP Transporter
     const emailResult = await sendPasswordResetEmail(dbUser.email, {
       name: dbUser.name,
       employeeId: dbUser.employeeId,
@@ -82,23 +87,30 @@ export async function POST(request: NextRequest) {
     });
 
     if (!emailResult.success) {
-      console.warn(`⚠️ Warning: Password reset email dispatch returned error: ${emailResult.error}`);
+      console.error(`❌ [Auth] Password reset email dispatch failed for ${dbUser.email}:`, emailResult.error);
+      return NextResponse.json(
+        {
+          success: false,
+          error: emailResult.error || "Failed to dispatch password reset email via SMTP. Please verify mail server configuration.",
+        },
+        { status: 502 }
+      );
     }
 
     // Mask Email for UI Privacy
     const emailParts = dbUser.email.split("@");
-    const maskedEmail = emailParts[0].slice(0, 3) + "***@" + emailParts[1];
+    const prefix = emailParts[0];
+    const maskedPrefix = prefix.length <= 3 ? prefix[0] + "***" : prefix.slice(0, 3) + "***";
+    const maskedEmail = `${maskedPrefix}@${emailParts[1]}`;
 
     return NextResponse.json({
       success: true,
-      message: "Password reset link and OTP sent to your registered email address.",
-      email: dbUser.email,
+      message: "Password reset OTP sent successfully to your registered Gmail address.",
       maskedEmail,
       employeeId: dbUser.employeeId,
-      messageId: emailResult.messageId,
-      emailDelivered: emailResult.success,
     });
   } catch (error: any) {
+    console.error("POST /api/auth/forgot-password error:", error);
     return NextResponse.json(
       { success: false, error: error.message || "Failed to process forgot password request." },
       { status: 500 }

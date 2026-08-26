@@ -164,54 +164,24 @@ export async function POST(request: Request) {
     );
 
     // Build Activation Link
-    const reqUrl = new URL(request.url);
-    const origin = reqUrl.origin;
-    const activationLink = `${origin}/auth/onboarding?token=${newToken}`;
-    const expiresStr = expiresAt.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+    const { getAppBaseUrl } = await import("@/lib/email/smtp");
+    const { sendAccountActivationEmail } = await import("@/lib/email/send");
+    const appBaseUrl = getAppBaseUrl(request);
+    const activationLink = `${appBaseUrl}/auth/onboarding?token=${newToken}`;
 
-    // Send Nodemailer SMTP Invitation Email (smtp.gmail.com:587)
+    // Send Real Nodemailer SMTP Invitation Email
     let smtpResult: any = null;
     try {
-      smtpResult = await sendSmtpEmail({
-        to: email,
-        subject: `🎉 Welcome to OMS Enterprise! Complete Your Account Setup (${assignedEmpId})`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 650px; border: 2px solid #0f172a; padding: 28px; border-radius: 12px;">
-            <div style="background-color: #0f172a; padding: 16px; border-radius: 8px; color: white; margin-bottom: 20px;">
-              <h2 style="margin: 0; font-size: 20px;">OMS Enterprise • Employee Onboarding</h2>
-            </div>
-            <h3>Dear ${name},</h3>
-            <p>We are excited to welcome you to the team! An employee user account has been reserved for you with Employee ID <strong>${assignedEmpId}</strong>.</p>
-            
-            <div style="background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 16px; margin: 20px 0;">
-              <p style="margin: 4px 0;"><strong>Department:</strong> ${department || "Development & Engineering"}</p>
-              <p style="margin: 4px 0;"><strong>Designation:</strong> ${role || "Software Developer"}</p>
-              <p style="margin: 4px 0;"><strong>Corporate Email:</strong> ${email}</p>
-              <p style="margin: 4px 0;"><strong>Invitation Valid Until:</strong> ${expiresStr}</p>
-            </div>
-
-            <p>Please click the button below to complete your account setup and create your secure password:</p>
-
-            <div style="text-align: center; margin: 28px 0;">
-              <a href="${activationLink}" style="background-color: #2563eb; color: white; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-weight: bold; font-size: 14px; display: inline-block;">
-                🚀 Complete Account Setup & Create Password →
-              </a>
-            </div>
-
-            <p style="font-size: 12px; color: #64748b; margin-top: 24px;">
-              Or copy and paste this activation link into your browser:<br/>
-              <a href="${activationLink}" style="color: #2563eb;">${activationLink}</a>
-            </p>
-
-            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;"/>
-            <p style="font-size: 11px; color: #94a3b8; text-align: center;">
-              Nodemailer Transport • OMS Human Resources Desk • Do not share this link with anyone.
-            </p>
-          </div>
-        `,
+      smtpResult = await sendAccountActivationEmail(email, {
+        name,
+        employeeId: assignedEmpId,
+        email,
+        department: department || "Development & Engineering",
+        role: role || "Software Developer",
+        activationLink,
       });
     } catch (e) {
-      console.warn("Nodemailer SMTP invitation dispatch fallback:", e);
+      console.warn("SMTP invitation dispatch fallback:", e);
     }
 
     return NextResponse.json(
