@@ -381,6 +381,32 @@ export async function POST(request: NextRequest) {
     clearQueryCache("task");
     clearQueryCache("project");
 
+    // Dispatch Real-time Task Assignment Notification Email via SMTP
+    try {
+      if (targetUser.email && targetUser.email.includes("@")) {
+        const { sendTaskAssignmentEmail } = await import("@/lib/email/send");
+        const { getAppBaseUrl } = await import("@/lib/email/smtp");
+        const appBaseUrl = getAppBaseUrl(request);
+        const resolvedProjectName = finalManualProjectName || (finalProjectId ? "Enterprise Project" : "General Operations");
+        const formattedDueDate = dueDate ? new Date(dueDate).toLocaleDateString("en-IN") : "No due date specified";
+        const creatorName = (authUser as any).name || (authUser as any).employeeId || "Management";
+
+        sendTaskAssignmentEmail(targetUser.email, {
+          name: targetUser.name,
+          employeeId: targetUser.employeeId,
+          taskTitle: title.trim(),
+          projectName: resolvedProjectName,
+          priority: priority || "MEDIUM",
+          dueDate: formattedDueDate,
+          assignedByName: creatorName,
+          description: description ? description.trim() : undefined,
+          taskUrl: `${appBaseUrl}/employee/tasks`,
+        }).catch((e) => console.warn("Task assignment email dispatch warning:", e));
+      }
+    } catch (emailErr) {
+      console.warn("Task assignment email notification skipped:", emailErr);
+    }
+
     logAuditEvent(
       authUser.id,
       "TASK_ASSIGNED",

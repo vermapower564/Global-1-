@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { hashPassword } from "@/lib/authService";
-import { sendSmtpEmail } from "@/lib/smtpTransporter";
+import { sendPasswordChangedEmail } from "@/lib/email/send";
+import { queryDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -29,39 +30,31 @@ export async function POST(request: NextRequest) {
     const cleanLower = cleanIdentity.toLowerCase();
     const cleanOtp = otpCode ? otpCode.trim() : "";
 
-    const { prisma } = await import("@/lib/prisma");
-
     // 1. Find Exact Target User in Database
-    const dbUser = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { email: { equals: cleanLower } },
-          { employeeId: { equals: cleanIdentity } },
-          { employeeId: { equals: cleanIdentity.toUpperCase() } },
-        ],
-      },
-    });
+    const userRows = await queryDb<any[]>(
+      `SELECT id, employeeId, name, email, password FROM user WHERE email = ? OR employeeId = ? OR employeeId = ? LIMIT 1`,
+      [cleanLower, cleanIdentity, cleanIdentity.toUpperCase()]
+    );
 
-    if (!dbUser) {
+    if (!userRows || userRows.length === 0) {
       return NextResponse.json(
         { success: false, error: "Account not found." },
         { status: 404 }
       );
     }
 
-    // 2. Verify OTP Authorization if provided or check recent OTP validity
-    if (cleanOtp) {
-      const validOtp = await prisma.otptoken.findFirst({
-        where: {
-          email: dbUser.email,
-          otpHash: cleanOtp,
-          expiresAt: { gte: new Date() },
-        },
-      });
+    const dbUser = userRows[0];
 
-      if (!validOtp) {
+    // 2. Verify OTP Authorization if provided
+    if (cleanOtp) {
+      const otpRows = await queryDb<any[]>(
+        `SELECT id FROM otptoken WHERE email = ? AND otpHash = ? AND expiresAt >= NOW() LIMIT 1`,
+        [dbUser.email, cleanOtp]
+      );
+
+      if (!otpRows || otpRows.length === 0) {
         return NextResponse.json(
-          { success: false, error: "Invalid or expired OTP." },
+          { success: false, error: "Invalid or expired verification code." },
           { status: 400 }
         );
       }
@@ -70,52 +63,42 @@ export async function POST(request: NextRequest) {
     // 3. Hash New Password securely using bcrypt
     const hashedPassword = await hashPassword(newPassword);
 
-    // 4. EXECUTE REAL DATABASE UPDATE IN MYSQL VIA PRISMA
-    const updatedUser = await prisma.user.update({
-      where: { id: dbUser.id },
-      data: { password: hashedPassword },
-    });
-
-    // 5. VERIFY DATABASE UPDATE SUCCEEDED
-    if (!updatedUser || updatedUser.password !== hashedPassword) {
-      return NextResponse.json(
-        { success: false, error: "Database update verification failed." },
-        { status: 500 }
-      );
-    }
+    // 4. EXECUTE DATABASE UPDATE
+    await queryDb(
+      `UPDATE user SET password = ?, updatedAt = NOW() WHERE id = ?`,
+      [hashedPassword, dbUser.id]
+    );
 
     // Clean up used OTP tokens for this user's email
-    await prisma.otptoken.deleteMany({
-      where: { email: dbUser.email },
-    }).catch(() => {});
+    await queryDb(`DELETE FROM otptoken WHERE email = ?`, [dbUser.email]).catch(() => {});
 
     // Record Security Audit Log in Database
-    await prisma.auditlog.create({
-      data: {
-        userId: dbUser.id,
-        action: "PASSWORD_RESET",
-        details: `Password updated successfully for ${dbUser.name} (${dbUser.employeeId})`,
-      },
-    }).catch(() => {});
+    const auditId = `aud_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    await queryDb(
+      `INSERT INTO auditlog (id, userId, action, details, timestamp) VALUES (?, ?, 'PASSWORD_RESET', ?, NOW())`,
+      [auditId, dbUser.id, `Password updated successfully for ${dbUser.name} (${dbUser.employeeId})`]
+    ).catch(() => {});
 
     // Dispatch Security Confirmation Email
-    const timestampStr = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-    sendSmtpEmail({
-      to: dbUser.email,
-      subject: `🔑 Security Confirmation: Password Updated (${dbUser.employeeId})`,
-      html: `
-        <div style="font-family: Arial; padding: 20px; border: 1px solid #cbd5e1; border-radius: 8px;">
-          <h2>Security Alert: Password Updated</h2>
-          <p>Hello <strong>${dbUser.name}</strong>,</p>
-          <p>Your OMS account password was successfully updated in the database at <strong>${timestampStr} (IST)</strong>.</p>
-          <p>You can now sign in with your new password at <a href="http://localhost:3000/auth/login">http://localhost:3000/auth/login</a>.</p>
-        </div>
-      `,
+    const timestampStr = new Date().toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }) + " (IST)";
+
+    sendPasswordChangedEmail(dbUser.email, {
+      name: dbUser.name,
+      employeeId: dbUser.employeeId,
+      email: dbUser.email,
+      timestamp: timestampStr,
     }).catch((e) => console.warn("SMTP reset email notice warning:", e));
 
     return NextResponse.json({
       success: true,
-      message: "Password updated successfully.",
+      message: "Password updated successfully. You can now log in with your new password.",
       userEmail: dbUser.email,
     });
   } catch (error: any) {
