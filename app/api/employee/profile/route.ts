@@ -178,7 +178,7 @@ async function handleProfileUpdate(request: NextRequest) {
       let finalAvatarUrl: string | null = avatarUrl ? avatarUrl.toString().trim() : null;
 
       if (finalAvatarUrl) {
-        // If base64 data URL, upload to Cloudinary if configured
+        // If base64 data URL, REQUIRE Cloudinary upload
         if (finalAvatarUrl.startsWith("data:image/")) {
           const match = finalAvatarUrl.match(/^data:(image\/(jpeg|png|webp|gif|svg\+xml));base64,/);
           if (!match) {
@@ -194,31 +194,50 @@ async function handleProfileUpdate(request: NextRequest) {
             );
           }
 
+          const { getCloudinaryConfig, uploadBufferToCloudinary, deleteCloudinaryAsset, extractPublicIdFromUrl } = await import("@/lib/cloudinary");
+          const cConfig = getCloudinaryConfig();
+          if (!cConfig.isConfigured) {
+            return NextResponse.json(
+              {
+                success: false,
+                error: "Cloudinary cloud storage is not configured on the server. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET in server environment variables.",
+              },
+              { status: 503 }
+            );
+          }
+
           try {
-            const { getCloudinaryConfig, uploadBufferToCloudinary, deleteCloudinaryAsset, extractPublicIdFromUrl } = await import("@/lib/cloudinary");
-            const cConfig = getCloudinaryConfig();
-            if (cConfig.isConfigured) {
-              const base64Data = finalAvatarUrl.split(",")[1];
-              const imgBuffer = Buffer.from(base64Data, "base64");
-              const uploadRes = await uploadBufferToCloudinary(imgBuffer, {
-                folder: `oms/users/${userId}/avatar`,
-                resource_type: "image",
-              });
+            const base64Data = finalAvatarUrl.split(",")[1];
+            const imgBuffer = Buffer.from(base64Data, "base64");
+            const uploadRes = await uploadBufferToCloudinary(imgBuffer, {
+              folder: `oms/users/${userId}/avatar`,
+              resource_type: "image",
+            });
 
-              // Check and cleanup old Cloudinary avatar
-              const oldRows = await queryDb<any[]>(`SELECT avatarUrl FROM user WHERE id = ? LIMIT 1`, [userId]);
-              const oldAvatar = oldRows?.[0]?.avatarUrl;
-              if (oldAvatar && oldAvatar.includes("res.cloudinary.com")) {
-                const oldPid = extractPublicIdFromUrl(oldAvatar);
-                if (oldPid && oldPid !== uploadRes.public_id) {
-                  deleteCloudinaryAsset(oldPid).catch(() => {});
-                }
-              }
-
-              finalAvatarUrl = uploadRes.secure_url;
+            if (!uploadRes || !uploadRes.secure_url) {
+              return NextResponse.json(
+                { success: false, error: "Cloudinary upload did not return a valid secure HTTPS URL." },
+                { status: 500 }
+              );
             }
+
+            // Check and cleanup old Cloudinary avatar
+            const oldRows = await queryDb<any[]>(`SELECT avatarUrl FROM user WHERE id = ? LIMIT 1`, [userId]);
+            const oldAvatar = oldRows?.[0]?.avatarUrl;
+            if (oldAvatar && oldAvatar.includes("res.cloudinary.com")) {
+              const oldPid = extractPublicIdFromUrl(oldAvatar);
+              if (oldPid && oldPid !== uploadRes.public_id) {
+                deleteCloudinaryAsset(oldPid).catch(() => {});
+              }
+            }
+
+            finalAvatarUrl = uploadRes.secure_url;
           } catch (cErr: any) {
-            console.warn("Cloudinary avatar upload fallback:", cErr.message);
+            console.error("Cloudinary avatar upload error:", cErr);
+            return NextResponse.json(
+              { success: false, error: `Cloudinary profile photo upload failed: ${cErr.message || cErr}` },
+              { status: 500 }
+            );
           }
         }
       }

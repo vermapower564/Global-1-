@@ -1,4 +1,4 @@
-﻿import { v2 as cloudinary, UploadApiResponse, UploadApiOptions } from "cloudinary";
+import { v2 as cloudinary, UploadApiResponse, UploadApiOptions } from "cloudinary";
 
 export interface CloudinaryConfig {
   cloudName: string;
@@ -70,8 +70,9 @@ export async function uploadBufferToCloudinary(
   const uploadOptions: UploadApiOptions = {
     folder: options.folder,
     resource_type: options.resource_type || "auto",
+    type: "upload", // Explicit permanent cloud storage type (no auto-expiry)
     overwrite: options.overwrite ?? true,
-    tags: options.tags || ["oms-enterprise"],
+    tags: options.tags || ["oms-enterprise", "permanent-storage"],
   };
 
   if (options.public_id) {
