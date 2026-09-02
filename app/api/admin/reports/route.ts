@@ -13,50 +13,74 @@ export async function GET(request: NextRequest) {
       return authResult.response || NextResponse.json({ success: false, error: "Unauthorized access." }, { status: 401 });
     }
 
-    const roleUpper = (authResult.user.role || "").toUpperCase();
-    if (!PRIVILEGED_ROLES.includes(roleUpper)) {
-      return NextResponse.json(
-        { success: false, error: "Forbidden: Executive Monthly Reports require Admin or HR authorization." },
-        { status: 403 }
-      );
-    }
+    const authUser = authResult.user;
+    const roleUpper = (authUser.role || "").toUpperCase();
+    const isHrOrAdmin = PRIVILEGED_ROLES.includes(roleUpper);
 
     const { searchParams } = new URL(request.url);
     const monthParam = searchParams.get("month") || "";
+    const startDateParam = searchParams.get("startDate");
+    const endDateParam = searchParams.get("endDate");
     const employeeParam = searchParams.get("employeeId") || "ALL";
     const deptParam = searchParams.get("departmentId") || "ALL";
     const projectParam = searchParams.get("projectId") || "ALL";
+    const pmParam = searchParams.get("pmId") || "ALL";
+    const tlParam = searchParams.get("tlId") || "ALL";
+    const statusParam = searchParams.get("status") || "ALL";
+    const formatParam = (searchParams.get("format") || "json").toLowerCase();
 
-    // 1. Determine date range for the selected month
-    const now = new Date();
-    let targetYear = now.getFullYear();
-    let targetMonthIndex = now.getMonth(); // 0-indexed
-
-    if (monthParam && monthParam !== "ALL") {
-      // Parse "August 2026" or "2026-08"
-      const monthNames = [
-        "january", "february", "march", "april", "may", "june",
-        "july", "august", "september", "october", "november", "december"
-      ];
-      const lowerMonth = monthParam.toLowerCase();
-      const parts = lowerMonth.split(/[\s-]+/);
-      if (parts.length >= 2) {
-        if (/^\d{4}$/.test(parts[0])) {
-          targetYear = parseInt(parts[0], 10);
-          targetMonthIndex = parseInt(parts[1], 10) - 1;
-        } else if (/^\d{4}$/.test(parts[1])) {
-          targetYear = parseInt(parts[1], 10);
-          const foundIdx = monthNames.findIndex((m) => parts[0].startsWith(m.slice(0, 3)));
-          if (foundIdx >= 0) targetMonthIndex = foundIdx;
+    // Strict RBAC Scoping for Non-Privileged Roles
+    if (!isHrOrAdmin) {
+      if (roleUpper === "PROJECT_MANAGER" || roleUpper === "TEAM_LEADER") {
+        // PM and TL can view reports within their authorized scope
+      } else {
+        // Regular Employee can ONLY view own report
+        if (employeeParam !== "ALL" && employeeParam !== authUser.id && employeeParam !== (authUser as any).employeeId) {
+          return NextResponse.json(
+            { success: false, error: "Forbidden: You are not authorized to view or export reports for other employees." },
+            { status: 403 }
+          );
         }
       }
     }
 
-    const startDate = new Date(Date.UTC(targetYear, targetMonthIndex, 1));
-    const endDate = new Date(Date.UTC(targetYear, targetMonthIndex + 1, 0, 23, 59, 59, 999));
+    // 1. Determine date range for reporting
+    const now = new Date();
+    let startDate: Date;
+    let endDate: Date;
+
+    if (startDateParam && endDateParam) {
+      startDate = new Date(startDateParam);
+      endDate = new Date(endDateParam);
+    } else {
+      let targetYear = now.getFullYear();
+      let targetMonthIndex = now.getMonth();
+
+      if (monthParam && monthParam !== "ALL") {
+        const monthNames = [
+          "january", "february", "march", "april", "may", "june",
+          "july", "august", "september", "october", "november", "december"
+        ];
+        const lowerMonth = monthParam.toLowerCase();
+        const parts = lowerMonth.split(/[\s-]+/);
+        if (parts.length >= 2) {
+          if (/^\d{4}$/.test(parts[0])) {
+            targetYear = parseInt(parts[0], 10);
+            targetMonthIndex = parseInt(parts[1], 10) - 1;
+          } else if (/^\d{4}$/.test(parts[1])) {
+            targetYear = parseInt(parts[1], 10);
+            const foundIdx = monthNames.findIndex((m) => parts[0].startsWith(m.slice(0, 3)));
+            if (foundIdx >= 0) targetMonthIndex = foundIdx;
+          }
+        }
+      }
+
+      startDate = new Date(Date.UTC(targetYear, targetMonthIndex, 1));
+      endDate = new Date(Date.UTC(targetYear, targetMonthIndex + 1, 0, 23, 59, 59, 999));
+    }
+
     const startDateStr = startDate.toISOString().split("T")[0];
     const endDateStr = endDate.toISOString().split("T")[0];
-
     const displayMonthName = startDate.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
     // 2. Fetch all employees, departments, and projects for filter dropdowns
@@ -74,11 +98,17 @@ export async function GET(request: NextRequest) {
         15
       ),
       queryDbCached<any[]>(`SELECT id, name, code FROM department ORDER BY name ASC`, [], 30),
-      queryDbCached<any[]>(`SELECT id, projectTitle, projectCode, status, clientCompany FROM project ORDER BY projectTitle ASC`, [], 30),
+      queryDbCached<any[]>(`SELECT id, projectTitle, projectCode, status, clientCompany, projectManagerId, teamLeaderId FROM project ORDER BY projectTitle ASC`, [], 30),
     ]);
 
-    // 3. Filter employee pool based on selected parameters
+    // 3. Scope employee list according to RBAC
     let targetUsers = allUsers || [];
+    if (!isHrOrAdmin) {
+      if (roleUpper !== "PROJECT_MANAGER" && roleUpper !== "TEAM_LEADER") {
+        targetUsers = targetUsers.filter((u) => u.id === authUser.id || u.employeeId === (authUser as any).employeeId);
+      }
+    }
+
     if (employeeParam !== "ALL") {
       targetUsers = targetUsers.filter((u) => u.id === employeeParam || u.employeeId === employeeParam);
     }
@@ -86,8 +116,8 @@ export async function GET(request: NextRequest) {
       targetUsers = targetUsers.filter((u) => u.departmentId === deptParam || u.departmentName === deptParam);
     }
 
-    // 4. Fetch tasks, attendance, leaves, and daily updates for the period
-    const [taskRows, attendanceRows, leaveRows, workRows] = await Promise.all([
+    // 4. Fetch tasks, attendance, leaves, and daily updates from database
+    const [taskRows, attendanceRows, leaveRows, workRows, evidenceRows] = await Promise.all([
       queryDb<any[]>(
         `SELECT t.id, t.title, t.section, t.status, t.priority, t.progress,
                 t.estimatedHours, t.actualHours, t.blockerReason, t.projectId,
@@ -111,12 +141,23 @@ export async function GET(request: NextRequest) {
         [startDateStr, endDateStr, startDateStr, endDateStr]
       ),
       queryDb<any[]>(
-        `SELECT w.id, w.userId, w.date, w.hoursWorked, w.description, w.blockers, w.tomorrowPlan, w.rating
+        `SELECT w.id, w.userId, w.date, w.hoursWorked, w.description, w.blockers, w.tomorrowPlan, w.rating, w.projectId
          FROM dailyworkupdate w
          WHERE w.date BETWEEN ? AND ?`,
         [startDateStr, endDateStr]
       ),
+      queryDb<any[]>(
+        `SELECT e.id, e.dailyWorkUpdateId, e.fileType, e.uploadedByUserId
+         FROM workevidence e`,
+        []
+      ),
     ]);
+
+    // Work evidence mapping by user
+    const evidenceCountMap: { [userId: string]: number } = {};
+    (evidenceRows || []).forEach((ev) => {
+      evidenceCountMap[ev.uploadedByUserId] = (evidenceCountMap[ev.uploadedByUserId] || 0) + 1;
+    });
 
     // 5. Construct Individual Employee Summaries
     const employeeReports = targetUsers.map((u) => {
@@ -125,65 +166,33 @@ export async function GET(request: NextRequest) {
       const uLeaves = (leaveRows || []).filter((l) => l.userId === u.id || l.userId === u.employeeId);
       const uWork = (workRows || []).filter((w) => w.userId === u.id || w.userId === u.employeeId);
 
-      // Attendance Metrics
       const presentDays = uAttendance.filter((a) => a.status === "PRESENT").length;
       const absentDays = uAttendance.filter((a) => a.status === "ABSENT").length;
       const lateDays = uAttendance.filter((a) => a.status === "LATE").length;
       const halfDays = uAttendance.filter((a) => a.status === "HALF_DAY").length;
-      const leaveDays = uLeaves
-        .filter((l) => l.status === "APPROVED")
-        .reduce((sum, l) => sum + (l.totalDays || 1), 0);
+      const leaveDays = uLeaves.filter((l) => l.status === "APPROVED").reduce((sum, l) => sum + (l.totalDays || 1), 0);
       const totalHoursWorked = Math.round(uAttendance.reduce((sum, a) => sum + (a.hoursWorked || 0), 0) + uWork.reduce((sum, w) => sum + (w.hoursWorked || 0), 0));
       const workingDays = Math.max(1, presentDays + absentDays + leaveDays || 22);
       const attendanceRate = Math.min(100, Math.round(((presentDays + halfDays * 0.5) / workingDays) * 100)) || (presentDays > 0 ? 100 : 92);
 
-      // Task Performance Metrics
       const totalTasks = uTasks.length;
       const completedTasks = uTasks.filter((t) => t.status === "COMPLETED").length;
       const inProgressTasks = uTasks.filter((t) => t.status === "IN_PROGRESS").length;
       const inReviewTasks = uTasks.filter((t) => t.status === "IN_REVIEW").length;
       const blockedTasks = uTasks.filter((t) => t.status === "BLOCKED").length;
-      const pendingTasks = uTasks.filter((t) => t.status === "PENDING" || t.status === "ASSIGNED" || t.status === "TODO" || t.status === "BACKLOG").length;
+      const pendingTasks = uTasks.filter((t) => t.status === "PENDING" || t.status === "ASSIGNED" || t.status === "TODO").length;
       const completionPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 100;
 
-      // Project Performance Context
-      const assignedProjectMap = new Map<string, any>();
-      uTasks.forEach((t) => {
-        if (t.projectId && !assignedProjectMap.has(t.projectId)) {
-          assignedProjectMap.set(t.projectId, {
-            id: t.projectId,
-            title: t.project_title || "Project",
-            code: t.project_code || "PRJ",
-            totalTasks: 0,
-            completedTasks: 0,
-          });
-        }
-        if (t.projectId) {
-          const p = assignedProjectMap.get(t.projectId);
-          p.totalTasks += 1;
-          if (t.status === "COMPLETED") p.completedTasks += 1;
-        }
-      });
-      const assignedProjects = Array.from(assignedProjectMap.values()).map((p) => ({
-        ...p,
-        progressRate: p.totalTasks > 0 ? Math.round((p.completedTasks / p.totalTasks) * 100) : 0,
-      }));
+      const evidenceCount = evidenceCountMap[u.id] || 0;
 
-      // Daily Work Highlights
-      const dailyUpdateCount = uWork.length;
-      const avgRating = uWork.length > 0 ? Math.round((uWork.reduce((s, w) => s + (w.rating || 5), 0) / uWork.length) * 10) / 10 : 4.8;
-      const recentAchievements = uWork.slice(0, 3).map((w) => w.description || w.achievements).filter(Boolean);
-      const blockersReported = uWork.filter((w) => w.blockers).map((w) => w.blockers);
-
-      // Executive Verdict
       let performanceGrade = "EXCELLENT";
-      let verdictNote = "Consistent delivery on assigned project milestones and high attendance integrity.";
+      let verdictNote = "Consistent delivery on assigned project milestones.";
       if (completionPercentage < 50 || attendanceRate < 75) {
         performanceGrade = "NEEDS_ATTENTION";
-        verdictNote = "Deliverable turnaround rate requires alignment with project timelines.";
+        verdictNote = "Deliverable turnaround rate requires alignment.";
       } else if (completionPercentage < 80 || attendanceRate < 90) {
         performanceGrade = "GOOD";
-        verdictNote = "Steady progress across assigned milestones with optimal workload capacity.";
+        verdictNote = "Steady progress across assigned milestones.";
       }
 
       return {
@@ -194,102 +203,38 @@ export async function GET(request: NextRequest) {
           email: u.email,
           phone: u.phone,
           role: u.role,
-          departmentName: u.departmentName || "Engineering & Technology",
+          departmentName: u.departmentName || "Engineering",
           joiningDate: u.joiningDate ? new Date(u.joiningDate).toISOString().split("T")[0] : "2026-01-15",
           managerName: u.managerName || "Department Head",
+          resignationStatus: u.isResigned ? "RESIGNED" : u.isActive ? "ACTIVE" : "DEACTIVATED",
         },
         month: displayMonthName,
-        attendance: {
-          workingDays,
-          presentDays,
-          absentDays,
-          leaveDays,
-          lateDays,
-          halfDays,
-          totalHoursWorked,
-          attendanceRate,
-        },
-        taskPerformance: {
-          totalTasks,
-          completedTasks,
-          inProgressTasks,
-          inReviewTasks,
-          blockedTasks,
-          pendingTasks,
-          completionPercentage,
-        },
-        dailyWork: {
-          dailyUpdateCount,
-          totalHoursWorked,
-          avgRating,
-          recentAchievements,
-          blockersReported,
-        },
-        assignedProjects,
-        summary: {
-          performanceGrade,
-          verdictNote,
-        },
+        attendance: { workingDays, presentDays, absentDays, leaveDays, lateDays, halfDays, totalHoursWorked, attendanceRate },
+        taskPerformance: { totalTasks, completedTasks, inProgressTasks, inReviewTasks, blockedTasks, pendingTasks, completionPercentage },
+        dailyWork: { dailyUpdateCount: uWork.length, workEvidenceCount: evidenceCount, totalHoursWorked },
+        summary: { performanceGrade, verdictNote },
       };
     });
 
-    // 6. Construct Organisation-Wide Aggregations
-    const orgTotalEmployees = targetUsers.length;
-    const orgActiveEmployees = targetUsers.filter((u) => u.isActive).length;
-    const orgTotalTasks = employeeReports.reduce((s, r) => s + r.taskPerformance.totalTasks, 0);
-    const orgCompletedTasks = employeeReports.reduce((s, r) => s + r.taskPerformance.completedTasks, 0);
-    const orgCompletionRate = orgTotalTasks > 0 ? Math.round((orgCompletedTasks / orgTotalTasks) * 100) : 100;
-    const orgTotalHours = employeeReports.reduce((s, r) => s + r.attendance.totalHoursWorked, 0);
-    const orgAvgAttendance = orgTotalEmployees > 0 ? Math.round(employeeReports.reduce((s, r) => s + r.attendance.attendanceRate, 0) / orgTotalEmployees) : 95;
-
-    // Department Breakdown
-    const deptSummaryMap = new Map<string, any>();
-    allDepts.forEach((d) => {
-      deptSummaryMap.set(d.name, {
-        departmentName: d.name,
-        code: d.code,
-        employeeCount: 0,
-        totalTasks: 0,
-        completedTasks: 0,
-        totalHours: 0,
+    // CSV Format Export Handling
+    if (formatParam === "csv") {
+      const csvRows = [
+        "Employee ID,Name,Department,Role,Total Tasks,Completed Tasks,In Progress,In Review,Blocked,Total Work Hours,Attendance Rate %,Work Evidence Count,Status",
+      ];
+      employeeReports.forEach((r) => {
+        csvRows.push(
+          `"${r.employee.employeeId}","${r.employee.name}","${r.employee.departmentName}","${r.employee.role}",${r.taskPerformance.totalTasks},${r.taskPerformance.completedTasks},${r.taskPerformance.inProgressTasks},${r.taskPerformance.inReviewTasks},${r.taskPerformance.blockedTasks},${r.attendance.totalHoursWorked},${r.attendance.attendanceRate}%,${r.dailyWork.workEvidenceCount},"${r.employee.resignationStatus}"`
+        );
       });
-    });
-
-    employeeReports.forEach((r) => {
-      const deptName = r.employee.departmentName;
-      if (!deptSummaryMap.has(deptName)) {
-        deptSummaryMap.set(deptName, {
-          departmentName: deptName,
-          code: "DEPT",
-          employeeCount: 0,
-          totalTasks: 0,
-          completedTasks: 0,
-          totalHours: 0,
-        });
-      }
-      const item = deptSummaryMap.get(deptName);
-      item.employeeCount += 1;
-      item.totalTasks += r.taskPerformance.totalTasks;
-      item.completedTasks += r.taskPerformance.completedTasks;
-      item.totalHours += r.attendance.totalHoursWorked;
-    });
-
-    const departmentSummaries = Array.from(deptSummaryMap.values())
-      .filter((d) => d.employeeCount > 0)
-      .map((d) => ({
-        ...d,
-        completionRate: d.totalTasks > 0 ? Math.round((d.completedTasks / d.totalTasks) * 100) : 100,
-      }));
-
-    // Available Filter Months
-    const availableMonths = [
-      "August 2026",
-      "July 2026",
-      "June 2026",
-      "May 2026",
-      "April 2026",
-      "March 2026",
-    ];
+      const csvContent = csvRows.join("\n");
+      return new NextResponse(csvContent, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="OMS_Enterprise_Report_${startDateStr}.csv"`,
+        },
+      });
+    }
 
     return NextResponse.json({
       success: true,
@@ -299,25 +244,14 @@ export async function GET(request: NextRequest) {
         employeeId: employeeParam,
         departmentId: deptParam,
         projectId: projectParam,
-        availableMonths,
-        availableEmployees: allUsers.map((u) => ({ id: u.id, employeeId: u.employeeId, name: u.name, role: u.role, department: u.departmentName })),
+        pmId: pmParam,
+        tlId: tlParam,
+        status: statusParam,
+        availableEmployees: (allUsers || []).map((u) => ({ id: u.id, employeeId: u.employeeId, name: u.name, role: u.role })),
         availableDepartments: allDepts,
         availableProjects: allProjects,
       },
-      organisationSummary: {
-        month: displayMonthName,
-        totalEmployees: orgTotalEmployees,
-        activeEmployees: orgActiveEmployees,
-        totalTasks: orgTotalTasks,
-        completedTasks: orgCompletedTasks,
-        completionRate: orgCompletionRate,
-        totalWorkHours: orgTotalHours,
-        averageAttendanceRate: orgAvgAttendance,
-        departmentSummaries,
-      },
       reports: employeeReports,
-      isOrganisationReport: employeeParam === "ALL",
-      singleEmployeeReport: employeeReports.length === 1 ? employeeReports[0] : null,
     });
   } catch (error: any) {
     console.error("Monthly reports API error:", error);

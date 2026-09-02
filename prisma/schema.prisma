@@ -94,11 +94,31 @@ model dailyworkupdate {
   startTime      String?
   submittedAt    DateTime                 @default(now())
   projectId      String?
+  evidenceUrl    String?                  @db.VarChar(500)
+  evidenceName   String?                  @db.VarChar(255)
+  evidenceType   String?                  @db.VarChar(100)
+  evidenceSize   Int?
   project        project?                 @relation(fields: [projectId], references: [id], map: "DailyWorkUpdate_projectId_fkey")
   user           user                     @relation(fields: [userId], references: [id], onDelete: NoAction, map: "DailyWorkUpdate_userId_fkey")
+  workEvidence   workevidence[]
 
   @@index([userId], map: "DailyWorkUpdate_userId_fkey")
   @@index([projectId], map: "DailyWorkUpdate_projectId_fkey")
+}
+
+model workevidence {
+  id                String          @id @default(cuid())
+  dailyWorkUpdateId String
+  fileName          String
+  fileType          String
+  fileSize          Int
+  fileUrl           String          @db.VarChar(500)
+  uploadedByUserId  String
+  uploadedAt        DateTime        @default(now())
+  dailyWorkUpdate   dailyworkupdate @relation(fields: [dailyWorkUpdateId], references: [id], onDelete: Cascade, map: "WorkEvidence_dailyWorkUpdateId_fkey")
+
+  @@index([dailyWorkUpdateId], map: "WorkEvidence_dailyWorkUpdateId_fkey")
+  @@index([uploadedByUserId], map: "WorkEvidence_uploadedByUserId_fkey")
 }
 
 model department {
@@ -227,22 +247,41 @@ model itasset {
 }
 
 model leaverequest {
-  id               String    @id @default(cuid())
-  userId           String
-  leaveType        String
-  startDate        DateTime
-  endDate          DateTime
-  totalDays        Int
-  reason           String    @db.Text
-  status           String    @default("PENDING")
-  hrRemarks        String?   @db.Text
-  appliedAt        DateTime  @default(now())
-  reviewedAt       DateTime?
-  reviewedByUserId String?
-  attachmentUrl    String?   @db.VarChar(500)
-  user             user      @relation(fields: [userId], references: [id], onDelete: NoAction, map: "LeaveRequest_userId_fkey")
+  id                String                 @id @default(cuid())
+  userId            String
+  leaveType         String
+  startDate         DateTime
+  endDate           DateTime
+  totalDays         Int
+  reason            String                 @db.Text
+  status            String                 @default("PENDING")
+  approvalStage     String                 @default("TEAM_LEADER")
+  currentApproverId String?
+  hrRemarks         String?                @db.Text
+  appliedAt         DateTime               @default(now())
+  reviewedAt        DateTime?
+  reviewedByUserId  String?
+  attachmentUrl     String?                @db.VarChar(500)
+  user              user                   @relation(fields: [userId], references: [id], onDelete: NoAction, map: "LeaveRequest_userId_fkey")
+  approvalHistory   leaveapprovalhistory[]
 
   @@index([userId], map: "LeaveRequest_userId_fkey")
+}
+
+model leaveapprovalhistory {
+  id             String       @id @default(cuid())
+  leaveRequestId String
+  actorId        String
+  actorName      String
+  actorRole      String
+  action         String
+  fromStage      String?
+  toStage        String?
+  comments       String?      @db.Text
+  timestamp      DateTime     @default(now())
+  leaveRequest   leaverequest @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade, map: "LeaveApprovalHistory_leaveRequestId_fkey")
+
+  @@index([leaveRequestId], map: "LeaveApprovalHistory_leaveRequestId_fkey")
 }
 
 model payrollapproval {
@@ -336,6 +375,8 @@ model project {
   expectedTeamSize        Int?                     @default(5)
   priority                String?                  @default("MEDIUM") @db.VarChar(50)
   projectManagerId        String?
+  projectcomment          projectcomment[]
+  projectreview           projectreview[]
   completedprojecthistory completedprojecthistory?
   dailyworkupdate         dailyworkupdate[]
   client                  client?                  @relation(fields: [clientId], references: [id], map: "Project_clientId_fkey")
@@ -343,6 +384,37 @@ model project {
   user                    user[]                   @relation("assignedstaffprojects")
 
   @@index([clientId], map: "Project_clientId_fkey")
+}
+
+model projectcomment {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  comment   String   @db.Text
+  createdAt DateTime @default(now())
+  project   project  @relation(fields: [projectId], references: [id], onDelete: Cascade, map: "ProjectComment_projectId_fkey")
+  user      user     @relation(fields: [userId], references: [id], onDelete: Cascade, map: "ProjectComment_userId_fkey")
+
+  @@index([projectId], map: "ProjectComment_projectId_fkey")
+  @@index([userId], map: "ProjectComment_userId_fkey")
+}
+
+model projectreview {
+  id             String   @id @default(cuid())
+  projectId      String
+  reviewerUserId String
+  reviewerRole   String
+  overallStatus  String   @default("HEALTHY")
+  progressNotes  String   @db.Text
+  deliverables   String?  @db.Text
+  blockers       String?  @db.Text
+  rating         Int?     @default(5)
+  createdAt      DateTime @default(now())
+  project        project  @relation(fields: [projectId], references: [id], onDelete: Cascade, map: "ProjectReview_projectId_fkey")
+  reviewer       user     @relation(fields: [reviewerUserId], references: [id], onDelete: Cascade, map: "ProjectReview_reviewerUserId_fkey")
+
+  @@index([projectId], map: "ProjectReview_projectId_fkey")
+  @@index([reviewerUserId], map: "ProjectReview_reviewerUserId_fkey")
 }
 
 model promotionrecord {
@@ -380,10 +452,16 @@ model resignation {
   status                  resignation_status @default(SUBMITTED)
   submittedAt             DateTime           @default(now())
   approvedAt              DateTime?
+  approvedByUserId        String?
+  approvedByName          String?
+  approverRole            String?
+  rejectedAt              DateTime?
+  rejectedByUserId        String?
+  rejectedByName          String?
+  letterUrl               String?            @db.VarChar(500)
   createdAt               DateTime           @default(now())
   hrRemarks               String?            @db.Text
   managerRemarks          String?            @db.Text
-  rejectedAt              DateTime?
   updatedAt               DateTime           @default(now()) @updatedAt
   user                    user?              @relation(fields: [userId], references: [id], map: "Resignation_userId_fkey")
 
@@ -448,6 +526,8 @@ model user {
   paymentScheduleDay Int                @default(1)
   skills             String?            @db.Text
   experienceYears    Float?             @default(2)
+  failedLoginAttempts Int               @default(0)
+  lockoutUntil       DateTime?          @db.DateTime(3)
   attendance         attendance[]
   auditlog           auditlog[]
   bankDetail         bankdetail?
@@ -464,6 +544,8 @@ model user {
   createdTasks       task[]             @relation("CreatedTasks")
   taskcomment        taskcomment[]
   taskhistory        taskhistory[]
+  projectcomment     projectcomment[]
+  projectreview      projectreview[]
   department         department?        @relation(fields: [departmentId], references: [id], map: "User_departmentId_fkey")
   manager            user?              @relation("ManagerEmployees", fields: [managerId], references: [id], map: "User_managerId_fkey")
   employees          user[]             @relation("ManagerEmployees")

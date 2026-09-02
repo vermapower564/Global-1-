@@ -163,7 +163,8 @@ export function resolveCloudinaryFolder(category: string, entityId?: string): st
     case "avatar":
       return `oms/users/${sanitizedId}/avatar`;
     case "daily-work":
-      return `oms/daily-work/${sanitizedId}`;
+    case "work-evidence":
+      return `oms/work-evidence/${sanitizedId}`;
     case "leave":
       return `oms/leave/${sanitizedId}`;
     case "design-assets":

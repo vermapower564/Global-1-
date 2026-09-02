@@ -298,7 +298,7 @@ export async function POST(request: NextRequest) {
 
     // Resolve assignedToUserId to real user.id cuid if employeeId was passed
     const userRows = await queryDb<any[]>(
-      `SELECT id, role, name, employeeId FROM user WHERE id = ? OR employeeId = ? LIMIT 1`,
+      `SELECT id, role, name, employeeId, isActive, isResigned FROM user WHERE id = ? OR employeeId = ? LIMIT 1`,
       [assignedToUserId, assignedToUserId]
     );
     if (!userRows || userRows.length === 0) {
@@ -308,18 +308,34 @@ export async function POST(request: NextRequest) {
       );
     }
     const targetUser = userRows[0];
+    if (targetUser.isActive === 0 || targetUser.isActive === false || targetUser.isResigned === 1) {
+      return NextResponse.json(
+        { success: false, error: "Cannot assign a task to a deactivated or resigned employee." },
+        { status: 400 }
+      );
+    }
     const resolvedUserId = targetUser.id;
 
     // Strict Backend Role Check: When task is assigned at the admin/PM management tier,
-    // only PROJECT_MANAGER and TEAM_LEADER are authorized assignees.
-    if (isAdmin && !["PROJECT_MANAGER", "TEAM_LEADER"].includes(targetUser.role)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid Assignee: Tasks can only be assigned to a Project Manager or Team Leader.",
-        },
-        { status: 400 }
+    // Project team membership scope check: Assignee must belong to project team
+    if (finalProjectId && !isAdmin) {
+      const isTeamMember = await queryDb<any[]>(
+        `SELECT B FROM _assignedstaffprojects WHERE A = ? AND B = ? LIMIT 1`,
+        [finalProjectId, targetUser.id]
       );
+      const isProjTL = await queryDb<any[]>(
+        `SELECT id FROM project WHERE id = ? AND (teamLeaderId = ? OR projectManagerId = ?) LIMIT 1`,
+        [finalProjectId, targetUser.id, targetUser.id]
+      );
+      if ((!isTeamMember || isTeamMember.length === 0) && (!isProjTL || isProjTL.length === 0)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Invalid Assignee: Assigned employee must be an active member of the project team.",
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const taskId = `TSK-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
@@ -358,6 +374,21 @@ export async function POST(request: NextRequest) {
         parseFloat(estimatedHours) || 8,
       ]
     );
+
+    // Notify Assigned Employee
+    try {
+      const notifId = `NOTIF-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`.toUpperCase();
+      await queryDb(
+        `INSERT INTO notification (id, userId, title, message, type, isRead, linkUrl, createdAt)
+         VALUES (?, ?, ?, ?, 'INFO', 0, '/employee/tasks', NOW(3))`,
+        [
+          notifId,
+          targetUser.id,
+          `🚀 New Task Assigned: ${title.trim()}`,
+          `You have been assigned a new task "${title.trim()}" by ${(authUser as any).name || authUser.role}.`,
+        ]
+      );
+    } catch {}
 
     // If projectId provided, ensure assigned user is linked in _assignedstaffprojects
     if (finalProjectId && resolvedUserId) {

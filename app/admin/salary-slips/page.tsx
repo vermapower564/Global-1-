@@ -44,18 +44,56 @@ interface SalarySlipItem {
 export default function AdminSalarySlipsFolderPage() {
   const [slips, setSlips] = useState<SalarySlipItem[]>([]);
   const [metrics, setMetrics] = useState<any>(null);
-  const [availableMonths, setAvailableMonths] = useState<string[]>([
-    "August 2026",
-    "July 2026",
-    "June 2026",
-    "May 2026",
-  ]);
+  const MONTH_NAMES_MAP = [
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december"
+  ];
+
+  const parseMonthStr = (str: string): Date => {
+    if (!str || str === "All") return new Date();
+    const parts = str.trim().split(/\s+/);
+    if (parts.length === 2) {
+      const mIdx = MONTH_NAMES_MAP.findIndex((m) => parts[0].toLowerCase().startsWith(m.slice(0, 3)));
+      const yr = parseInt(parts[1], 10);
+      if (mIdx >= 0 && !isNaN(yr)) {
+        return new Date(Date.UTC(yr, mIdx, 1, 0, 0, 0));
+      }
+    }
+    return new Date();
+  };
+
+  const sortMonthsChronologically = (monthsList: string[]): string[] => {
+    return Array.from(new Set(monthsList)).sort((a, b) => {
+      return parseMonthStr(a).getTime() - parseMonthStr(b).getTime();
+    });
+  };
+
+  const [availableMonths, setAvailableMonths] = useState<string[]>(
+    sortMonthsChronologically([
+      "May 2026",
+      "June 2026",
+      "July 2026",
+      "August 2026",
+      "September 2026",
+    ])
+  );
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  // Default to single month (August 2026) as requested
+  // Default to single month (August 2026) or URL param if present
   const [monthFilter, setMonthFilter] = useState("August 2026");
   const [statusFilter, setStatusFilter] = useState("All");
   const [toastMsg, setToastMsg] = useState("");
+
+  // Check URL search parameters on client mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const m = params.get("month");
+      if (m && m.trim()) {
+        setMonthFilter(m.trim());
+      }
+    }
+  }, []);
 
   // Slip Modal Target
   const [selectedSlip, setSelectedSlip] = useState<SalarySlipItem | null>(null);
@@ -84,8 +122,7 @@ export default function AdminSalarySlipsFolderPage() {
         setSlips(json.slips || json.data || []);
         setMetrics(json.metrics || json.summary || null);
         if (json.availableMonths && json.availableMonths.length > 0) {
-          const uniqueMonths = Array.from(new Set<string>(json.availableMonths));
-          setAvailableMonths(uniqueMonths);
+          setAvailableMonths(sortMonthsChronologically(json.availableMonths));
         }
       } else {
         if (res.status === 403 || json.error?.includes("Forbidden")) {
@@ -108,20 +145,43 @@ export default function AdminSalarySlipsFolderPage() {
     fetchSalarySlips();
   };
 
-  // Previous & Next Month Navigation Helpers
+  const formatMonthStr = (d: Date): string => {
+    const monthName = d.toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+    const year = d.getUTCFullYear();
+    return `${monthName} ${year}`;
+  };
+
+  // Previous Month Navigation Helper -> Moves exactly 1 calendar month backward (e.g., June 2026 -> May 2026; Jan 2027 -> Dec 2026)
   const handlePreviousMonth = () => {
-    const currentIndex = availableMonths.indexOf(monthFilter);
-    if (currentIndex !== -1 && currentIndex < availableMonths.length - 1) {
-      setMonthFilter(availableMonths[currentIndex + 1]);
-    } else if (monthFilter === "All" && availableMonths.length > 0) {
-      setMonthFilter(availableMonths[0]);
+    if (monthFilter === "All") {
+      setMonthFilter(formatMonthStr(new Date()));
+      return;
+    }
+    const d = parseMonthStr(monthFilter);
+    d.setUTCMonth(d.getUTCMonth() - 1);
+    const newMonth = formatMonthStr(d);
+    setMonthFilter(newMonth);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("month", newMonth);
+      window.history.replaceState({}, "", url.toString());
     }
   };
 
+  // Next Month Navigation Helper -> Moves exactly 1 calendar month forward (e.g., May 2026 -> June 2026; Dec 2026 -> Jan 2027)
   const handleNextMonth = () => {
-    const currentIndex = availableMonths.indexOf(monthFilter);
-    if (currentIndex > 0) {
-      setMonthFilter(availableMonths[currentIndex - 1]);
+    if (monthFilter === "All") {
+      setMonthFilter(formatMonthStr(new Date()));
+      return;
+    }
+    const d = parseMonthStr(monthFilter);
+    d.setUTCMonth(d.getUTCMonth() + 1);
+    const newMonth = formatMonthStr(d);
+    setMonthFilter(newMonth);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("month", newMonth);
+      window.history.replaceState({}, "", url.toString());
     }
   };
 
@@ -148,9 +208,8 @@ export default function AdminSalarySlipsFolderPage() {
     }
   };
 
-  const currentIndex = availableMonths.indexOf(monthFilter);
-  const canGoPrevious = currentIndex !== -1 && currentIndex < availableMonths.length - 1;
-  const canGoNext = currentIndex > 0;
+  const canGoPrevious = true;
+  const canGoNext = true;
 
   if (accessDenied) {
     return (
@@ -256,10 +315,17 @@ export default function AdminSalarySlipsFolderPage() {
         {/* Quick Month Selector Tabs */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-bold text-gray-500 mr-1">Select Month:</span>
-          {Array.from(new Set(availableMonths)).map((m) => (
+          {sortMonthsChronologically(availableMonths).map((m) => (
             <button
               key={m}
-              onClick={() => setMonthFilter(m)}
+              onClick={() => {
+                setMonthFilter(m);
+                if (typeof window !== "undefined") {
+                  const url = new URL(window.location.href);
+                  url.searchParams.set("month", m);
+                  window.history.replaceState({}, "", url.toString());
+                }
+              }}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
                 monthFilter === m
                   ? "bg-blue-600 text-white shadow-xs"
@@ -270,7 +336,14 @@ export default function AdminSalarySlipsFolderPage() {
             </button>
           ))}
           <button
-            onClick={() => setMonthFilter("All")}
+            onClick={() => {
+              setMonthFilter("All");
+              if (typeof window !== "undefined") {
+                const url = new URL(window.location.href);
+                url.searchParams.delete("month");
+                window.history.replaceState({}, "", url.toString());
+              }
+            }}
             className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
               monthFilter === "All"
                 ? "bg-blue-600 text-white shadow-xs"

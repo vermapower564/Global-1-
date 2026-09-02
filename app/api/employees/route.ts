@@ -54,9 +54,10 @@ export async function GET(request: Request) {
 
     const users: any[] = await queryDb(usersQuery, queryParams);
 
-    // 2. Fetch Tasks and Reviews in parallel (cached)
+    // 2. Fetch Tasks, Reviews, and Resignations in parallel
     const allTasks: any[] = await queryDbCached("SELECT id, title, status, dueDate, assignedToUserId, projectId FROM task", [], 15);
     const allReviews: any[] = await queryDbCached("SELECT * FROM customerreview ORDER BY createdAt DESC", [], 15);
+    const allResignations: any[] = await queryDbCached("SELECT * FROM resignation ORDER BY createdAt DESC", [], 5);
 
     if (users && users.length > 0) {
       // 3. Compute Project-Level Shared Teammates for non-admins
@@ -162,9 +163,36 @@ export async function GET(request: Request) {
         // Redact confidential bank/salary information for non-admins (or non-self)
         const canViewPrivateDetails = isFullAdmin || u.id === authUser.id;
 
+        const userResignation = (allResignations || []).find(
+          (r) => r.userId === u.id || r.employeeId === u.employeeId
+        );
+
+        let lifecycleStatus: "ACTIVE" | "RESIGNATION_PENDING" | "RESIGNED" | "DEACTIVATED" = "ACTIVE";
+        if (u.isActive === 0 || u.isActive === false) {
+          lifecycleStatus = u.isResigned || (userResignation && userResignation.status === "APPROVED") ? "RESIGNED" : "DEACTIVATED";
+        } else if (userResignation && ["SUBMITTED", "UNDER_REVIEW"].includes(userResignation.status)) {
+          lifecycleStatus = "RESIGNATION_PENDING";
+        } else {
+          lifecycleStatus = "ACTIVE";
+        }
+
+        const resignationInfo = userResignation ? {
+          resignationId: userResignation.resignationId,
+          reason: userResignation.reason,
+          resignationDate: userResignation.resignationDate,
+          submittedAt: userResignation.submittedAt || userResignation.createdAt,
+          approvedAt: userResignation.approvedAt,
+          approvedByName: userResignation.approvedByName,
+          approverRole: userResignation.approverRole,
+          lastWorkingDayFormatted: userResignation.lwdFormatted,
+          status: userResignation.status,
+        } : null;
+
         return {
           ...u,
           password: undefined,
+          lifecycleStatus,
+          resignationInfo,
           salary: canViewPrivateDetails ? u.salary : null,
           phone: canViewPrivateDetails || roleUpper === "TEAM_LEADER" ? u.phone : null,
           emergencyContact: canViewPrivateDetails ? u.emergencyContact : null,
@@ -196,10 +224,20 @@ export async function GET(request: Request) {
         };
       });
 
+      const statusParam = (url.searchParams.get("status") || url.searchParams.get("lifecycleStatus") || "").toUpperCase();
+      const activeOnlyParam = url.searchParams.get("activeOnly") === "true";
+
+      let finalUsers = enrichedUsers;
+      if (activeOnlyParam) {
+        finalUsers = finalUsers.filter((u) => u.lifecycleStatus === "ACTIVE");
+      } else if (statusParam && statusParam !== "ALL") {
+        finalUsers = finalUsers.filter((u) => u.lifecycleStatus === statusParam || (statusParam === "INACTIVE" && ["RESIGNED", "DEACTIVATED"].includes(u.lifecycleStatus)));
+      }
+
       return NextResponse.json({
         success: true,
-        total: enrichedUsers.length,
-        data: enrichedUsers,
+        total: finalUsers.length,
+        data: finalUsers,
       });
     }
   } catch (dbErr: any) {

@@ -65,6 +65,8 @@ export async function POST(request: NextRequest) {
           isActive: true,
           isResigned: true,
           avatarUrl: true,
+          failedLoginAttempts: true,
+          lockoutUntil: true,
           department: {
             select: {
               name: true,
@@ -85,25 +87,113 @@ export async function POST(request: NextRequest) {
 
     // 4. Verify Account Existence
     if (!dbUser) {
+      const { logAuditEvent } = await import("@/lib/authMiddleware");
+      await logAuditEvent(null, "USER_LOGIN_FAILED", `Failed login attempt for identity: ${cleanIdentity}`);
       return NextResponse.json(
         { success: false, error: "Invalid Employee ID or password." },
         { status: 401 }
       );
     }
 
-    // 5. Verify Password Hash using Bcrypt
+    // 5. Account Lockout Verification (Calculated strictly from Backend DB)
+    const MAX_FAILED_ATTEMPTS = 5;
+    const LOCKOUT_MINUTES = 15;
+
+    if (dbUser.lockoutUntil) {
+      let lockoutTime = new Date(dbUser.lockoutUntil).getTime();
+      if (typeof dbUser.lockoutUntil === "string" && !dbUser.lockoutUntil.includes("Z") && !dbUser.lockoutUntil.includes("+")) {
+        lockoutTime = new Date(dbUser.lockoutUntil.replace(" ", "T") + "Z").getTime();
+        // If string was stored in local time, check difference
+        if (isNaN(lockoutTime) || lockoutTime < Date.now() - 24 * 3600 * 1000) {
+          lockoutTime = new Date(dbUser.lockoutUntil).getTime();
+        }
+      }
+      const now = Date.now();
+      if (lockoutTime > now) {
+        const remainingMs = lockoutTime - now;
+        const remainingMins = Math.max(1, Math.ceil(remainingMs / (1000 * 60)));
+        const { logAuditEvent } = await import("@/lib/authMiddleware");
+        await logAuditEvent(dbUser.id, "USER_LOGIN_REJECTED_LOCKED", `Login attempt rejected for locked account ${dbUser.employeeId}`);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Invalid username or password. Account locked. Please try again in ${remainingMins} minute${remainingMins === 1 ? "" : "s"}.`,
+            isLocked: true,
+            remainingMinutes: remainingMins,
+          },
+          { status: 423 }
+        );
+      } else {
+        // Lockout expired -> Clear lock status in DB
+        await prisma.user.update({
+          where: { id: dbUser.id },
+          data: { failedLoginAttempts: 0, lockoutUntil: null },
+        }).catch(() => {});
+        dbUser.failedLoginAttempts = 0;
+        dbUser.lockoutUntil = null;
+      }
+    }
+
+    // 6. Verify Password Hash using Bcrypt
     const passwordMatches = await comparePassword(inputPassword, dbUser.password);
     if (!passwordMatches) {
-      return NextResponse.json(
-        { success: false, error: "Invalid Employee ID or password." },
-        { status: 401 }
-      );
+      const currentAttempts = (dbUser.failedLoginAttempts || 0) + 1;
+      let isNowLocked = false;
+      let lockoutUntilDate: Date | null = null;
+
+      if (currentAttempts >= MAX_FAILED_ATTEMPTS) {
+        isNowLocked = true;
+        lockoutUntilDate = new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000);
+      }
+
+      await prisma.user.update({
+        where: { id: dbUser.id },
+        data: {
+          failedLoginAttempts: currentAttempts,
+          lockoutUntil: lockoutUntilDate,
+        },
+      }).catch(() => {});
+
+      const { logAuditEvent } = await import("@/lib/authMiddleware");
+      if (isNowLocked) {
+        await logAuditEvent(dbUser.id, "USER_ACCOUNT_LOCKED", `Account ${dbUser.employeeId} locked due to ${currentAttempts} consecutive failed login attempts`);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Invalid username or password. Account locked. Please try again in ${LOCKOUT_MINUTES} minutes.`,
+            isLocked: true,
+            remainingMinutes: LOCKOUT_MINUTES,
+          },
+          { status: 423 }
+        );
+      } else {
+        const remainingAttempts = MAX_FAILED_ATTEMPTS - currentAttempts;
+        await logAuditEvent(dbUser.id, "USER_LOGIN_FAILED", `Invalid password for employee ${dbUser.employeeId} (${currentAttempts}/${MAX_FAILED_ATTEMPTS} attempts)`);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Invalid Employee ID or password. You have ${remainingAttempts} attempt${remainingAttempts === 1 ? "" : "s"} remaining.`,
+            remainingAttempts,
+          },
+          { status: 401 }
+        );
+      }
     }
 
-    // 6. Verify Active Account Status
-    if (dbUser.isActive === false || dbUser.isResigned) {
+    // 7. On Successful Password Match -> Reset Failed Login Counter
+    if ((dbUser.failedLoginAttempts || 0) > 0 || dbUser.lockoutUntil) {
+      await prisma.user.update({
+        where: { id: dbUser.id },
+        data: { failedLoginAttempts: 0, lockoutUntil: null },
+      }).catch(() => {});
+    }
+
+    // 8. Verify Active Account Status
+    if (dbUser.isActive === false || dbUser.isActive === 0 || dbUser.isResigned) {
+      const { logAuditEvent } = await import("@/lib/authMiddleware");
+      await logAuditEvent(dbUser.id, "USER_LOGIN_REJECTED_INACTIVE", `Login rejected for inactive account ${dbUser.employeeId}`);
       return NextResponse.json(
-        { success: false, error: "Account deactivated: Please contact HR administrator." },
+        { success: false, error: "Your account is inactive. Please contact the organisation administrator." },
         { status: 403 }
       );
     }
@@ -185,6 +275,9 @@ export async function POST(request: NextRequest) {
         },
       })
       .catch(() => {});
+
+    const { logAuditEvent } = await import("@/lib/authMiddleware");
+    await logAuditEvent(dbUser.id, "USER_LOGIN_SUCCESS", `User ${dbUser.email} (${dbUser.role}) logged in successfully`);
 
     return response;
   } catch (error: any) {

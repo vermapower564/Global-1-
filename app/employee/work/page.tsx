@@ -19,6 +19,13 @@ export default function EmployeeWorkPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionMsg, setActionMsg] = useState("");
 
+  // Work Evidence State
+  const [isUploadingEv, setIsUploadingEv] = useState(false);
+  const [evUrl, setEvUrl] = useState("");
+  const [evName, setEvName] = useState("");
+  const [evType, setEvType] = useState("");
+  const [evSize, setEvSize] = useState<number>(0);
+
   const fetchEodReports = async () => {
     try {
       setLoading(true);
@@ -59,6 +66,13 @@ export default function EmployeeWorkPage() {
           hoursWorked: parseFloat(hoursWorked) || 8.0,
           gitCommits: gitCommits.trim() || undefined,
           tomorrowsPlan: tomorrowsPlan.trim() || undefined,
+          evidenceUrl: evUrl || undefined,
+          evidenceName: evName || undefined,
+          evidenceType: evType || undefined,
+          evidenceSize: evSize || undefined,
+          workEvidence: evUrl
+            ? [{ fileName: evName, fileType: evType, fileSize: evSize, fileUrl: evUrl }]
+            : [],
           status: "SUBMITTED",
         }),
       });
@@ -71,6 +85,10 @@ export default function EmployeeWorkPage() {
         setBlockers("");
         setGitCommits("");
         setTomorrowsPlan("");
+        setEvUrl("");
+        setEvName("");
+        setEvType("");
+        setEvSize(0);
         fetchEodReports();
       } else {
         alert(data.error || "Failed to submit EOD report.");
@@ -194,10 +212,69 @@ export default function EmployeeWorkPage() {
               />
             </div>
 
+            {/* Work Evidence Attachment Input */}
+            <div className="space-y-1.5">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 text-xs">
+                Attach Work Evidence / Document (Optional)
+              </label>
+              <div className="flex items-center gap-2">
+                <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-extrabold text-xs px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 transition flex items-center gap-1.5 shrink-0">
+                  <span>📎 {isUploadingEv ? "Uploading..." : "Attach File"}</span>
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,image/*"
+                    disabled={isUploadingEv}
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      if (f.size > 15 * 1024 * 1024) {
+                        alert("File size exceeds 15 MB limit.");
+                        return;
+                      }
+                      try {
+                        setIsUploadingEv(true);
+                        const fd = new FormData();
+                        fd.append("file", f);
+                        fd.append("category", "work-evidence");
+                        const res = await fetch("/api/upload", { method: "POST", body: fd });
+                        const data = await res.json();
+                        if (data.success && data.url) {
+                          setEvUrl(data.url);
+                          setEvName(f.name);
+                          setEvType(f.type || "application/octet-stream");
+                          setEvSize(f.size);
+                        } else {
+                          alert(data.error || "Upload failed.");
+                        }
+                      } catch (err: any) {
+                        alert("Upload error: " + err.message);
+                      } finally {
+                        setIsUploadingEv(false);
+                      }
+                    }}
+                    className="hidden"
+                  />
+                </label>
+                <input
+                  type="text"
+                  value={evUrl}
+                  onChange={(e) => setEvUrl(e.target.value)}
+                  placeholder="HTTPS URL or select file..."
+                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 px-3 py-2 bg-slate-50 dark:bg-slate-950 text-xs font-mono text-slate-900 dark:text-white"
+                />
+              </div>
+              {evName && (
+                <div className="text-[11px] font-bold text-blue-600 flex items-center justify-between bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 px-3 py-1 rounded-xl">
+                  <span>✓ {evName} ({((evSize || 0) / 1024).toFixed(1)} KB)</span>
+                  <button type="button" onClick={() => { setEvUrl(""); setEvName(""); setEvType(""); setEvSize(0); }} className="text-rose-500 font-black">✕</button>
+                </div>
+              )}
+            </div>
+
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3.5 rounded-xl shadow-md shadow-blue-600/20 transition cursor-pointer"
+              disabled={isSubmitting || isUploadingEv}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-extrabold py-3.5 rounded-xl shadow-md shadow-blue-600/20 transition cursor-pointer"
             >
               {isSubmitting ? "Submitting EOD..." : "Submit EOD Report →"}
             </button>
@@ -237,6 +314,22 @@ export default function EmployeeWorkPage() {
                   <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">{u.description}</h3>
                   {u.achievements && <p className="text-xs text-slate-600 dark:text-slate-400">🏆 <strong>Achievements:</strong> {u.achievements}</p>}
                   {u.blockers && <p className="text-xs text-rose-600 font-semibold">⚠️ <strong>Blockers:</strong> {u.blockers}</p>}
+
+                  {((u.workEvidence && u.workEvidence.length > 0) || u.evidenceUrl) && (
+                    <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                        📎 Attached Evidence: {u.evidenceName || u.workEvidence?.[0]?.fileName || "Work Document"}
+                      </span>
+                      <a
+                        href={u.evidenceUrl || u.workEvidence?.[0]?.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] font-bold text-blue-600 hover:underline bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800"
+                      >
+                        Open Document ↗
+                      </a>
+                    </div>
+                  )}
 
                   <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center text-[11px] text-slate-400 font-mono">
                     <span>Logged Hours: {u.hoursWorked || 8.0} hrs</span>

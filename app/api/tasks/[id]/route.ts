@@ -289,23 +289,26 @@ export async function PATCH(
     }
 
     // Employee Actions: Status transition & progress updates
-    if (isAssignee && !isAdmin && !isTeamLeader) {
+    if (isAssignee && !isAdmin && !isTeamLeader && !isProjectManager) {
       if (status) {
-        nextStatus = status;
         if (status === "COMPLETED") {
-          nextProgress = 100;
-          nextCompletedAt = new Date();
-        } else if (status === "IN_REVIEW") {
-          nextProgress = progress !== undefined ? Math.min(100, Math.max(0, parseInt(progress))) : 90;
-        } else if (status === "IN_PROGRESS") {
-          if (existingTask.status === "ASSIGNED" || existingTask.status === "PENDING") {
-            nextProgress = Math.max(nextProgress, 10);
+          // Employees cannot self-approve task completion; automatically route for Team Leader review
+          nextStatus = "IN_REVIEW";
+          nextProgress = progress !== undefined ? Math.min(99, Math.max(0, parseInt(progress))) : 90;
+        } else {
+          nextStatus = status;
+          if (status === "IN_REVIEW") {
+            nextProgress = progress !== undefined ? Math.min(99, Math.max(0, parseInt(progress))) : 90;
+          } else if (status === "IN_PROGRESS") {
+            if (existingTask.status === "ASSIGNED" || existingTask.status === "PENDING") {
+              nextProgress = Math.max(nextProgress, 10);
+            }
           }
         }
       }
       if (progress !== undefined) {
-        nextProgress = Math.min(100, Math.max(0, parseInt(progress)));
-        if (nextProgress === 100 && nextStatus !== "COMPLETED") {
+        nextProgress = Math.min(99, Math.max(0, parseInt(progress)));
+        if (nextProgress >= 90 && nextStatus === "COMPLETED") {
           nextStatus = "IN_REVIEW";
         }
       }
@@ -314,7 +317,7 @@ export async function PATCH(
     }
 
     // Team Leader Actions: Full execution & Work Review
-    if (isTeamLeader && !isPureAdmin) {
+    if ((isTeamLeader || isAdmin || isProjectManager) && !isPureAdmin) {
       if (status) {
         nextStatus = status;
         if (status === "COMPLETED") {
@@ -349,12 +352,12 @@ export async function PATCH(
       if (section) nextSection = section;
       if (dueDate) nextDueDate = new Date(dueDate);
       if (assignedToUserId && assignedToUserId !== existingTask.assignedToUserId) {
-        const uRows = await queryDb<any[]>(`SELECT id, role FROM user WHERE id = ? OR employeeId = ? LIMIT 1`, [assignedToUserId, assignedToUserId]);
+        const uRows = await queryDb<any[]>(`SELECT id, role, isActive, isResigned FROM user WHERE id = ? OR employeeId = ? LIMIT 1`, [assignedToUserId, assignedToUserId]);
         if (!uRows || uRows.length === 0) {
           return NextResponse.json({ success: false, error: "Target assignee not found." }, { status: 404 });
         }
-        if (isAdmin && !["PROJECT_MANAGER", "TEAM_LEADER"].includes(uRows[0].role)) {
-          return NextResponse.json({ success: false, error: "Invalid Assignee: Tasks can only be assigned to a Project Manager or Team Leader." }, { status: 400 });
+        if (uRows[0].isActive === 0 || uRows[0].isResigned === 1) {
+          return NextResponse.json({ success: false, error: "Cannot reassign task to a deactivated or resigned employee." }, { status: 400 });
         }
         nextAssignedTo = uRows[0].id;
       }
@@ -394,6 +397,65 @@ export async function PATCH(
       employeeId: authUser.id,
       role: authUser.role,
     };
+
+    // Notifications for Status Transitions (Prevent duplicate notifications on unchanged status)
+    if (existingTask.status !== nextStatus) {
+      try {
+        // 1. Employee Submits Completion for Review -> Notify Team Leader / PM
+        if (nextStatus === "IN_REVIEW") {
+          const reviewerId = existingTask.project_teamLeaderId || existingTask.project_projectManagerId || existingTask.createdById;
+          if (reviewerId && reviewerId !== authUser.id) {
+            const notifId = `NOTIF-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`.toUpperCase();
+            await queryDb(
+              `INSERT INTO notification (id, userId, title, message, type, isRead, linkUrl, createdAt)
+               VALUES (?, ?, ?, ?, 'INFO', 0, '/team-leader/tasks', NOW(3))`,
+              [
+                notifId,
+                reviewerId,
+                `📋 Task Completion Submitted: ${existingTask.title}`,
+                `${resolvedUser.name} submitted task "${existingTask.title}" for review & approval.`,
+              ]
+            );
+          }
+        }
+
+        // 2. Team Leader / PM Approves Task (COMPLETED) -> Notify Assigned Employee
+        if (nextStatus === "COMPLETED" && existingTask.assignedToUserId) {
+          if (existingTask.assignedToUserId !== authUser.id) {
+            const notifId = `NOTIF-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`.toUpperCase();
+            await queryDb(
+              `INSERT INTO notification (id, userId, title, message, type, isRead, linkUrl, createdAt)
+               VALUES (?, ?, ?, ?, 'SUCCESS', 0, '/employee/tasks', NOW(3))`,
+              [
+                notifId,
+                existingTask.assignedToUserId,
+                `🎉 Task Approved & Completed: ${existingTask.title}`,
+                `Your task "${existingTask.title}" has been approved and marked as COMPLETED by ${resolvedUser.name}.`,
+              ]
+            );
+          }
+        }
+
+        // 3. Team Leader / PM Rejects Task or Requests Revisions -> Notify Assigned Employee
+        if (existingTask.status === "IN_REVIEW" && (nextStatus === "IN_PROGRESS" || nextStatus === "BLOCKED")) {
+          if (existingTask.assignedToUserId && existingTask.assignedToUserId !== authUser.id) {
+            const notifId = `NOTIF-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`.toUpperCase();
+            await queryDb(
+              `INSERT INTO notification (id, userId, title, message, type, isRead, linkUrl, createdAt)
+               VALUES (?, ?, ?, ?, 'WARNING', 0, '/employee/tasks', NOW(3))`,
+              [
+                notifId,
+                existingTask.assignedToUserId,
+                `⚠️ Task Review Feedback: ${existingTask.title}`,
+                `Your task "${existingTask.title}" requires revisions. Feedback: "${nextReviewNotes || 'Please check task review notes'}"`,
+              ]
+            );
+          }
+        }
+      } catch (notifErr) {
+        console.warn("Notification dispatch warning:", notifErr);
+      }
+    }
 
     const formatRole = (r: string) => {
       const u = (r || "").toUpperCase();

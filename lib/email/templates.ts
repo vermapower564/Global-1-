@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Professional HTML Email Templates for OMS Enterprise
  * Clean inline CSS, responsive layout, dark-slate header branding, fully compatible with Gmail and Outlook.
  */
@@ -670,6 +670,130 @@ ${data.message}
 
 ${data.actionUrl ? `View Details: ${data.actionUrl}` : ""}
 `;
+
+  return { subject, html, text };
+}
+
+export interface ResignationApprovedEmailData extends BaseTemplateOptions {
+  name: string;
+  employeeId: string;
+  email: string;
+  resignationDate: string;
+  reason: string;
+  approvedByName: string;
+  approverRole: string;
+  approvalDate: string;
+}
+
+/**
+ * 7. Resignation Approved Notification Email
+ */
+export function renderResignationApprovedEmail(data: ResignationApprovedEmailData): { subject: string; html: string; text: string } {
+  const subject = `Resignation Request Approved — OMS Enterprise`;
+  const company = data.companyName || DEFAULT_COMPANY;
+  const hq = data.companyAddress || DEFAULT_HQ;
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${subject}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #0f172a;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f1f5f9; padding: 30px 15px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);">
+          <!-- Header Banner -->
+          <tr>
+            <td style="background-color: #0f172a; padding: 32px 28px; text-align: center;">
+              <h1 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff; text-transform: uppercase;">RESIGNATION REQUEST APPROVED</h1>
+              <p style="margin: 6px 0 0 0; font-size: 12px; font-weight: 700; color: #34d399; text-transform: uppercase;">OMS Enterprise Corporate HR Operations</p>
+            </td>
+          </tr>
+          <!-- Body Content -->
+          <tr>
+            <td style="padding: 32px 28px;">
+              <p style="font-size: 14px; font-weight: 600; color: #0f172a; margin-top: 0;">Dear ${data.name},</p>
+              <p style="font-size: 13px; color: #334155; line-height: 1.6;">
+                Your resignation request has been approved.
+              </p>
+
+              <!-- Resignation Details Card -->
+              <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #10b981; padding: 20px; margin: 24px 0; border-radius: 8px;">
+                <h3 style="margin: 0 0 12px 0; font-size: 13px; font-weight: 800; color: #0f172a; text-transform: uppercase;">📋 RESIGNATION DETAILS</h3>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size: 13px; color: #334155; line-height: 1.8;">
+                  <tr>
+                    <td width="35%" style="font-weight: 600; color: #64748b;">Employee ID:</td>
+                    <td style="font-weight: 700; color: #0f172a; font-family: monospace;">${data.employeeId}</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight: 600; color: #64748b;">Resignation Date:</td>
+                    <td style="font-weight: 600; color: #0f172a;">${data.resignationDate}</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight: 600; color: #64748b;">Reason:</td>
+                    <td style="font-weight: 600; color: #0f172a;">${data.reason}</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight: 600; color: #64748b;">Approved By:</td>
+                    <td style="font-weight: 700; color: #059669;">${data.approvedByName} (${data.approverRole})</td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight: 600; color: #64748b;">Approval Date:</td>
+                    <td style="font-weight: 600; color: #0f172a;">${data.approvalDate}</td>
+                  </tr>
+                </table>
+              </div>
+
+              <!-- Notice Box -->
+              <div style="background-color: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 14px; margin: 20px 0;">
+                <p style="margin: 0; font-size: 12px; color: #9f1239; font-weight: 600;">
+                  ⚠️ Your employee account has been deactivated following the approval of your resignation.
+                </p>
+              </div>
+
+              <p style="font-size: 13px; color: #334155; margin-top: 24px; margin-bottom: 0;">
+                Regards,<br>
+                <strong style="color: #0f172a;">OMS Enterprise Operations</strong>
+              </p>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px; text-align: center; font-size: 11px; color: #94a3b8;">
+              © ${new Date().getFullYear()} ${company}. ${hq}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+
+  const text = `
+Dear ${data.name},
+
+Your resignation request has been approved.
+
+Resignation Details:
+
+Employee ID: ${data.employeeId}
+Resignation Date: ${data.resignationDate}
+Reason: ${data.reason}
+Approved By: ${data.approvedByName}
+Approver Role: ${data.approverRole}
+Approval Date: ${data.approvalDate}
+
+Your employee account has been deactivated following the approval of your resignation.
+
+Regards,
+OMS Enterprise
+  `.trim();
 
   return { subject, html, text };
 }

@@ -64,15 +64,33 @@ export async function GET(request: NextRequest) {
       },
     }));
 
-    // Extract available distinct months for filter dropdown
+    // Extract available distinct months for filter dropdown ordered chronologically
     const distinctMonthRows = await queryDbCached<any[]>(
-      `SELECT DISTINCT salaryMonth FROM salaryslip WHERE salaryMonth IS NOT NULL AND salaryMonth != '' ORDER BY salaryMonth DESC`,
+      `SELECT DISTINCT salaryMonth, monthKey FROM salaryslip WHERE salaryMonth IS NOT NULL AND salaryMonth != '' ORDER BY monthKey DESC`,
       [],
       30
     );
+
+    const monthMap = [
+      "january", "february", "march", "april", "may", "june",
+      "july", "august", "september", "october", "november", "december"
+    ];
+
+    const parseMonthStrToDate = (str: string) => {
+      const parts = (str || "").trim().split(/\s+/);
+      if (parts.length === 2) {
+        const mIdx = monthMap.findIndex((m) => parts[0].toLowerCase().startsWith(m.slice(0, 3)));
+        const yr = parseInt(parts[1], 10);
+        if (mIdx >= 0 && !isNaN(yr)) return new Date(Date.UTC(yr, mIdx, 1));
+      }
+      return new Date(0);
+    };
+
     const availableMonths = Array.from(
       new Set((distinctMonthRows || []).map((r) => (r.salaryMonth || "").trim()).filter(Boolean))
     );
+
+    availableMonths.sort((a, b) => parseMonthStrToDate(b).getTime() - parseMonthStrToDate(a).getTime());
 
     // Compute Summary KPIs
     const totalDisbursed = slips.reduce((sum, s) => sum + (s.netSalary || 0), 0);
@@ -97,7 +115,7 @@ export async function GET(request: NextRequest) {
       slips: slips,
       summary: summaryPayload,
       metrics: summaryPayload,
-      availableMonths: availableMonths.length > 0 ? availableMonths : ["August 2026", "July 2026", "June 2026"],
+      availableMonths: availableMonths.length > 0 ? availableMonths : ["September 2026", "August 2026", "July 2026", "June 2026", "May 2026"],
     });
   } catch (error: any) {
     console.error("API error fetching salary slips:", error);

@@ -14,7 +14,7 @@ export default function HRLeaveManagementPage() {
   
   // Review & Decision States
   const [selectedLeave, setSelectedLeave] = useState<any>(null);
-  const [decisionType, setDecisionType] = useState<"APPROVE" | "REJECT" | null>(null);
+  const [decisionType, setDecisionType] = useState<"APPROVE" | "REJECT" | "ESCALATE" | null>(null);
   const [hrRemarks, setHrRemarks] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [toastMsg, setToastMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
@@ -38,10 +38,35 @@ export default function HRLeaveManagementPage() {
     fetchLeaves();
   }, []);
 
-  const openDecisionModal = (leave: any, type: "APPROVE" | "REJECT") => {
+  const openDecisionModal = (leave: any, type: "APPROVE" | "REJECT" | "ESCALATE") => {
     setSelectedLeave(leave);
     setDecisionType(type);
-    setHrRemarks(type === "APPROVE" ? "Approved by Human Resources." : "");
+    if (type === "APPROVE") setHrRemarks("Approved by Approving Authority.");
+    else if (type === "ESCALATE") setHrRemarks("Escalated for executive HR/Director review.");
+    else setHrRemarks("");
+  };
+
+  const handleViewAttachment = async (leave: any) => {
+    try {
+      const res = await fetch(`/api/leave/attachment/${encodeURIComponent(leave.id)}`);
+      if (res.status === 403) {
+        setToastMsg({ text: "Forbidden: You are not authorized to view this leave document.", type: "error" });
+        return;
+      }
+      const json = await res.json();
+      if (json.success && json.document?.attachmentUrl) {
+        const url = json.document.attachmentUrl;
+        if (url.startsWith("blob:") || url.startsWith("file:") || url.includes("fakepath")) {
+          setToastMsg({ text: "Invalid temporary file path. Persistent Cloudinary document URL is required.", type: "error" });
+          return;
+        }
+        window.open(url, "_blank", "noopener,noreferrer");
+      } else {
+        setToastMsg({ text: json.error || "Failed to access leave document.", type: "error" });
+      }
+    } catch (err: any) {
+      setToastMsg({ text: err.message || "Failed to view document.", type: "error" });
+    }
   };
 
   const handleConfirmDecision = async () => {
@@ -52,7 +77,6 @@ export default function HRLeaveManagementPage() {
     }
 
     setIsProcessing(true);
-    const targetStatus = decisionType === "APPROVE" ? "APPROVED" : "REJECTED";
 
     try {
       const res = await fetch("/api/leave", {
@@ -60,15 +84,18 @@ export default function HRLeaveManagementPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: selectedLeave.id,
-          status: targetStatus,
+          action: decisionType,
           hrRemarks: hrRemarks.trim(),
+          escalationReason: decisionType === "ESCALATE" ? hrRemarks.trim() : undefined,
         }),
       });
       const json = await res.json();
 
       if (json.success) {
         setToastMsg({
-          text: `✓ Leave request for ${selectedLeave.employeeName || selectedLeave.user?.name} has been ${targetStatus}!`,
+          text: `✓ Leave request for ${selectedLeave.employeeName || selectedLeave.user?.name} has been ${
+            decisionType === "APPROVE" ? "APPROVED" : decisionType === "REJECT" ? "REJECTED" : "ESCALATED"
+          }!`,
           type: "success",
         });
         setSelectedLeave(null);
@@ -344,22 +371,28 @@ export default function HRLeaveManagementPage() {
                     </td>
                     <td className="py-3 px-3 text-right whitespace-nowrap">
                       {(l.status || "").toUpperCase() === "PENDING" ? (
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => openDecisionModal(l, "APPROVE")}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs shadow-xs transition"
+                            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs shadow-xs transition"
                           >
                             ✓ Approve
                           </button>
                           <button
+                            onClick={() => openDecisionModal(l, "ESCALATE")}
+                            className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-black rounded-xl text-xs shadow-xs transition"
+                          >
+                            ⬆️ Escalate
+                          </button>
+                          <button
                             onClick={() => openDecisionModal(l, "REJECT")}
-                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-xl text-xs shadow-xs transition"
+                            className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-xl text-xs shadow-xs transition"
                           >
                             ✕ Reject
                           </button>
                         </div>
                       ) : (
-                        <span className="text-[11px] text-slate-400 font-bold">
+                        <span className="text-[11px] text-slate-500 font-bold">
                           {l.hrRemarks ? `Remarks: ${l.hrRemarks}` : "Decision Logged"}
                         </span>
                       )}
@@ -372,15 +405,19 @@ export default function HRLeaveManagementPage() {
         </div>
       </div>
 
-      {/* HR Decision & Remarks Modal */}
+      {/* HR / Approver Decision & Audit History Modal */}
       {selectedLeave && decisionType && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl space-y-5 border border-slate-200 animate-in zoom-in-95">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl space-y-5 border border-slate-200 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <span className="font-mono text-xs font-bold text-amber-600">{selectedLeave.id}</span>
                 <h3 className="font-black text-base text-slate-900">
-                  {decisionType === "APPROVE" ? "✅ Approve Leave Request" : "❌ Reject Leave Request"}
+                  {decisionType === "APPROVE"
+                    ? "✅ Approve Leave Request"
+                    : decisionType === "ESCALATE"
+                    ? "⬆️ Escalate Leave Application"
+                    : "❌ Reject Leave Request"}
                 </h3>
               </div>
               <button
@@ -417,18 +454,52 @@ export default function HRLeaveManagementPage() {
                   "{selectedLeave.reason}"
                 </p>
               </div>
+
+              {selectedLeave.attachmentUrl && (
+                <div className="pt-2 border-t border-slate-200 flex justify-between items-center">
+                  <span className="text-slate-400 font-bold uppercase text-[10px]">Attachment</span>
+                  <button
+                    type="button"
+                    onClick={() => handleViewAttachment(selectedLeave)}
+                    className="text-blue-600 hover:underline font-bold text-[11px] cursor-pointer"
+                  >
+                    🔗 View Attachment
+                  </button>
+                </div>
+              )}
             </div>
+
+            {/* Audit History Timeline */}
+            {selectedLeave.approvalHistory && selectedLeave.approvalHistory.length > 0 && (
+              <div className="border border-slate-200 rounded-2xl p-3.5 bg-slate-50/50 space-y-2">
+                <h4 className="font-black text-slate-800 text-[11px]">📜 Prior Approval History Timeline:</h4>
+                <div className="space-y-2 pl-2 border-l-2 border-blue-500 text-[11px]">
+                  {selectedLeave.approvalHistory.map((h: any, idx: number) => (
+                    <div key={h.id || idx} className="text-slate-700 font-medium">
+                      <span className="font-bold text-slate-900">{h.actorName}</span> ({h.actorRole}):{" "}
+                      <span className="font-black text-blue-700">{h.action}</span> — {h.comments || "No comment"}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-1.5 text-xs font-bold text-slate-700">
               <label className="block">
-                {decisionType === "APPROVE" ? "Official HR Remarks (Optional)" : "Official Rejection Reason *"}
+                {decisionType === "APPROVE"
+                  ? "Official Approver Remarks (Optional)"
+                  : decisionType === "ESCALATE"
+                  ? "Reason for Escalation to HR / Director *"
+                  : "Official Rejection Reason *"}
               </label>
               <textarea
                 rows={3}
-                required={decisionType === "REJECT"}
+                required={decisionType !== "APPROVE"}
                 placeholder={
                   decisionType === "APPROVE"
-                    ? "Optional feedback or instructions for employee..."
+                    ? "Optional feedback for employee..."
+                    : decisionType === "ESCALATE"
+                    ? "Explain why this leave application is being escalated to HR/Executive level..."
                     : "Explain why this leave application is rejected (visible to employee)..."
                 }
                 value={hrRemarks}
@@ -456,6 +527,15 @@ export default function HRLeaveManagementPage() {
                   className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-black rounded-xl transition shadow-md"
                 >
                   {isProcessing ? "Processing..." : "✓ Confirm Approval"}
+                </button>
+              ) : decisionType === "ESCALATE" ? (
+                <button
+                  type="button"
+                  disabled={isProcessing || !hrRemarks.trim()}
+                  onClick={handleConfirmDecision}
+                  className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-black rounded-xl transition shadow-md"
+                >
+                  {isProcessing ? "Processing..." : "⬆️ Confirm Escalation"}
                 </button>
               ) : (
                 <button

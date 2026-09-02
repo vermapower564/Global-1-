@@ -49,6 +49,19 @@ export default function EmployeeProjectDetailPage() {
   const [updateError, setUpdateError] = useState("");
   const [updateSuccess, setUpdateSuccess] = useState("");
 
+  // Project-Scoped Comments State
+  const [comments, setComments] = useState<any[]>([]);
+  const [newComment, setNewComment] = useState("");
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+
+  // Team Leader Team Builder Modal State
+  const [isTeamBuilderOpen, setIsTeamBuilderOpen] = useState(false);
+  const [teamMembersList, setTeamMembersList] = useState<any[]>([]);
+  const [eligibleEmployees, setEligibleEmployees] = useState<any[]>([]);
+  const [teamStatusInfo, setTeamStatusInfo] = useState<any>(null);
+  const [teamBuilderLoading, setTeamBuilderLoading] = useState(false);
+  const [selectedUserToAdd, setSelectedUserToAdd] = useState("");
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -72,10 +85,19 @@ export default function EmployeeProjectDetailPage() {
 
         if (targetProj) {
           // Fetch tasks for this project
-          const tRes = await fetch(`/api/tasks?projectId=${targetProj.id}`);
+          const [tRes, cRes] = await Promise.all([
+            fetch(`/api/tasks?projectId=${targetProj.id}`),
+            fetch(`/api/projects/${encodeURIComponent(targetProj.id)}/comments`),
+          ]);
+
           const tJson = await tRes.json();
           if (tJson.success && Array.isArray(tJson.tasks)) {
             setTasks(tJson.tasks);
+          }
+
+          const cJson = await cRes.json();
+          if (cJson.success && Array.isArray(cJson.comments)) {
+            setComments(cJson.comments);
           }
         }
       }
@@ -86,11 +108,104 @@ export default function EmployeeProjectDetailPage() {
     }
   };
 
+  const loadTeamBuilderData = async () => {
+    if (!project?.id) return;
+    try {
+      setTeamBuilderLoading(true);
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/team`);
+      const json = await res.json();
+      if (json.success) {
+        setTeamMembersList(json.members || []);
+        setEligibleEmployees(json.eligibleEmployees || []);
+        setTeamStatusInfo({
+          required: json.requiredTeamSize,
+          current: json.currentTeamSize,
+          status: json.teamStatus,
+          label: json.teamStatusLabel,
+        });
+      }
+    } catch (err) {
+      console.warn("Failed to load team builder data:", err);
+    } finally {
+      setTeamBuilderLoading(false);
+    }
+  };
+
+  const handleAddTeamMember = async () => {
+    if (!selectedUserToAdd || !project?.id) return;
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/team`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: selectedUserToAdd }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setSelectedUserToAdd("");
+        loadTeamBuilderData();
+        loadData();
+      } else {
+        alert(json.error || "Failed to add member.");
+      }
+    } catch (err: any) {
+      alert("Error adding team member: " + err.message);
+    }
+  };
+
+  const handleRemoveTeamMember = async (userId: string) => {
+    if (!project?.id) return;
+    if (!confirm("Are you sure you want to remove this employee from the project team?")) return;
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/team?userId=${encodeURIComponent(userId)}`, {
+        method: "DELETE",
+      });
+      const json = await res.json();
+      if (json.success) {
+        loadTeamBuilderData();
+        loadData();
+      } else {
+        alert(json.error || "Failed to remove member.");
+      }
+    } catch (err: any) {
+      alert("Error removing team member: " + err.message);
+    }
+  };
+
+  const handlePostProjectComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newComment.trim() || !project?.id) return;
+    setCommentSubmitting(true);
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comment: newComment.trim() }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setNewComment("");
+        const cRes = await fetch(`/api/projects/${encodeURIComponent(project.id)}/comments`);
+        const cJson = await cRes.json();
+        if (cJson.success && Array.isArray(cJson.comments)) {
+          setComments(cJson.comments);
+        }
+      } else {
+        alert(json.error || "Failed to post comment.");
+      }
+    } catch (err: any) {
+      alert("Network error posting comment.");
+    } finally {
+      setCommentSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     loadData();
   }, [projectId]);
 
   const isTeamLeader = project?.isUserTeamLeader || project?.teamLeaderId === currentUser?.id || currentUser?.role === "SUPER_ADMIN" || currentUser?.role === "DIRECTOR";
+  const isPM = project?.projectManagerId === currentUser?.id || currentUser?.role === "PROJECT_MANAGER";
+  const canManageTeam = isTeamLeader || isPM || currentUser?.role === "SUPER_ADMIN" || currentUser?.role === "DIRECTOR";
 
   const openAssignModal = () => {
     setTaskTitle("");
@@ -273,14 +388,27 @@ export default function EmployeeProjectDetailPage() {
           <span className="text-xs text-slate-400 font-mono">/ Projects / {proj.projectTitle}</span>
         </div>
 
-        {isTeamLeader && (
-          <button
-            onClick={openAssignModal}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2 rounded-2xl shadow-md transition flex items-center gap-2 cursor-pointer"
-          >
-            <span>+ Assign Task to Member</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {canManageTeam && (
+            <button
+              onClick={() => {
+                loadTeamBuilderData();
+                setIsTeamBuilderOpen(true);
+              }}
+              className="bg-cyan-700 hover:bg-cyan-800 text-white font-extrabold text-xs px-4 py-2 rounded-2xl shadow-md transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>👑 Build Project Team</span>
+            </button>
+          )}
+          {isTeamLeader && (
+            <button
+              onClick={openAssignModal}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2 rounded-2xl shadow-md transition flex items-center gap-2 cursor-pointer"
+            >
+              <span>+ Assign Task to Member</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Project Overview Banner */}
@@ -590,6 +718,175 @@ export default function EmployeeProjectDetailPage() {
           </div>
         )}
       </div>
+
+      {/* PROJECT-SCOPED COMMENTS WORKSPACE */}
+      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+        <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+          <div>
+            <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+              💬 Project Collaboration & Discussion Workspace
+            </h3>
+            <p className="text-xs text-slate-500 font-medium">
+              Private collaboration area for <strong>{proj.projectTitle}</strong> team members, Team Leader, and Project Manager.
+            </p>
+          </div>
+          <span className="text-xs font-mono font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">
+            {comments.length} Comment(s)
+          </span>
+        </div>
+
+        {/* Comments Feed */}
+        <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+          {comments.length === 0 ? (
+            <div className="text-center py-8 bg-slate-50 rounded-2xl border border-slate-200/80 text-xs text-slate-400 font-semibold">
+              No project comments yet. Start the conversation with your project teammates!
+            </div>
+          ) : (
+            comments.map((c) => (
+              <div key={c.id} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-xs text-slate-900">{c.user?.name}</span>
+                    <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                      {c.user?.role}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    {c.createdAt ? new Date(c.createdAt).toLocaleString() : "Just now"}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-700 font-medium leading-relaxed pt-0.5">{c.comment}</p>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Post Comment Input Form */}
+        <form onSubmit={handlePostProjectComment} className="flex gap-2 pt-2">
+          <input
+            type="text"
+            required
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            placeholder={`Comment on ${proj.projectTitle} (visible to project teammates only)...`}
+            className="flex-1 rounded-xl border border-slate-300 px-4 py-2.5 text-xs text-slate-900 focus:border-blue-600 focus:outline-none font-medium"
+          />
+          <button
+            type="submit"
+            disabled={commentSubmitting}
+            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black text-xs px-5 py-2.5 rounded-xl shadow-sm transition cursor-pointer shrink-0"
+          >
+            {commentSubmitting ? "Posting..." : "Send Comment 🚀"}
+          </button>
+        </form>
+      </div>
+
+      {/* TEAM LEADER / PM: PROJECT TEAM BUILDER MODAL */}
+      {isTeamBuilderOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="relative w-full max-w-2xl bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+              <div>
+                <span className="text-[10px] font-bold text-cyan-600 uppercase tracking-wider">Project Team Builder</span>
+                <h3 className="text-lg font-black text-slate-900">👑 Build Project Team for {proj.projectTitle}</h3>
+                {teamStatusInfo && (
+                  <p className="text-xs text-slate-500 font-bold mt-1">
+                    Required: {teamStatusInfo.required} | Current: {teamStatusInfo.current} | Status:{" "}
+                    <span className={teamStatusInfo.status === "READY" ? "text-emerald-600" : "text-amber-600 font-black"}>
+                      {teamStatusInfo.label}
+                    </span>
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => setIsTeamBuilderOpen(false)}
+                className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Add Team Member Section */}
+            <div className="p-4 rounded-2xl bg-cyan-50/60 border border-cyan-200 space-y-2">
+              <label className="block text-xs font-bold text-cyan-950">Add Eligible Employee to Project Team:</label>
+              <div className="flex gap-2">
+                <select
+                  value={selectedUserToAdd}
+                  onChange={(e) => setSelectedUserToAdd(e.target.value)}
+                  className="flex-1 rounded-xl border border-cyan-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-900 focus:border-cyan-600 focus:outline-none"
+                >
+                  <option value="">-- Choose Employee based on Skills & Workload --</option>
+                  {eligibleEmployees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.employeeId}) • {emp.role} • {emp.skills || "Dev"} • Tasks: {emp.totalActiveTasks || 0}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleAddTeamMember}
+                  disabled={!selectedUserToAdd}
+                  className="bg-cyan-700 hover:bg-cyan-800 disabled:opacity-50 text-white font-extrabold text-xs px-4 py-2 rounded-xl transition cursor-pointer"
+                >
+                  + Add to Team
+                </button>
+              </div>
+            </div>
+
+            {/* Current Team Members Roster */}
+            <div className="space-y-3">
+              <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">Current Team Roster ({teamMembersList.length}):</h4>
+              {teamMembersList.length === 0 ? (
+                <div className="text-center py-6 bg-slate-50 rounded-2xl text-xs text-slate-400 font-semibold">
+                  No team members added yet. Select an employee above to build the project team.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden">
+                  {teamMembersList.map((member) => (
+                    <div key={member.id} className="p-3 bg-white flex items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-3">
+                        <div className="h-8 w-8 rounded-full bg-blue-100 text-blue-800 font-extrabold flex items-center justify-center text-xs">
+                          {member.name.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-bold text-slate-900">{member.name}</p>
+                          <p className="text-[10px] text-slate-500 font-mono">
+                            {member.employeeId} • {member.role} • {member.departmentName || "Engineering"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                          Active Tasks: {member.activeTasksOnProject || 0}
+                        </span>
+                        {canManageTeam && (
+                          <button
+                            onClick={() => handleRemoveTeamMember(member.id)}
+                            className="text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-lg transition"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 text-right">
+              <button
+                type="button"
+                onClick={() => setIsTeamBuilderOpen(false)}
+                className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl transition cursor-pointer"
+              >
+                Close Team Builder
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TEAM LEADER: CREATE & ASSIGN TASK MODAL */}
       {isAssignModalOpen && (

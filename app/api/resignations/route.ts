@@ -9,9 +9,8 @@ const MANAGEMENT_ROLES = ["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR", "HR", "PROJECT_
 
 // Helper to resolve reporting structure for a user
 async function resolveReportingHierarchy(userId: string, employeeId: string) {
-  // 1. Find user and direct manager
   const uRows = await queryDb<any[]>(
-    `SELECT u.id, u.employeeId, u.name, u.email, u.role, u.departmentId, u.managerId,
+    `SELECT u.id, u.employeeId, u.name, u.email, u.role, u.departmentId, u.managerId, u.isActive, u.isResigned,
             d.name AS departmentName,
             m.id AS manager_id, m.name AS manager_name, m.email AS manager_email, m.role AS manager_role
      FROM user u
@@ -22,7 +21,6 @@ async function resolveReportingHierarchy(userId: string, employeeId: string) {
   );
   const u = uRows && uRows.length > 0 ? uRows[0] : null;
 
-  // 2. Find assigned project, Team Leader, and Project Manager
   const pRows = await queryDb<any[]>(
     `SELECT p.id, p.projectTitle, p.teamLeaderId, p.projectManagerId,
             tl.name AS tl_name, tl.email AS tl_email, tl.employeeId AS tl_employeeId,
@@ -84,7 +82,7 @@ export async function GET(request: NextRequest) {
     let sql = `
       SELECT 
         r.*,
-        u.name AS user_name, u.email AS user_email, u.employeeId AS user_employeeId, u.role AS user_role, u.salary AS user_salary, u.createdAt AS user_joinedAt,
+        u.name AS user_name, u.email AS user_email, u.employeeId AS user_employeeId, u.role AS user_role, u.salary AS user_salary, u.createdAt AS user_joinedAt, u.isActive AS user_isActive, u.isResigned AS user_isResigned,
         d.name AS department_name
       FROM resignation r
       LEFT JOIN user u ON (r.userId = u.id OR r.employeeId = u.employeeId)
@@ -97,7 +95,6 @@ export async function GET(request: NextRequest) {
 
     if (!isHrAdmin) {
       if (isTL) {
-        // Team Leader sees own resignation + resignations of team members in their led projects
         sql += ` AND (
           r.userId = ? OR r.employeeId = ?
           OR r.userId IN (
@@ -107,16 +104,15 @@ export async function GET(request: NextRequest) {
         )`;
         params.push(authUser.id, authEmployeeId, authUser.id, authUser.id);
       } else if (isPM) {
-        // Project Manager sees own resignation + resignations of team members in their managed projects
         sql += ` AND (
           r.userId = ? OR r.employeeId = ?
           OR r.userId IN (
             SELECT B FROM _assignedstaffprojects WHERE A IN (SELECT id FROM project WHERE projectManagerId = ?)
           )
+          OR r.userId IN (SELECT id FROM user WHERE managerId = ?)
         )`;
-        params.push(authUser.id, authEmployeeId, authUser.id);
+        params.push(authUser.id, authEmployeeId, authUser.id, authUser.id);
       } else {
-        // Employee strictly sees only their own resignation
         sql += ` AND (r.userId = ? OR r.employeeId = ?)`;
         params.push(authUser.id, authEmployeeId);
       }
@@ -144,12 +140,11 @@ export async function GET(request: NextRequest) {
         }
       } catch {}
 
-      // Calculate Visual Workflow Stage
       let currentStage = "SUBMITTED";
-      let stageDescription = "Submitted to Team Leader for Review";
+      let stageDescription = "Submitted to Management for Review";
       if (r.status === "APPROVED") {
         currentStage = "APPROVED";
-        stageDescription = "Resignation Approved by HR";
+        stageDescription = "Resignation Approved — Employee Account Deactivated";
       } else if (r.status === "COMPLETED") {
         currentStage = "COMPLETED";
         stageDescription = "Exit Clearance & Formal Handover Completed";
@@ -170,6 +165,8 @@ export async function GET(request: NextRequest) {
         stageDescription = "Under Team Leader Evaluation";
       }
 
+      const accountStatus = (r.user_isActive === 0 || r.user_isActive === false || r.status === "APPROVED" || r.status === "COMPLETED") ? "DEACTIVATED" : "ACTIVE";
+
       return {
         id: r.id,
         resignationId: r.resignationId || `RES-${r.id.slice(0, 6)}`,
@@ -184,17 +181,24 @@ export async function GET(request: NextRequest) {
         lastWorkingDay: r.lastWorkingDay,
         lastWorkingDayFormatted: r.lastWorkingDayFormatted,
         reason: r.reason,
+        letterUrl: r.letterUrl || null,
         status: r.status || "SUBMITTED",
         currentStage,
         stageDescription,
+        approvedByUserId: r.approvedByUserId || null,
+        approvedByName: r.approvedByName || null,
+        approverRole: r.approverRole || null,
+        approvedAt: r.approvedAt || null,
+        rejectedByUserId: r.rejectedByUserId || null,
+        rejectedByName: r.rejectedByName || null,
+        rejectedAt: r.rejectedAt || null,
+        accountStatus,
         hrRemarks: r.hrRemarks || null,
         managerRemarks: typeof r.managerRemarks === "string" && !r.managerRemarks.startsWith("{") ? r.managerRemarks : (trackingMeta.summaryRemarks || null),
         trackingHistory: trackingMeta.history || [],
         teamLeader: trackingMeta.teamLeader || null,
         projectManager: trackingMeta.projectManager || null,
         submittedAt: r.submittedAt || r.createdAt,
-        approvedAt: r.approvedAt,
-        rejectedAt: r.rejectedAt,
       };
     });
 
@@ -219,7 +223,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST: Employee Submits Resignation along the Reporting Hierarchy
+// POST: Employee Submits Resignation
 export async function POST(request: NextRequest) {
   try {
     const authResult = await authenticateRequest(request);
@@ -236,19 +240,28 @@ export async function POST(request: NextRequest) {
       lastWorkingDay,
       noticePeriodDays = 15,
       additionalComments,
-      confirmationChecked,
+      letterUrl,
+      attachmentUrl,
+      documentUrl,
     } = body;
 
     if (!reason || !reason.trim()) {
       return NextResponse.json({ success: false, error: "Resignation reason is required." }, { status: 400 });
     }
 
-    // Resolve user's actual database profile & dynamic reporting hierarchy
     const authEmployeeId = (authUser as any).employeeId || authUser.id;
     const hierarchy = await resolveReportingHierarchy(authUser.id, authEmployeeId);
     const dbUser = hierarchy.user || authUser;
 
-    // Check for existing active/pending resignation
+    // 1. Check if employee is already deactivated
+    if (dbUser.isActive === 0 || dbUser.isActive === false || dbUser.isResigned === 1) {
+      return NextResponse.json(
+        { success: false, error: "Cannot submit a resignation request for an inactive or already resigned employee account." },
+        { status: 400 }
+      );
+    }
+
+    // 2. Check for active PENDING or APPROVED resignation (Duplicate protection)
     const existing = await queryDb<any[]>(
       `SELECT id, resignationId, status FROM resignation WHERE (userId = ? OR employeeId = ?) AND status IN ('SUBMITTED', 'UNDER_REVIEW', 'APPROVED') LIMIT 1`,
       [dbUser.id, dbUser.employeeId]
@@ -264,7 +277,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Compute Last Working Day
+    const finalLetterUrl = letterUrl || attachmentUrl || documentUrl || null;
     const rDate = resignationDate ? new Date(resignationDate) : new Date();
     const lDate = lastWorkingDay || proposedLastWorkingDate
       ? new Date(lastWorkingDay || proposedLastWorkingDate)
@@ -294,18 +307,20 @@ export async function POST(request: NextRequest) {
       ],
     };
 
+    const newDbId = `res_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+
     await queryDb(
       `INSERT INTO resignation (
         id, resignationId, userId, employeeId, employeeName, email,
         department, role, resignationDate, noticePeriodDays, lastWorkingDay, lastWorkingDayFormatted,
-        reason, status, managerRemarks, hrRemarks, submittedAt, createdAt, updatedAt
+        reason, status, managerRemarks, hrRemarks, letterUrl, submittedAt, createdAt, updatedAt
       ) VALUES (
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
-        ?, 'SUBMITTED', ?, ?, NOW(3), NOW(3), NOW(3)
+        ?, 'SUBMITTED', ?, ?, ?, NOW(3), NOW(3), NOW(3)
       )`,
       [
-        `res_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+        newDbId,
         resignationId,
         dbUser.id,
         dbUser.employeeId,
@@ -320,31 +335,32 @@ export async function POST(request: NextRequest) {
         reason.trim(),
         JSON.stringify(initialTracking),
         additionalComments ? additionalComments.trim() : null,
+        finalLetterUrl,
       ]
     );
 
     clearQueryCache("resignation");
 
-    // Send Notification to Team Leader / Reporting Manager
-    if (hierarchy.teamLeader?.id) {
+    // Notify approver
+    const approverUserId = hierarchy.teamLeader?.id || hierarchy.projectManager?.id;
+    if (approverUserId) {
       try {
         const notifId = `NOTIF-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`.toUpperCase();
         await queryDb(
           `INSERT INTO notification (id, userId, title, message, type, isRead, linkUrl, createdAt)
-           VALUES (?, ?, ?, ?, 'WARNING', 0, '/team-leader', NOW(3))`,
+           VALUES (?, ?, ?, ?, 'WARNING', 0, '/resignation', NOW(3))`,
           [
             notifId,
-            hierarchy.teamLeader.id,
+            approverUserId,
             `📄 Resignation Submitted: ${dbUser.name}`,
-            `${dbUser.name} (${dbUser.employeeId}) has submitted a resignation request with proposed LWD: ${lwdFormatted}. Please review and forward to senior authority.`,
+            `${dbUser.name} submitted a resignation request for ${lwdFormatted}.`,
           ]
         );
       } catch (err) {
-        console.warn("Failed to notify Team Leader of resignation:", err);
+        console.warn("Failed to notify approver of resignation:", err);
       }
     }
 
-    // Record immutable audit log
     await logAuditEvent(
       dbUser.id,
       "RESIGNATION_SUBMITTED",
@@ -355,16 +371,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: true,
-        message: "✓ Resignation submitted successfully to your Team Leader for review.",
+        message: "✓ Resignation submitted successfully.",
         resignationId,
         data: {
+          id: newDbId,
           resignationId,
           employeeId: dbUser.employeeId,
           employeeName: dbUser.name,
           lastWorkingDay: lDate,
           lastWorkingDayFormatted: lwdFormatted,
           status: "SUBMITTED",
-          teamLeader: hierarchy.teamLeader,
+          letterUrl: finalLetterUrl,
         },
       },
       { status: 201 }
@@ -375,7 +392,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PATCH: Hierarchical Review & Forwarding (Employee -> Team Leader -> Senior Authority -> HR)
+// PATCH: Review, Approve, Reject, or Withdraw Resignation
 export async function PATCH(request: NextRequest) {
   try {
     const authResult = await authenticateRequest(request);
@@ -390,19 +407,20 @@ export async function PATCH(request: NextRequest) {
     const isTL = roleUpper === "TEAM_LEADER";
 
     const body = await request.json().catch(() => ({}));
-    const { id, action, comments, recommendation, proposedLastWorkingDate } = body;
+    const { id, action, comments, remarks, adminRemarks, hrRemarks } = body;
 
-    if (!id) {
+    const resId = id || body.resignationId;
+    if (!resId) {
       return NextResponse.json({ success: false, error: "Resignation ID is required." }, { status: 400 });
     }
 
     const existingRows = await queryDb<any[]>(
-      `SELECT r.*, u.name AS user_name, u.email AS user_email, u.id AS user_id_real
+      `SELECT r.*, u.name AS user_name, u.email AS user_email, u.id AS user_id_real, u.employeeId AS user_emp_id
        FROM resignation r
        LEFT JOIN user u ON (r.userId = u.id OR r.employeeId = u.employeeId)
        WHERE r.id = ? OR r.resignationId = ?
        LIMIT 1`,
-      [id, id]
+      [resId, resId]
     );
 
     if (!existingRows || existingRows.length === 0) {
@@ -413,255 +431,260 @@ export async function PATCH(request: NextRequest) {
     const authEmpId = (authUser as any).employeeId || authUser.id;
     const isRequester = r.userId === authUser.id || r.employeeId === authEmpId || r.user_id_real === authUser.id;
 
-    let tracking: any = { history: [] };
-    try {
-      if (r.managerRemarks && (r.managerRemarks.startsWith("{") || r.managerRemarks.startsWith("["))) {
-        tracking = JSON.parse(r.managerRemarks);
+    // Determine normalized target action
+    let targetAction = (action || body.status || "").toUpperCase();
+
+    // 1. Self-Approval Protection
+    if (["APPROVE", "APPROVED", "HR_APPROVE", "REJECT", "REJECTED"].includes(targetAction)) {
+      if (isRequester) {
+        return NextResponse.json(
+          { success: false, error: "Forbidden: You cannot approve or review your own resignation request." },
+          { status: 403 }
+        );
       }
-    } catch {}
+    }
 
-    let nextStatus = r.status;
-    let nextStage = tracking.stage || "UNDER_TEAM_LEADER_REVIEW";
-    let logAction = "RESIGNATION_UPDATED";
-    let logDetails = "";
+    // 2. Scope-based Authorization Verification
+    if (["APPROVE", "APPROVED", "HR_APPROVE", "REJECT", "REJECTED", "TL_REVIEW", "TL_FORWARD", "PM_FORWARD"].includes(targetAction)) {
+      if (!isHrAdmin) {
+        let isAuthorizedManager = false;
 
-    // 1. Employee Action: Withdraw Resignation
-    if (action === "WITHDRAW") {
+        if (isTL) {
+          const scopeCheck = await queryDb<any[]>(
+            `SELECT B FROM _assignedstaffprojects WHERE A IN (SELECT id FROM project WHERE teamLeaderId = ?) AND B = ?
+             UNION
+             SELECT id FROM user WHERE managerId = ? AND id = ? LIMIT 1`,
+            [authUser.id, r.userId, authUser.id, r.userId]
+          );
+          if (scopeCheck && scopeCheck.length > 0) isAuthorizedManager = true;
+        } else if (isPM) {
+          const scopeCheck = await queryDb<any[]>(
+            `SELECT B FROM _assignedstaffprojects WHERE A IN (SELECT id FROM project WHERE projectManagerId = ?) AND B = ?
+             UNION
+             SELECT id FROM user WHERE managerId = ? AND id = ? LIMIT 1`,
+            [authUser.id, r.userId, authUser.id, r.userId]
+          );
+          if (scopeCheck && scopeCheck.length > 0) isAuthorizedManager = true;
+        }
+
+        if (!isAuthorizedManager) {
+          return NextResponse.json(
+            { success: false, error: "Forbidden: You do not have management authority over this employee's resignation." },
+            { status: 403 }
+          );
+        }
+      }
+    }
+
+    const commentText = comments || remarks || adminRemarks || hrRemarks || "";
+
+    // 3. Handle Actions
+    if (targetAction === "WITHDRAW" || targetAction === "WITHDRAWN") {
       if (!isRequester && !isHrAdmin) {
         return NextResponse.json({ success: false, error: "Forbidden: You can only withdraw your own resignation." }, { status: 403 });
       }
       if (r.status === "APPROVED" || r.status === "COMPLETED") {
-        return NextResponse.json({ success: false, error: "Cannot withdraw a resignation that has already been approved or completed." }, { status: 400 });
+        return NextResponse.json({ success: false, error: "Cannot withdraw a resignation that has already been approved." }, { status: 400 });
       }
 
-      nextStatus = "WITHDRAWN";
-      nextStage = "WITHDRAWN";
-      logAction = "RESIGNATION_WITHDRAWN";
-      logDetails = `${(authUser as any).name || authUser.email} withdrew resignation ${r.resignationId}.`;
+      await queryDb(
+        `UPDATE resignation SET status = 'WITHDRAWN', updatedAt = NOW(3) WHERE (id = ? OR resignationId = ?) AND status IN ('SUBMITTED', 'UNDER_REVIEW')`,
+        [resId, resId]
+      );
 
-      tracking.history = tracking.history || [];
-      tracking.history.push({
-        action: "WITHDRAWN",
-        performedBy: (authUser as any).name || authUser.email,
-        role: authUser.role,
-        timestamp: new Date().toISOString(),
-        notes: comments || "Withdrawn by employee",
-      });
+      clearQueryCache("resignation");
+      await logAuditEvent(authUser.id, "RESIGNATION_WITHDRAWN", `Employee ${r.employeeName} withdrew resignation ${r.resignationId}.`);
+
+      return NextResponse.json({ success: true, message: "✓ Resignation request withdrawn.", status: "WITHDRAWN" });
     }
 
-    // 2. Team Leader Action: Review and Forward to Senior Authority / Project Manager
-    else if (action === "TL_REVIEW" || action === "TL_FORWARD") {
-      if (!isTL && !isPM && !isHrAdmin) {
-        return NextResponse.json({ success: false, error: "Forbidden: Team Leader or Senior Authority authorization required." }, { status: 403 });
+    // APPROVE
+    if (["APPROVE", "APPROVED", "HR_APPROVE", "COMPLETED"].includes(targetAction)) {
+      // Race condition check: Ensure record is currently PENDING/SUBMITTED/UNDER_REVIEW
+      const updateResult = await queryDb<any>(
+        `UPDATE resignation SET
+          status = 'APPROVED',
+          approvedByUserId = ?,
+          approvedByName = ?,
+          approverRole = ?,
+          approvedAt = NOW(3),
+          hrRemarks = ?,
+          updatedAt = NOW(3)
+         WHERE (id = ? OR resignationId = ?) AND status IN ('SUBMITTED', 'UNDER_REVIEW')`,
+        [
+          authUser.id,
+          (authUser as any).name || authUser.email,
+          authUser.role,
+          commentText || "Resignation Approved",
+          resId,
+          resId,
+        ]
+      );
+
+      if (updateResult.affectedRows === 0) {
+        return NextResponse.json(
+          { success: false, error: "This resignation request has already been processed or status changed." },
+          { status: 400 }
+        );
       }
 
-      nextStatus = "UNDER_REVIEW";
-      nextStage = "FORWARDED_TO_SENIOR";
-      logAction = "RESIGNATION_FORWARDED_BY_TL";
-      logDetails = `Team Leader ${(authUser as any).name || authUser.email} reviewed resignation ${r.resignationId} with recommendation: "${recommendation || "RECOMMENDED_APPROVAL"}". Forwarded to Senior Authority.`;
+      // Deactivate Employee Account
+      const targetUserId = r.userId || r.user_id_real;
+      if (targetUserId) {
+        await queryDb(
+          `UPDATE user SET isActive = 0, isResigned = 1, updatedAt = NOW(3) WHERE id = ?`,
+          [targetUserId]
+        );
+      }
 
-      tracking.history = tracking.history || [];
-      tracking.history.push({
-        action: "TL_REVIEWED",
-        performedBy: (authUser as any).name || authUser.email,
-        role: "TEAM_LEADER",
-        recommendation: recommendation || "RECOMMENDED_APPROVAL",
-        timestamp: new Date().toISOString(),
-        notes: comments || "Reviewed and recommended for next approval tier.",
-      });
-      tracking.stage = nextStage;
-      tracking.tlRecommendation = recommendation || "RECOMMENDED_APPROVAL";
-      tracking.tlComments = comments || null;
+      clearQueryCache("resignation");
+      clearQueryCache("user");
 
-      // Notify Project Manager / Senior Admin
-      if (tracking.projectManager?.id) {
+      // Notify Employee
+      if (targetUserId) {
         try {
           const notifId = `NOTIF-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`.toUpperCase();
           await queryDb(
             `INSERT INTO notification (id, userId, title, message, type, isRead, linkUrl, createdAt)
-             VALUES (?, ?, ?, ?, 'WARNING', 0, '/project-manager', NOW(3))`,
+             VALUES (?, ?, ?, ?, 'SUCCESS', 0, '/resignation', NOW(3))`,
             [
               notifId,
-              tracking.projectManager.id,
-              `📄 Resignation Forwarded: ${r.employeeName}`,
-              `Team Leader has reviewed and forwarded ${r.employeeName}'s resignation to you for review.`,
+              targetUserId,
+              "Your resignation request has been approved.",
+              `Your resignation request (${r.resignationId}) has been approved by ${(authUser as any).name || authUser.role}. Your account has been deactivated.`,
             ]
           );
         } catch {}
       }
-    }
 
-    // 3. Project Manager / Senior Authority Action: Forward to HR
-    else if (action === "SENIOR_FORWARD" || action === "PM_FORWARD") {
-      if (!isPM && !isHrAdmin) {
-        return NextResponse.json({ success: false, error: "Forbidden: Project Manager or Senior Authority authorization required." }, { status: 403 });
+      await logAuditEvent(
+        authUser.id,
+        "RESIGNATION_APPROVED",
+        `Resignation ${r.resignationId} for ${r.employeeName} APPROVED by ${(authUser as any).name} (${authUser.role}).`
+      );
+
+      await logAuditEvent(
+        authUser.id,
+        "EMPLOYEE_DEACTIVATED",
+        `Employee account ${r.employeeName} (${r.employeeId}) DEACTIVATED following resignation approval.`
+      );
+
+      // Dispatch Resignation Approval Email to Employee's Registered DB Email
+      const employeeEmail = (r.email || r.user_email || "").trim();
+      const approverName = (authUser as any).name || authUser.email;
+      const approverRole = authUser.role;
+      const approvalDateStr = new Date().toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+      const rDateStr = r.resignationDate ? new Date(r.resignationDate).toLocaleDateString("en-IN") : new Date().toLocaleDateString("en-IN");
+
+      if (employeeEmail && employeeEmail.includes("@")) {
+        try {
+          const { dispatchEmail } = await import("@/lib/email/send");
+          const { renderResignationApprovedEmail } = await import("@/lib/email/templates");
+          const emailData = renderResignationApprovedEmail({
+            name: r.employeeName || r.user_name || "Employee",
+            employeeId: r.employeeId || r.user_employeeId || "EMP",
+            email: employeeEmail,
+            resignationDate: rDateStr,
+            reason: r.reason || "Resignation",
+            approvedByName: approverName,
+            approverRole: approverRole,
+            approvalDate: approvalDateStr,
+          });
+
+          const emailResult = await dispatchEmail({
+            to: employeeEmail,
+            subject: emailData.subject,
+            html: emailData.html,
+            text: emailData.text,
+            emailType: "RESIGNATION_APPROVED",
+          });
+
+          if (!emailResult.success) {
+            console.warn(`⚠️ Warning: Resignation approved in DB but SMTP email to ${employeeEmail} failed: ${emailResult.error}`);
+          }
+        } catch (emailErr: any) {
+          console.error(`❌ SMTP Resignation Approval Email Error for ${employeeEmail}:`, emailErr.message || emailErr);
+          // Do NOT rollback DB transaction or fail approval response because SMTP delivery failed
+        }
+      } else {
+        console.warn(`⚠️ Warning: Resignation approved in DB but no valid registered email found for user ID ${targetUserId}.`);
       }
 
-      nextStatus = "UNDER_REVIEW";
-      nextStage = "FORWARDED_TO_HR";
-      logAction = "RESIGNATION_FORWARDED_TO_HR";
-      logDetails = `Project Manager ${(authUser as any).name || authUser.email} forwarded resignation ${r.resignationId} to Human Resources for final processing.`;
-
-      tracking.history = tracking.history || [];
-      tracking.history.push({
-        action: "PM_REVIEWED",
-        performedBy: (authUser as any).name || authUser.email,
-        role: "PROJECT_MANAGER",
-        timestamp: new Date().toISOString(),
-        notes: comments || "Reviewed and forwarded to HR for formal exit processing.",
+      return NextResponse.json({
+        success: true,
+        message: `✓ Resignation approved. Account for ${r.employeeName} has been deactivated.`,
+        status: "APPROVED",
+        approvedBy: (authUser as any).name || authUser.email,
+        approvedAt: new Date().toISOString(),
       });
-      tracking.stage = nextStage;
+    }
 
-      // Notify HR
-      try {
-        const hrUsers = await queryDb<any[]>(`SELECT id FROM user WHERE role IN ('HR', 'SUPER_ADMIN', 'ADMIN_HR') AND isActive = 1`);
-        for (const hr of hrUsers || []) {
+    // REJECT
+    if (["REJECT", "REJECTED"].includes(targetAction)) {
+      const updateResult = await queryDb<any>(
+        `UPDATE resignation SET
+          status = 'REJECTED',
+          rejectedByUserId = ?,
+          rejectedByName = ?,
+          rejectedAt = NOW(3),
+          hrRemarks = ?,
+          updatedAt = NOW(3)
+         WHERE (id = ? OR resignationId = ?) AND status IN ('SUBMITTED', 'UNDER_REVIEW')`,
+        [
+          authUser.id,
+          (authUser as any).name || authUser.email,
+          commentText || "Resignation Rejected",
+          resId,
+          resId,
+        ]
+      );
+
+      if (updateResult.affectedRows === 0) {
+        return NextResponse.json(
+          { success: false, error: "This resignation request has already been processed or status changed." },
+          { status: 400 }
+        );
+      }
+
+      clearQueryCache("resignation");
+
+      // Notify Employee
+      const targetUserId = r.userId || r.user_id_real;
+      if (targetUserId) {
+        try {
           const notifId = `NOTIF-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`.toUpperCase();
           await queryDb(
             `INSERT INTO notification (id, userId, title, message, type, isRead, linkUrl, createdAt)
-             VALUES (?, ?, ?, ?, 'INFO', 0, '/hr/resignation', NOW(3))`,
+             VALUES (?, ?, ?, ?, 'DANGER', 0, '/resignation', NOW(3))`,
             [
               notifId,
-              hr.id,
-              `📋 Resignation Ready for HR: ${r.employeeName}`,
-              `${r.employeeName}'s resignation has completed Team Leader & PM review and is awaiting final HR processing.`,
+              targetUserId,
+              "Your resignation request has been rejected.",
+              `Your resignation request (${r.resignationId}) was rejected by ${(authUser as any).name || authUser.role}. Remarks: ${commentText || "None"}`,
             ]
           );
-        }
-      } catch {}
-    }
-
-    // 4. HR / Super Admin Action: Final Approval, Completion, or Rejection
-    else if (action === "HR_APPROVE" || action === "APPROVE" || body.status === "APPROVED") {
-      if (!isHrAdmin) {
-        return NextResponse.json({ success: false, error: "Forbidden: Only Human Resources and Super Admins can formally approve resignations." }, { status: 403 });
+        } catch {}
       }
 
-      nextStatus = "APPROVED";
-      nextStage = "APPROVED";
-      logAction = "RESIGNATION_APPROVED";
-      logDetails = `Human Resources ${(authUser as any).name || authUser.email} formally APPROVED resignation ${r.resignationId}.`;
+      await logAuditEvent(
+        authUser.id,
+        "RESIGNATION_REJECTED",
+        `Resignation ${r.resignationId} for ${r.employeeName} REJECTED by ${(authUser as any).name} (${authUser.role}).`
+      );
 
-      tracking.history = tracking.history || [];
-      tracking.history.push({
-        action: "HR_APPROVED",
-        performedBy: (authUser as any).name || authUser.email,
-        role: authUser.role,
-        timestamp: new Date().toISOString(),
-        notes: comments || "Formally approved by Human Resources.",
+      return NextResponse.json({
+        success: true,
+        message: `✓ Resignation request rejected.`,
+        status: "REJECTED",
       });
-      tracking.stage = nextStage;
-
-      // Update user isResigned in DB
-      if (r.userId) {
-        await queryDb(`UPDATE user SET isResigned = 1 WHERE id = ?`, [r.userId]);
-      }
     }
 
-    else if (action === "HR_COMPLETE" || action === "COMPLETE" || body.status === "COMPLETED") {
-      if (!isHrAdmin) {
-        return NextResponse.json({ success: false, error: "Forbidden: Only Human Resources and Super Admins can complete employee exit clearance." }, { status: 403 });
-      }
-
-      nextStatus = "COMPLETED";
-      nextStage = "COMPLETED";
-      logAction = "RESIGNATION_COMPLETED";
-      logDetails = `Human Resources completed final exit clearance and relieved employee ${r.employeeName} (${r.employeeId}).`;
-
-      tracking.history = tracking.history || [];
-      tracking.history.push({
-        action: "HR_COMPLETED",
-        performedBy: (authUser as any).name || authUser.email,
-        role: authUser.role,
-        timestamp: new Date().toISOString(),
-        notes: comments || "Exit clearance complete. Employee relieved.",
-      });
-      tracking.stage = nextStage;
-
-      // Deactivate user account
-      if (r.userId) {
-        await queryDb(`UPDATE user SET isResigned = 1, isActive = 0 WHERE id = ?`, [r.userId]);
-      }
-    }
-
-    else if (action === "REJECT" || body.status === "REJECTED") {
-      if (!isHrAdmin && !isPM && !isTL) {
-        return NextResponse.json({ success: false, error: "Forbidden: Management authorization required." }, { status: 403 });
-      }
-
-      nextStatus = "REJECTED";
-      nextStage = "REJECTED";
-      logAction = "RESIGNATION_REJECTED";
-      logDetails = `Resignation ${r.resignationId} was rejected by ${(authUser as any).name || authUser.email}. Remarks: ${comments || "None"}`;
-
-      tracking.history = tracking.history || [];
-      tracking.history.push({
-        action: "REJECTED",
-        performedBy: (authUser as any).name || authUser.email,
-        role: authUser.role,
-        timestamp: new Date().toISOString(),
-        notes: comments || "Resignation rejected.",
-      });
-      tracking.stage = nextStage;
-    } else {
-      return NextResponse.json({ success: false, error: `Invalid action "${action}".` }, { status: 400 });
-    }
-
-    const hrRemarksText = comments || r.hrRemarks || null;
-
-    await queryDb(
-      `UPDATE resignation SET
-        status = ?,
-        managerRemarks = ?,
-        hrRemarks = ?,
-        approvedAt = ?,
-        rejectedAt = ?,
-        updatedAt = NOW(3)
-       WHERE id = ? OR resignationId = ?`,
-      [
-        nextStatus,
-        JSON.stringify(tracking),
-        hrRemarksText,
-        nextStatus === "APPROVED" || nextStatus === "COMPLETED" ? new Date() : r.approvedAt,
-        nextStatus === "REJECTED" ? new Date() : r.rejectedAt,
-        id,
-        id,
-      ]
-    );
-
-    clearQueryCache("resignation");
-
-    // Notify employee of the status update
-    if (r.userId) {
-      try {
-        const notifId = `NOTIF-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`.toUpperCase();
-        await queryDb(
-          `INSERT INTO notification (id, userId, title, message, type, isRead, linkUrl, createdAt)
-           VALUES (?, ?, ?, ?, ?, 0, '/resignation', NOW(3))`,
-          [
-            notifId,
-            r.userId,
-            `Resignation Update: ${nextStatus}`,
-            `Your resignation request (${r.resignationId}) status has been updated to ${nextStatus} (${nextStage.replace(/_/g, " ")}).`,
-            nextStatus === "APPROVED" || nextStatus === "COMPLETED" ? "SUCCESS" : nextStatus === "REJECTED" ? "DANGER" : "INFO",
-          ]
-        );
-      } catch {}
-    }
-
-    await logAuditEvent(
-      authUser.id,
-      logAction,
-      logDetails,
-      request.headers.get("x-forwarded-for") || "127.0.0.1"
-    );
-
-    return NextResponse.json({
-      success: true,
-      message: `✓ Resignation successfully transitioned to ${nextStatus} (${nextStage.replace(/_/g, " ")})!`,
-      status: nextStatus,
-      currentStage: nextStage,
-    });
+    return NextResponse.json({ success: false, error: `Invalid action "${targetAction}".` }, { status: 400 });
   } catch (error: any) {
     console.error("PATCH /api/resignations error:", error);
     return NextResponse.json({ success: false, error: error.message || "Failed to process resignation." }, { status: 500 });

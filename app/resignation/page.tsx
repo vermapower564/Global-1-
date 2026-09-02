@@ -17,31 +17,28 @@ interface ResignationItem {
   lastWorkingDay: string;
   lastWorkingDayFormatted: string;
   reason: string;
+  letterUrl?: string | null;
   status: string;
   currentStage: string;
   stageDescription: string;
-  hrRemarks?: string;
-  managerRemarks?: string;
-  trackingHistory?: Array<{
-    action: string;
-    performedBy: string;
-    role: string;
-    timestamp: string;
-    notes?: string;
-    recommendation?: string;
-  }>;
-  teamLeader?: { id: string; name: string; email: string; employeeId: string };
-  projectManager?: { id: string; name: string; email: string; employeeId: string };
+  approvedByUserId?: string | null;
+  approvedByName?: string | null;
+  approverRole?: string | null;
+  approvedAt?: string | null;
+  rejectedByUserId?: string | null;
+  rejectedByName?: string | null;
+  rejectedAt?: string | null;
+  accountStatus?: string;
+  hrRemarks?: string | null;
+  managerRemarks?: string | null;
   submittedAt: string;
-  approvedAt?: string;
-  rejectedAt?: string;
 }
 
 export default function ResignationPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [resignations, setResignations] = useState<ResignationItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"apply" | "status" | "team">("status");
+  const [activeTab, setActiveTab] = useState<"apply" | "status" | "history">("status");
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -54,11 +51,13 @@ export default function ResignationPage() {
   const [additionalComments, setAdditionalComments] = useState("");
   const [confirmationChecked, setConfirmationChecked] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [letterFile, setLetterFile] = useState<File | null>(null);
+  const [letterUrl, setLetterUrl] = useState<string | null>(null);
+  const [isUploadingLetter, setIsUploadingLetter] = useState(false);
 
   // Management Review Modal State
-  const [reviewingResignation, setReviewingResignation] = useState<ResignationItem | null>(null);
-  const [reviewAction, setReviewAction] = useState<string>("TL_FORWARD");
-  const [reviewRecommendation, setReviewRecommendation] = useState<string>("RECOMMENDED_APPROVAL");
+  const [selectedResignation, setSelectedResignation] = useState<ResignationItem | null>(null);
+  const [reviewAction, setReviewAction] = useState<"APPROVED" | "REJECTED">("APPROVED");
   const [reviewComments, setReviewComments] = useState<string>("");
   const [isReviewSubmitting, setIsReviewSubmitting] = useState(false);
 
@@ -109,10 +108,41 @@ export default function ResignationPage() {
   const isHR = ["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR", "HR"].includes(roleUpper);
   const isManager = isTeamLeader || isPM || isHR;
 
-  // Active resignation for the logged-in employee
+  // Active resignation for logged-in employee
   const myResignation = resignations.find(
     (r) => r.userId === currentUser?.id || r.employeeId === currentUser?.employeeId
   );
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLetterFile(file);
+    setIsUploadingLetter(true);
+    setErrorMsg(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("category", "documents");
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || "Failed to upload document.");
+      }
+
+      setLetterUrl(json.url || json.secure_url || json.fileUrl);
+      setToastMsg("✓ Resignation document uploaded successfully.");
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to upload resignation letter.");
+    } finally {
+      setIsUploadingLetter(false);
+    }
+  };
 
   const handleSubmitResignation = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,7 +166,7 @@ export default function ResignationPage() {
           proposedLastWorkingDate: calculatedLwdIso,
           reason: finalReason,
           additionalComments,
-          confirmationChecked,
+          letterUrl,
         }),
       });
 
@@ -149,623 +179,467 @@ export default function ResignationPage() {
       loadData();
       setActiveTab("status");
     } catch (err: any) {
-      setErrorMsg(err.message || "Failed to submit resignation.");
+      setErrorMsg(err.message || "Error submitting resignation.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleWithdraw = async (resignationId: string) => {
-    if (!confirm("Are you sure you want to withdraw your resignation request?")) return;
-    try {
-      const res = await fetch("/api/resignations", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: resignationId,
-          action: "WITHDRAW",
-          comments: "Resignation withdrawn by employee.",
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to withdraw resignation.");
-      }
-      setToastMsg("✓ Resignation successfully withdrawn.");
-      loadData();
-    } catch (err: any) {
-      alert(err.message || "Failed to withdraw resignation.");
-    }
-  };
-
-  const handleProcessReview = async () => {
-    if (!reviewingResignation) return;
+  const handleReviewAction = async (status: "APPROVED" | "REJECTED") => {
+    if (!selectedResignation) return;
     setIsReviewSubmitting(true);
+    setErrorMsg(null);
+    setToastMsg(null);
+
     try {
-      const res = await fetch("/api/resignations", {
+      const res = await fetch(`/api/resignations/${selectedResignation.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: reviewingResignation.id || reviewingResignation.resignationId,
-          action: reviewAction,
-          recommendation: reviewRecommendation,
+          status,
           comments: reviewComments,
         }),
       });
+
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to process resignation.");
+        throw new Error(data.error || `Failed to ${status.toLowerCase()} resignation.`);
       }
-      setToastMsg(`✓ ${data.message}`);
-      setReviewingResignation(null);
+
+      setToastMsg(`✓ Resignation request marked as ${status}!`);
+      setSelectedResignation(null);
       setReviewComments("");
       loadData();
     } catch (err: any) {
-      alert(err.message || "Failed to process review.");
+      setErrorMsg(err.message || "Action failed.");
     } finally {
       setIsReviewSubmitting(false);
     }
   };
 
-  const getStageIndex = (stage: string) => {
-    switch (stage) {
-      case "SUBMITTED":
-        return 1;
-      case "UNDER_TEAM_LEADER_REVIEW":
-        return 1;
-      case "FORWARDED_TO_SENIOR":
-      case "UNDER_SENIOR_REVIEW":
-        return 2;
-      case "FORWARDED_TO_HR":
-      case "UNDER_HR_PROCESSING":
-        return 3;
+  const getStatusBadge = (status: string) => {
+    switch (status) {
       case "APPROVED":
-      case "COMPLETED":
-        return 4;
+        return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">APPROVED</span>;
       case "REJECTED":
+        return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-rose-100 text-rose-800 border border-rose-300">REJECTED</span>;
       case "WITHDRAWN":
-        return -1;
+        return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-700 border border-slate-300">WITHDRAWN</span>;
       default:
-        return 1;
+        return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 border border-amber-300">PENDING</span>;
     }
   };
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-16 font-sans text-slate-900">
-      {/* Toast & Error Alerts */}
-      {toastMsg && (
-        <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 p-4 rounded-2xl flex items-center justify-between text-xs font-bold shadow-sm">
-          <span>{toastMsg}</span>
-          <button onClick={() => setToastMsg(null)} className="text-emerald-700 hover:text-emerald-900 font-black">✕</button>
-        </div>
-      )}
-      {errorMsg && (
-        <div className="bg-rose-50 border border-rose-300 text-rose-900 p-4 rounded-2xl flex items-center justify-between text-xs font-bold shadow-sm">
-          <span>⚠️ {errorMsg}</span>
-          <button onClick={() => setErrorMsg(null)} className="text-rose-700 hover:text-rose-900 font-black">✕</button>
-        </div>
-      )}
-
-      {/* Header Banner */}
-      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-800 text-[10px] font-black uppercase tracking-wider border border-amber-200">
-              Corporate Exit & Reporting Hierarchy Desk
-            </span>
-            <span className="text-xs font-bold text-slate-500">• 15-Day Notice Period Standard</span>
+    <div className="min-h-screen bg-slate-50 text-slate-900 p-6 md:p-10">
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Employee Resignation & Exit Portal</h1>
+            <p className="text-sm text-slate-600 mt-1">
+              Submit resignation, track status, view approval details, and access official resignation history.
+            </p>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-            Employee Resignation & Handover Workflow
-          </h1>
-          <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-            Formal exit requests follow the reporting hierarchy: <strong>Employee ➔ Team Leader ➔ Project Manager ➔ Human Resources</strong>.
-          </p>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/dashboard"
+              className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
+            >
+              ← Back to Dashboard
+            </Link>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto">
+        {/* Toasts & Messages */}
+        {toastMsg && (
+          <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium">
+            {toastMsg}
+          </div>
+        )}
+        {errorMsg && (
+          <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-medium">
+            {errorMsg}
+          </div>
+        )}
+
+        {/* Navigation Tabs */}
+        <div className="flex border-b border-slate-200 space-x-6">
           <button
             onClick={() => setActiveTab("status")}
-            className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition cursor-pointer ${
-              activeTab === "status" ? "bg-slate-900 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            className={`pb-3 text-sm font-semibold border-b-2 transition ${
+              activeTab === "status" ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
-            📊 Resignation Tracker
+            My Resignation Status
           </button>
           {!myResignation && (
             <button
               onClick={() => setActiveTab("apply")}
-              className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition cursor-pointer ${
-                activeTab === "apply" ? "bg-amber-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              className={`pb-3 text-sm font-semibold border-b-2 transition ${
+                activeTab === "apply" ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-500 hover:text-slate-700"
               }`}
             >
-              ✍️ Submit Resignation
+              Submit Resignation
             </button>
           )}
           {isManager && (
             <button
-              onClick={() => setActiveTab("team")}
-              className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition cursor-pointer ${
-                activeTab === "team" ? "bg-blue-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              onClick={() => setActiveTab("history")}
+              className={`pb-3 text-sm font-semibold border-b-2 transition ${
+                activeTab === "history" ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-500 hover:text-slate-700"
               }`}
             >
-              👥 Team Exit Ledger ({resignations.length})
+              Resignation History & Requests ({resignations.length})
             </button>
           )}
         </div>
-      </div>
 
-      {/* TAB 1: VISUAL STATUS TRACKER */}
-      {activeTab === "status" && (
-        <div className="space-y-6">
-          {myResignation ? (
-            <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 gap-3">
+        {/* TAB 1: APPLY RESIGNATION */}
+        {activeTab === "apply" && !myResignation && (
+          <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200 space-y-6">
+            <h2 className="text-lg font-bold text-slate-900">Formal Resignation Submission</h2>
+
+            <form onSubmit={handleSubmitResignation} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <span className="text-[10px] font-mono font-extrabold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-200">
-                    ID: {myResignation.resignationId}
-                  </span>
-                  <h2 className="text-lg font-black text-slate-900 mt-2">
-                    Active Exit Application • {myResignation.employeeName}
-                  </h2>
-                  <p className="text-xs text-slate-500">
-                    Department: <strong>{myResignation.department}</strong> • Role: <strong>{myResignation.role}</strong>
-                  </p>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">Resignation Date</label>
+                  <input
+                    type="date"
+                    value={resignationDate}
+                    onChange={(e) => setResignationDate(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    required
+                  />
                 </div>
-                <div className="text-right flex sm:flex-col items-center sm:items-end justify-between gap-2">
-                  <span className={`px-3 py-1 rounded-full text-xs font-black uppercase ${
-                    myResignation.status === "APPROVED" || myResignation.status === "COMPLETED"
-                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                      : myResignation.status === "REJECTED"
-                      ? "bg-rose-50 text-rose-700 border border-rose-200"
-                      : "bg-amber-50 text-amber-800 border border-amber-200"
-                  }`}>
-                    {myResignation.status}
-                  </span>
-                  {["SUBMITTED", "UNDER_REVIEW"].includes(myResignation.status) && (
-                    <button
-                      onClick={() => handleWithdraw(myResignation.id)}
-                      className="text-xs font-bold text-rose-600 hover:text-rose-800 underline cursor-pointer"
-                    >
-                      Withdraw Resignation
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* 5-Stage Visual Stepper Pipeline */}
-              <div className="space-y-3">
-                <span className="text-xs font-black uppercase tracking-wider text-slate-400">
-                  Organisational Approval Pipeline
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2">
-                  {[
-                    { step: 1, title: "1. Submitted", desc: "Logged to Team Leader" },
-                    { step: 2, title: "2. Team Leader", desc: "Reviewed & Forwarded" },
-                    { step: 3, title: "3. Senior Authority", desc: "Project Manager Review" },
-                    { step: 4, title: "4. Human Resources", desc: "Exit Clearance & Relieved" },
-                  ].map((stage) => {
-                    const currentIdx = getStageIndex(myResignation.currentStage);
-                    const isDone = currentIdx > stage.step || myResignation.status === "APPROVED" || myResignation.status === "COMPLETED";
-                    const isCurrent = currentIdx === stage.step && myResignation.status !== "APPROVED" && myResignation.status !== "COMPLETED" && myResignation.status !== "REJECTED";
-
-                    return (
-                      <div
-                        key={stage.step}
-                        className={`p-4 rounded-2xl border transition ${
-                          isDone
-                            ? "bg-emerald-50/60 border-emerald-300 text-emerald-950"
-                            : isCurrent
-                            ? "bg-amber-50 border-amber-400 text-amber-950 shadow-xs"
-                            : "bg-slate-50 border-slate-200 text-slate-400"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-black">{stage.title}</span>
-                          <span className="text-xs">
-                            {isDone ? "✓" : isCurrent ? "●" : "○"}
-                          </span>
-                        </div>
-                        <p className="text-[11px] font-medium leading-tight opacity-90">{stage.desc}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Summary Details Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-                  <span className="text-[10px] font-extrabold uppercase text-slate-400">Resignation Date</span>
-                  <p className="text-xs font-bold text-slate-900 font-mono">
-                    {new Date(myResignation.resignationDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                  </p>
-                </div>
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-                  <span className="text-[10px] font-extrabold uppercase text-slate-400">Notice Period</span>
-                  <p className="text-xs font-bold text-slate-900 font-mono">{myResignation.noticePeriodDays} Calendar Days</p>
-                </div>
-                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 space-y-1">
-                  <span className="text-[10px] font-extrabold uppercase text-amber-800">Official Last Working Day</span>
-                  <p className="text-xs font-black text-amber-900 font-mono">{myResignation.lastWorkingDayFormatted}</p>
-                </div>
-              </div>
-
-              {/* Reason & Remarks Card */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
-                <span className="font-extrabold text-slate-700 block">Stated Reason for Exit:</span>
-                <p className="p-3 bg-white rounded-xl border border-slate-200 text-slate-700 font-medium leading-relaxed">
-                  {myResignation.reason}
-                </p>
-                {myResignation.hrRemarks && (
-                  <div className="mt-3 pt-3 border-t border-slate-200">
-                    <span className="font-extrabold text-blue-700 block">HR / Management Official Remarks:</span>
-                    <p className="mt-1 text-slate-700 font-medium">{myResignation.hrRemarks}</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Audit Timeline */}
-              {myResignation.trackingHistory && myResignation.trackingHistory.length > 0 && (
-                <div className="space-y-3 pt-2">
-                  <span className="text-xs font-black uppercase tracking-wider text-slate-400">
-                    Approval History & Audit Trail
-                  </span>
-                  <div className="space-y-2">
-                    {myResignation.trackingHistory.map((h, i) => (
-                      <div key={i} className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div>
-                          <span className="font-black text-slate-900">{h.action.replace(/_/g, " ")}</span> by{" "}
-                          <span className="font-bold text-blue-700">{h.performedBy}</span> ({h.role})
-                          {h.notes && <p className="text-[11px] text-slate-600 mt-0.5">"{h.notes}"</p>}
-                        </div>
-                        <span className="text-[10px] font-mono text-slate-400 shrink-0">
-                          {new Date(h.timestamp).toLocaleString("en-IN")}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-3">
-              <div className="text-4xl">📄</div>
-              <h3 className="font-black text-slate-900 text-base">No Active Resignation on Record</h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
-                You do not currently have any pending resignation requests in the system.
-              </p>
-              <button
-                onClick={() => setActiveTab("apply")}
-                className="mt-2 bg-slate-900 hover:bg-black text-white font-extrabold text-xs px-5 py-2.5 rounded-2xl shadow-sm transition cursor-pointer"
-              >
-                Submit Formal Exit Request →
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 2: APPLICATION FORM */}
-      {activeTab === "apply" && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <form
-            onSubmit={handleSubmitResignation}
-            className="lg:col-span-7 bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-5"
-          >
-            <div className="border-b border-slate-100 pb-3">
-              <h2 className="font-black text-slate-900 text-base">1. Formal Resignation Application Form</h2>
-              <p className="text-xs text-slate-500">Your resignation will be forwarded directly to your assigned Team Leader for evaluation.</p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Employee Name</label>
-                <input
-                  type="text"
-                  disabled
-                  value={currentUser?.name || "Employee"}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-700"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Employee ID</label>
-                <input
-                  type="text"
-                  disabled
-                  value={currentUser?.employeeId || currentUser?.id || "EMP"}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-mono font-bold text-blue-700"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Department</label>
-                <input
-                  type="text"
-                  disabled
-                  value={typeof currentUser?.department === "object" ? currentUser?.department?.name : currentUser?.department || "Engineering"}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-medium text-slate-700"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Designation</label>
-                <input
-                  type="text"
-                  disabled
-                  value={currentUser?.role?.replace(/_/g, " ") || "Staff Member"}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-medium text-slate-700"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Resignation Date *</label>
-                <input
-                  type="date"
-                  required
-                  value={resignationDate}
-                  onChange={(e) => setResignationDate(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-mono font-bold text-slate-900 focus:border-blue-600 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Notice Period (Days)</label>
-                <input
-                  type="number"
-                  min={15}
-                  value={noticePeriodDays}
-                  onChange={(e) => setNoticePeriodDays(Math.max(15, parseInt(e.target.value) || 15))}
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-mono font-bold text-slate-900 focus:border-blue-600 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Reason for Leaving *</label>
-              <select
-                value={reasonCategory}
-                onChange={(e) => setReasonCategory(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-semibold text-slate-900 focus:border-blue-600 focus:outline-none mb-2"
-              >
-                <option value="Career Advancement & Better Opportunity">Career Advancement & Better Opportunity</option>
-                <option value="Higher Studies & Education">Higher Studies & Education</option>
-                <option value="Relocation & Family Relocation">Relocation & Family Relocation</option>
-                <option value="Health / Personal Reasons">Health / Personal Reasons</option>
-                <option value="Entrepreneurship / Starting Venture">Entrepreneurship / Starting Venture</option>
-                <option value="Other">Other Reasons</option>
-              </select>
-              <textarea
-                rows={3}
-                value={customReason}
-                onChange={(e) => setCustomReason(e.target.value)}
-                placeholder="Provide additional details regarding your decision..."
-                className="w-full rounded-xl border border-slate-300 p-3 text-xs text-slate-900 focus:border-blue-600 focus:outline-none font-medium"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Handover & Transition Notes</label>
-              <textarea
-                rows={2}
-                value={additionalComments}
-                onChange={(e) => setAdditionalComments(e.target.value)}
-                placeholder="List ongoing project assets or handover transition notes for your Team Leader..."
-                className="w-full rounded-xl border border-slate-300 p-3 text-xs text-slate-900 focus:border-blue-600 focus:outline-none font-medium"
-              />
-            </div>
-
-            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-950 flex items-start gap-2.5">
-              <input
-                type="checkbox"
-                id="conf"
-                checked={confirmationChecked}
-                onChange={(e) => setConfirmationChecked(e.target.checked)}
-                className="mt-0.5 rounded cursor-pointer"
-              />
-              <label htmlFor="conf" className="cursor-pointer font-medium leading-relaxed">
-                I hereby submit my formal resignation and acknowledge that I will complete the mandatory 15-day notice period ending on <strong>{calculatedLwdFormatted}</strong>.
-              </label>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isSubmitting || !confirmationChecked}
-              className={`w-full py-3 rounded-2xl text-xs font-extrabold transition shadow-sm cursor-pointer ${
-                isSubmitting || !confirmationChecked
-                  ? "bg-slate-300 text-slate-500 cursor-not-allowed"
-                  : "bg-slate-900 hover:bg-black text-white"
-              }`}
-            >
-              {isSubmitting ? "Submitting Request..." : "📄 Submit Resignation to Team Leader"}
-            </button>
-          </form>
-
-          {/* Right Info Card */}
-          <div className="lg:col-span-5 bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="font-black text-slate-900 text-sm border-b border-slate-100 pb-3">
-              ⏱️ 15-Day Notice Period Summary
-            </h3>
-            <div className="space-y-3 text-xs">
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-0.5">
-                <span className="text-[10px] font-extrabold uppercase text-slate-400">Submission Date</span>
-                <p className="font-mono font-bold text-slate-900">{resignationDate}</p>
-              </div>
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-0.5">
-                <span className="text-[10px] font-extrabold uppercase text-slate-400">Notice Period Window</span>
-                <p className="font-mono font-bold text-slate-900">{noticePeriodDays} Calendar Days</p>
-              </div>
-              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 space-y-0.5">
-                <span className="text-[10px] font-extrabold uppercase text-amber-800">Calculated Last Working Day</span>
-                <p className="font-mono font-black text-amber-950 text-sm">{calculatedLwdFormatted}</p>
-              </div>
-              <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-200 text-blue-950 space-y-1">
-                <span className="font-bold block">📋 Reporting Workflow Note:</span>
-                <p className="text-[11px] leading-relaxed">
-                  Upon submission, your assigned Team Leader will review and forward your request to the Project Manager and Human Resources for formal exit clearance.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: MANAGEMENT & TEAM RESIGNATIONS LEDGER */}
-      {activeTab === "team" && isManager && (
-        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-2">
-            <div>
-              <h2 className="font-black text-slate-900 text-base">👥 Team Exit & Resignation Review Ledger</h2>
-              <p className="text-xs text-slate-500">Review pending team exit applications, add recommendations, and forward through the reporting chain.</p>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto rounded-2xl border border-slate-200">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] border-b border-slate-200">
-                <tr>
-                  <th className="p-3.5">ID</th>
-                  <th className="p-3.5">Employee</th>
-                  <th className="p-3.5">Department & Role</th>
-                  <th className="p-3.5">LWD</th>
-                  <th className="p-3.5">Status</th>
-                  <th className="p-3.5">Current Stage</th>
-                  <th className="p-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {resignations.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50/80 transition">
-                    <td className="p-3.5 font-mono font-bold text-blue-600">{r.resignationId}</td>
-                    <td className="p-3.5">
-                      <p className="font-bold text-slate-900">{r.employeeName}</p>
-                      <p className="text-[10px] font-mono text-slate-400">{r.employeeId}</p>
-                    </td>
-                    <td className="p-3.5">
-                      <p className="font-semibold text-slate-800">{r.department}</p>
-                      <p className="text-[10px] text-slate-400">{r.role}</p>
-                    </td>
-                    <td className="p-3.5 font-mono text-slate-700">{r.lastWorkingDayFormatted}</td>
-                    <td className="p-3.5">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                        r.status === "APPROVED" || r.status === "COMPLETED"
-                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                          : r.status === "REJECTED"
-                          ? "bg-rose-50 text-rose-700 border border-rose-200"
-                          : "bg-amber-50 text-amber-800 border border-amber-200"
-                      }`}>
-                        {r.status}
-                      </span>
-                    </td>
-                    <td className="p-3.5 text-[11px] text-slate-600">{r.stageDescription}</td>
-                    <td className="p-3.5 text-right">
-                      <button
-                        onClick={() => {
-                          setReviewingResignation(r);
-                          if (isHR) setReviewAction("HR_APPROVE");
-                          else if (isPM) setReviewAction("SENIOR_FORWARD");
-                          else setReviewAction("TL_FORWARD");
-                        }}
-                        className="bg-slate-900 hover:bg-black text-white font-extrabold text-[11px] px-3 py-1.5 rounded-xl transition cursor-pointer shadow-2xs"
-                      >
-                        Review & Forward →
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* REVIEW & FORWARD MODAL */}
-      {reviewingResignation && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-slate-200 space-y-5 animate-in fade-in">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="font-black text-slate-900 text-base">Evaluate Exit Request</h3>
-                <p className="text-xs text-slate-500 font-mono">ID: {reviewingResignation.resignationId}</p>
-              </div>
-              <button onClick={() => setReviewingResignation(null)} className="text-slate-400 hover:text-slate-700 font-bold">✕</button>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-1.5">
-              <p><strong className="text-slate-900">Employee:</strong> {reviewingResignation.employeeName} ({reviewingResignation.employeeId})</p>
-              <p><strong className="text-slate-900">Department:</strong> {reviewingResignation.department} • {reviewingResignation.role}</p>
-              <p><strong className="text-slate-900">Stated Reason:</strong> "{reviewingResignation.reason}"</p>
-              <p><strong className="text-slate-900">Last Working Day:</strong> {reviewingResignation.lastWorkingDayFormatted}</p>
-            </div>
-
-            <div className="space-y-3">
-              <label className="block text-xs font-bold text-slate-700">Select Management Action *</label>
-              <select
-                value={reviewAction}
-                onChange={(e) => setReviewAction(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs font-bold text-slate-900 focus:border-blue-600 focus:outline-none"
-              >
-                {isTeamLeader && (
-                  <option value="TL_FORWARD">Team Leader: Recommend & Forward to Senior Authority / PM</option>
-                )}
-                {isPM && (
-                  <option value="SENIOR_FORWARD">Project Manager: Forward to Human Resources</option>
-                )}
-                {isHR && (
-                  <>
-                    <option value="HR_APPROVE">HR: Formally Approve Resignation</option>
-                    <option value="HR_COMPLETE">HR: Complete Exit Clearance & Relieve Account</option>
-                  </>
-                )}
-                <option value="REJECT">Reject Resignation Request</option>
-              </select>
-
-              {reviewAction === "TL_FORWARD" && (
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Recommendation</label>
-                  <select
-                    value={reviewRecommendation}
-                    onChange={(e) => setReviewRecommendation(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 p-2.5 text-xs text-slate-900 focus:border-blue-600 focus:outline-none"
-                  >
-                    <option value="RECOMMENDED_APPROVAL">Recommended for Approval (Smooth Handover)</option>
-                    <option value="RECOMMENDED_REJECTION">Recommended for Rejection / Retention</option>
-                  </select>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">Notice Period (Days)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="90"
+                    value={noticePeriodDays}
+                    onChange={(e) => setNoticePeriodDays(Number(e.target.value))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    required
+                  />
                 </div>
-              )}
+              </div>
+
+              <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-between">
+                <span className="text-xs font-semibold text-indigo-900 uppercase">Calculated Proposed Last Working Date</span>
+                <span className="text-sm font-bold text-indigo-700">{calculatedLwdFormatted}</span>
+              </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Review Comments / Handover Notes</label>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">Primary Resignation Reason</label>
+                <select
+                  value={reasonCategory}
+                  onChange={(e) => setReasonCategory(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  <option value="Career Advancement">Career Advancement / Better Opportunity</option>
+                  <option value="Higher Education">Higher Education / Studies</option>
+                  <option value="Personal / Family Reasons">Personal / Family Reasons</option>
+                  <option value="Relocation">Relocation to Another City/Country</option>
+                  <option value="Health Reasons">Health / Medical Reasons</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">Detailed Reason / Feedback</label>
                 <textarea
                   rows={3}
-                  value={reviewComments}
-                  onChange={(e) => setReviewComments(e.target.value)}
-                  placeholder="Enter evaluation remarks for the next approver tier..."
-                  className="w-full rounded-xl border border-slate-300 p-2.5 text-xs text-slate-900 focus:border-blue-600 focus:outline-none font-medium"
+                  value={customReason}
+                  onChange={(e) => setCustomReason(e.target.value)}
+                  placeholder="Provide additional details regarding your decision..."
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  required
                 />
               </div>
-            </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">Attach Resignation Letter / Document (Optional)</label>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                  onChange={handleFileUpload}
+                  className="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                />
+                {isUploadingLetter && <p className="text-xs text-indigo-600 mt-1">Uploading document to Cloudinary...</p>}
+                {letterUrl && <p className="text-xs text-emerald-600 mt-1">✓ Document attached: <a href={letterUrl} target="_blank" rel="noopener noreferrer" className="underline font-semibold">View Attachment</a></p>}
+              </div>
+
+              <div className="flex items-center space-x-3 pt-2">
+                <input
+                  type="checkbox"
+                  id="confirmCheck"
+                  checked={confirmationChecked}
+                  onChange={(e) => setConfirmationChecked(e.target.checked)}
+                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                />
+                <label htmlFor="confirmCheck" className="text-xs text-slate-700 font-medium cursor-pointer">
+                  I confirm that I wish to submit my formal resignation request to OMS Enterprise management.
+                </label>
+              </div>
+
               <button
-                onClick={() => setReviewingResignation(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                type="submit"
+                disabled={isSubmitting || isUploadingLetter}
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-xl transition disabled:opacity-50"
               >
-                Cancel
+                {isSubmitting ? "Submitting Resignation..." : "Submit Formal Resignation"}
               </button>
-              <button
-                onClick={handleProcessReview}
-                disabled={isReviewSubmitting}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl shadow-sm transition"
-              >
-                {isReviewSubmitting ? "Processing..." : "Submit Review Action →"}
-              </button>
+            </form>
+          </div>
+        )}
+
+        {/* TAB 2: MY RESIGNATION STATUS */}
+        {activeTab === "status" && (
+          <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200 space-y-6">
+            <h2 className="text-lg font-bold text-slate-900">Resignation Status & Overview</h2>
+
+            {myResignation ? (
+              <div className="space-y-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between p-6 rounded-2xl bg-slate-50 border border-slate-200 gap-4">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-bold text-slate-900">{myResignation.resignationId}</span>
+                      {getStatusBadge(myResignation.status)}
+                    </div>
+                    <p className="text-xs text-slate-600 mt-1">{myResignation.stageDescription}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs text-slate-500 block">Submitted On</span>
+                    <span className="text-sm font-semibold text-slate-900">
+                      {new Date(myResignation.submittedAt).toLocaleDateString("en-IN")}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                  <div className="p-4 rounded-xl border border-slate-200 space-y-2">
+                    <span className="text-xs font-semibold text-slate-500 uppercase">Resignation Date</span>
+                    <p className="font-semibold text-slate-900">{new Date(myResignation.resignationDate).toLocaleDateString("en-IN")}</p>
+                  </div>
+                  <div className="p-4 rounded-xl border border-slate-200 space-y-2">
+                    <span className="text-xs font-semibold text-slate-500 uppercase">Proposed Last Working Date</span>
+                    <p className="font-semibold text-slate-900">{myResignation.lastWorkingDayFormatted || new Date(myResignation.lastWorkingDay).toLocaleDateString("en-IN")}</p>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl border border-slate-200 space-y-2 text-sm">
+                  <span className="text-xs font-semibold text-slate-500 uppercase">Reason for Resignation</span>
+                  <p className="text-slate-800 leading-relaxed">{myResignation.reason}</p>
+                </div>
+
+                {myResignation.letterUrl && (
+                  <div className="p-4 rounded-xl border border-slate-200 text-sm">
+                    <span className="text-xs font-semibold text-slate-500 uppercase block mb-1">Attached Resignation Document</span>
+                    <a href={myResignation.letterUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline font-semibold">
+                      📄 View Resignation Letter / Attachment
+                    </a>
+                  </div>
+                )}
+
+                {myResignation.approvedByUserId && (
+                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-sm space-y-1">
+                    <span className="text-xs font-semibold text-emerald-800 uppercase block">Approval Information</span>
+                    <p className="text-emerald-900 font-semibold">Approved By: {myResignation.approvedByName || "Management"} ({myResignation.approverRole})</p>
+                    <p className="text-emerald-700 text-xs">Approved On: {new Date(myResignation.approvedAt!).toLocaleString("en-IN")}</p>
+                  </div>
+                )}
+
+                {myResignation.rejectedByUserId && (
+                  <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-sm space-y-1">
+                    <span className="text-xs font-semibold text-rose-800 uppercase block">Rejection Information</span>
+                    <p className="text-rose-900 font-semibold">Rejected By: {myResignation.rejectedByName || "Management"}</p>
+                    <p className="text-rose-700 text-xs">Rejected On: {new Date(myResignation.rejectedAt!).toLocaleString("en-IN")}</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-10 space-y-3">
+                <p className="text-slate-600 text-sm">You have not submitted a resignation request.</p>
+                <button
+                  onClick={() => setActiveTab("apply")}
+                  className="px-4 py-2 bg-indigo-600 text-white font-semibold text-xs rounded-xl hover:bg-indigo-700 transition"
+                >
+                  Submit Resignation Request
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 3: RESIGNATION HISTORY & MANAGEMENT REQUESTS */}
+        {activeTab === "history" && isManager && (
+          <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200 space-y-6">
+            <h2 className="text-lg font-bold text-slate-900">Resignation History & Review Queue</h2>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-700 border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 border-b border-slate-200 font-semibold text-slate-600 uppercase">
+                    <th className="p-3">Employee ID</th>
+                    <th className="p-3">Employee</th>
+                    <th className="p-3">Department</th>
+                    <th className="p-3">Resignation Date</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Approved By</th>
+                    <th className="p-3">Approval Date</th>
+                    <th className="p-3">Account Status</th>
+                    <th className="p-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {resignations.map((r) => (
+                    <tr key={r.id} className="hover:bg-slate-50 transition">
+                      <td className="p-3 font-semibold text-slate-900">{r.employeeId}</td>
+                      <td className="p-3">
+                        <div className="font-semibold text-slate-900">{r.employeeName}</div>
+                        <div className="text-slate-500 text-[11px]">{r.role}</div>
+                      </td>
+                      <td className="p-3">{r.department}</td>
+                      <td className="p-3">{new Date(r.resignationDate).toLocaleDateString("en-IN")}</td>
+                      <td className="p-3">{getStatusBadge(r.status)}</td>
+                      <td className="p-3 font-medium">{r.approvedByName ? `${r.approvedByName} (${r.approverRole})` : "—"}</td>
+                      <td className="p-3">{r.approvedAt ? new Date(r.approvedAt).toLocaleDateString("en-IN") : "—"}</td>
+                      <td className="p-3 font-semibold">
+                        <span className={`px-2 py-0.5 rounded text-[11px] ${r.accountStatus === "DEACTIVATED" ? "bg-rose-100 text-rose-800" : "bg-emerald-100 text-emerald-800"}`}>
+                          {r.accountStatus || "ACTIVE"}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right space-x-2">
+                        <button
+                          onClick={() => setSelectedResignation(r)}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-lg text-xs"
+                        >
+                          View Details
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* RESIGNATION DETAIL & REVIEW MODAL */}
+        {selectedResignation && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white max-w-2xl w-full rounded-2xl p-6 md:p-8 space-y-6 shadow-2xl overflow-y-auto max-h-[90vh]">
+              <div className="flex items-center justify-between border-b pb-4">
+                <h3 className="text-lg font-bold text-slate-900">Resignation Details — {selectedResignation.resignationId}</h3>
+                <button onClick={() => setSelectedResignation(null)} className="text-slate-400 hover:text-slate-600 font-bold text-lg">✕</button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                <div>
+                  <span className="text-slate-500 uppercase block font-semibold">Employee</span>
+                  <span className="text-sm font-bold text-slate-900">{selectedResignation.employeeName}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 uppercase block font-semibold">Employee ID</span>
+                  <span className="text-sm font-bold text-slate-900">{selectedResignation.employeeId}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 uppercase block font-semibold">Department</span>
+                  <span className="text-slate-900 font-semibold">{selectedResignation.department}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 uppercase block font-semibold">Role</span>
+                  <span className="text-slate-900 font-semibold">{selectedResignation.role}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 uppercase block font-semibold">Resignation Date</span>
+                  <span className="text-slate-900 font-semibold">{new Date(selectedResignation.resignationDate).toLocaleDateString("en-IN")}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 uppercase block font-semibold">Submitted On</span>
+                  <span className="text-slate-900 font-semibold">{new Date(selectedResignation.submittedAt).toLocaleDateString("en-IN")}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 uppercase block font-semibold">Status</span>
+                  <span>{getStatusBadge(selectedResignation.status)}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 uppercase block font-semibold">Account Status</span>
+                  <span className={`font-bold ${selectedResignation.accountStatus === "DEACTIVATED" ? "text-rose-600" : "text-emerald-600"}`}>
+                    {selectedResignation.accountStatus || "ACTIVE"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+                <span className="text-slate-500 uppercase block font-semibold">Reason for Resignation</span>
+                <p className="text-slate-800 text-sm leading-relaxed">{selectedResignation.reason}</p>
+              </div>
+
+              {selectedResignation.letterUrl && (
+                <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200 text-xs">
+                  <span className="text-indigo-900 font-semibold block mb-1 uppercase">Resignation Letter Document</span>
+                  <a href={selectedResignation.letterUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-700 hover:underline font-bold text-sm">
+                    📄 Download / View Attachment
+                  </a>
+                </div>
+              )}
+
+              {selectedResignation.approvedByUserId && (
+                <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs space-y-1">
+                  <span className="text-emerald-800 uppercase block font-semibold">Approved By</span>
+                  <p className="text-emerald-900 font-bold text-sm">{selectedResignation.approvedByName} ({selectedResignation.approverRole})</p>
+                  <p className="text-emerald-700">Approved On: {new Date(selectedResignation.approvedAt!).toLocaleString("en-IN")}</p>
+                </div>
+              )}
+
+              {/* Management Review Form */}
+              {isManager && selectedResignation.status === "SUBMITTED" && selectedResignation.userId !== currentUser?.id && (
+                <div className="border-t pt-4 space-y-4">
+                  <h4 className="text-sm font-bold text-slate-900">Review & Approve Resignation Request</h4>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">Remarks / Decision Notes</label>
+                    <textarea
+                      rows={2}
+                      value={reviewComments}
+                      onChange={(e) => setReviewComments(e.target.value)}
+                      placeholder="Enter approval/rejection remarks..."
+                      className="w-full p-3 rounded-xl border text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => handleReviewAction("APPROVED")}
+                      disabled={isReviewSubmitting}
+                      className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl transition disabled:opacity-50"
+                    >
+                      Approve & Deactivate Account
+                    </button>
+                    <button
+                      onClick={() => handleReviewAction("REJECTED")}
+                      disabled={isReviewSubmitting}
+                      className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-xl transition disabled:opacity-50"
+                    >
+                      Reject Resignation
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="border-t pt-4 text-right">
+                <button
+                  onClick={() => setSelectedResignation(null)}
+                  className="px-4 py-2 bg-slate-200 text-slate-800 font-semibold text-xs rounded-xl hover:bg-slate-300"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

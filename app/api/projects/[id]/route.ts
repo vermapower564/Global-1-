@@ -51,6 +51,7 @@ export async function GET(
 
     // Check membership authorization
     if (!isFullAdmin) {
+      const isPMOwner = proj.projectManagerId === authUser.id;
       const isTL = proj.teamLeaderId === authUser.id;
       const memberCheck = await queryDb<any[]>(
         `SELECT B FROM _assignedstaffprojects WHERE A = ? AND B = ?
@@ -59,7 +60,7 @@ export async function GET(
         [proj.id, authUser.id, proj.id, authUser.id]
       );
 
-      const isMember = isTL || (memberCheck && memberCheck.length > 0);
+      const isMember = isPMOwner || isTL || (memberCheck && memberCheck.length > 0);
 
       if (!isMember) {
         return NextResponse.json(

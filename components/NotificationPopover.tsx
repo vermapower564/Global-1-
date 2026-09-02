@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 
 interface NotificationItem {
@@ -21,8 +22,13 @@ export default function NotificationPopover() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [activeModalNotification, setActiveModalNotification] = useState<NotificationItem | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Fetch real notifications and unread badge count from database API
   const fetchNotifications = async () => {
@@ -46,7 +52,7 @@ export default function NotificationPopover() {
     return () => clearInterval(interval);
   }, []);
 
-  // Handle clicking outside to close
+  // Handle clicking outside popover to close
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
@@ -59,6 +65,32 @@ export default function NotificationPopover() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
+  // Lock body scroll when detail modal is open
+  useEffect(() => {
+    if (activeModalNotification) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [activeModalNotification]);
+
+  // Close modal or popover on Escape key press
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (activeModalNotification) {
+          setActiveModalNotification(null);
+        } else if (isOpen) {
+          setIsOpen(false);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeModalNotification, isOpen]);
+
   const handleToggle = () => {
     const nextState = !isOpen;
     setIsOpen(nextState);
@@ -69,7 +101,13 @@ export default function NotificationPopover() {
 
   // Mark single notification as read and open complete full message modal
   const handleMarkAsRead = async (item: NotificationItem) => {
+    // 1. Close dropdown immediately so it is not visible behind the modal
+    setIsOpen(false);
+
+    // 2. Open selected notification in dedicated modal
     setActiveModalNotification({ ...item, isRead: true });
+
+    // 3. Mark as read on backend if unread
     if (!item.isRead) {
       try {
         // Immediate optimistic UI update
@@ -78,7 +116,7 @@ export default function NotificationPopover() {
         );
         setUnreadCount((prev) => Math.max(0, prev - 1));
 
-        // Call backend to persist read status for this employee
+        // Call backend to persist read status
         await fetch(`/api/notifications/${encodeURIComponent(item.id)}`, {
           method: "PATCH",
         });
@@ -184,6 +222,115 @@ export default function NotificationPopover() {
     } catch {
       return dateStr;
     }
+  };
+
+  const renderModal = () => {
+    if (!activeModalNotification || !mounted) return null;
+
+    const typeInfo = getTypeBadge(activeModalNotification.type);
+
+    return createPortal(
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 bg-slate-950/70 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setActiveModalNotification(null);
+          }
+        }}
+      >
+        <div
+          className="relative w-full max-w-lg sm:max-w-xl bg-white rounded-2xl sm:rounded-3xl border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] my-auto animate-in zoom-in-95 duration-150 text-slate-900 font-sans"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-notif-title"
+        >
+          {/* Modal Header */}
+          <div className="p-5 sm:p-6 bg-slate-900 text-white flex-none space-y-3 relative">
+            <div className="flex items-center justify-between gap-3 pr-10">
+              <span
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${typeInfo.badgeClass}`}
+              >
+                <span>{typeInfo.icon}</span>
+                <span>Type: {typeInfo.label}</span>
+              </span>
+              <span className="text-xs text-slate-400 font-mono">
+                {formatFullDateTime(activeModalNotification.createdAt)}
+              </span>
+            </div>
+
+            <h3 id="modal-notif-title" className="text-lg sm:text-xl font-black text-white tracking-tight leading-snug break-words">
+              {activeModalNotification.title}
+            </h3>
+
+            {/* Top Close 'X' Button */}
+            <button
+              onClick={() => setActiveModalNotification(null)}
+              aria-label="Close modal"
+              className="absolute top-4 sm:top-5 right-4 sm:right-5 h-8 w-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer font-bold text-sm"
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Modal Body: Complete Unabridged Message */}
+          <div className="p-5 sm:p-6 flex-1 overflow-y-auto space-y-4">
+            <div className="p-4 sm:p-5 bg-slate-50 rounded-2xl border border-slate-100 text-xs sm:text-sm text-slate-800 leading-relaxed whitespace-pre-wrap break-words font-sans">
+              {activeModalNotification.message}
+            </div>
+
+            {/* Metadata details */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs p-4 bg-slate-50/80 rounded-2xl border border-slate-100">
+              <div>
+                <span className="text-slate-400 font-bold block text-[10px] uppercase tracking-wider">
+                  Sent By / Source
+                </span>
+                <span className="font-extrabold text-slate-900">
+                  {activeModalNotification.senderName || "System Admin"}
+                  {activeModalNotification.senderRole ? ` (${activeModalNotification.senderRole})` : ""}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-bold block text-[10px] uppercase tracking-wider">
+                  Read Status
+                </span>
+                <span className="font-extrabold text-emerald-600 flex items-center gap-1">
+                  <span>✓</span>
+                  <span>READ</span>
+                </span>
+              </div>
+
+              {activeModalNotification.linkUrl && (
+                <div className="sm:col-span-2 pt-2.5 border-t border-slate-200/60 flex items-center justify-between">
+                  <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider">
+                    Associated Link
+                  </span>
+                  <a
+                    href={activeModalNotification.linkUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline"
+                  >
+                    <span>Open Link</span>
+                    <span>↗</span>
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Modal Footer */}
+          <div className="p-4 bg-slate-50 border-t border-slate-100 flex-none flex items-center justify-end px-6">
+            <button
+              onClick={() => setActiveModalNotification(null)}
+              className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs hover:shadow-md"
+            >
+              Close Detail
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
   };
 
   return (
@@ -315,73 +462,11 @@ export default function NotificationPopover() {
         </div>
       )}
 
-      {/* FULL NOTIFICATION DETAIL MODAL */}
-      {activeModalNotification && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/65 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden text-slate-900 font-sans animate-in zoom-in-95">
-            {/* Modal Header */}
-            <div className="p-6 bg-slate-900 text-white space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span
-                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
-                    getTypeBadge(activeModalNotification.type).badgeClass
-                  }`}
-                >
-                  <span>{getTypeBadge(activeModalNotification.type).icon}</span>
-                  <span>Type: {getTypeBadge(activeModalNotification.type).label}</span>
-                </span>
-                <span className="text-xs text-slate-400 font-mono">
-                  {formatFullDateTime(activeModalNotification.createdAt)}
-                </span>
-              </div>
-              <h3 className="text-xl font-black text-white tracking-tight leading-snug">
-                {activeModalNotification.title}
-              </h3>
-            </div>
-
-            {/* Modal Body: Complete Unabridged Message */}
-            <div className="p-6 space-y-4">
-              <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 text-xs sm:text-sm text-slate-800 leading-relaxed whitespace-pre-wrap font-sans">
-                {activeModalNotification.message}
-              </div>
-
-              {/* Metadata details */}
-              <div className="grid grid-cols-2 gap-3 text-xs p-4 bg-slate-50/70 rounded-2xl border border-slate-100">
-                <div>
-                  <span className="text-slate-400 font-bold block text-[10px] uppercase">
-                    Sent By
-                  </span>
-                  <span className="font-extrabold text-slate-900">
-                    {activeModalNotification.senderName || "Admin"}
-                    {activeModalNotification.senderRole ? ` (${activeModalNotification.senderRole})` : ""}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-bold block text-[10px] uppercase">
-                    Read Status
-                  </span>
-                  <span className="font-extrabold text-emerald-600 flex items-center gap-1">
-                    <span>✓</span>
-                    <span>READ</span>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
-              <button
-                onClick={() => setActiveModalNotification(null)}
-                className="px-6 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* FULL NOTIFICATION DETAIL MODAL (PORTAL) */}
+      {renderModal()}
     </div>
   );
 }
+
 
 

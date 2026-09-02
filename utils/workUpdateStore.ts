@@ -20,6 +20,18 @@ export interface EODWorkUpdate {
   gitCommits?: string;
   driveLinks?: string;
   screenshots?: string;
+  evidenceUrl?: string;
+  evidenceName?: string;
+  evidenceType?: string;
+  evidenceSize?: number;
+  workEvidence?: {
+    id?: string;
+    fileName: string;
+    fileType: string;
+    fileSize: number;
+    fileUrl: string;
+    uploadedAt?: string;
+  }[];
   status: WorkStatus;
   rating?: number; // 1-5 Star rating by Manager
   managerRemarks?: string;

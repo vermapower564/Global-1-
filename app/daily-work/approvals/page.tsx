@@ -15,17 +15,89 @@ export default function ManagerEODApprovalsPage() {
   const [rating, setRating] = useState<number>(5);
   const [remarks, setRemarks] = useState("");
 
-  const refreshList = () => {
-    setUpdates(getFilteredWorkUpdates(deptFilter, statusFilter, searchQuery));
+  const refreshList = async () => {
+    const local = getFilteredWorkUpdates(deptFilter, statusFilter, searchQuery);
+    try {
+      const query = new URLSearchParams();
+      if (searchQuery) query.set("search", searchQuery);
+      const res = await fetch(`/api/daily-work?${query.toString()}`);
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        const mapped = json.data.map((r: any) => ({
+          id: r.id,
+          employeeName: r.user?.name || "Employee",
+          employeeId: r.user?.employeeId || "EMP001",
+          department: r.user?.department?.name || "Engineering",
+          projectName: r.projectName || "OMS Operations",
+          clientName: r.clientName || "Internal",
+          date: new Date(r.submittedAt || Date.now()).toISOString().split("T")[0],
+          startTime: r.startTime || "09:00 AM",
+          endTime: r.endTime || "05:30 PM",
+          hoursWorked: r.hoursWorked || 8.0,
+          priority: r.priority || "HIGH",
+          description: r.description || "Daily Task Work Log",
+          achievements: r.achievements || "",
+          blockers: r.blockers || "",
+          tomorrowPlan: r.tomorrowPlan || "",
+          gitCommits: r.gitCommits || "",
+          evidenceUrl: r.evidenceUrl,
+          evidenceName: r.evidenceName,
+          evidenceType: r.evidenceType,
+          evidenceSize: r.evidenceSize,
+          workEvidence: r.workEvidence || [],
+          status: r.status || "PENDING",
+          rating: r.rating || 5,
+          managerRemarks: r.managerRemarks || "",
+          submittedAt: new Date(r.submittedAt || Date.now()).toISOString(),
+        }));
+
+        // Filter by dept & status if selected
+        const filtered = mapped.filter((item: any) => {
+          const matchDept = deptFilter === "All" || item.department === deptFilter;
+          const matchStatus = statusFilter === "All" || item.status === statusFilter;
+          return matchDept && matchStatus;
+        });
+
+        // Merge with local if any missing
+        const combined = [...filtered];
+        local.forEach((loc) => {
+          if (!combined.some((c) => c.id === loc.id)) {
+            combined.push(loc);
+          }
+        });
+
+        setUpdates(combined);
+        return;
+      }
+    } catch (err) {
+      console.warn("API fetch fallback to local store:", err);
+    }
+    setUpdates(local);
   };
 
   useEffect(() => {
     refreshList();
   }, [deptFilter, statusFilter, searchQuery]);
 
-  const handleEvaluate = (status: WorkStatus) => {
+  const handleEvaluate = async (status: WorkStatus) => {
     if (!selectedItem) return;
     evaluateWorkUpdate(selectedItem.id, status, rating, remarks);
+
+    try {
+      await fetch("/api/daily-work", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedItem.id,
+          status,
+          rating,
+          managerRemarks: remarks,
+        }),
+      });
+    } catch (err) {
+      console.warn("API evaluate error:", err);
+    }
+
     refreshList();
     setSelectedItem(null);
     setRemarks("");
@@ -209,6 +281,68 @@ export default function ManagerEODApprovalsPage() {
                   <p className="font-mono text-[11px] text-blue-600 bg-blue-50 p-2 rounded mt-1 border border-blue-100">
                     {selectedItem.gitCommits}
                   </p>
+                </div>
+              )}
+
+              {/* Work Evidence Attachment Section */}
+              {((selectedItem.workEvidence && selectedItem.workEvidence.length > 0) || selectedItem.evidenceUrl) && (
+                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
+                  <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                    📁 Attached Work Evidence Document(s)
+                  </span>
+                  <div className="space-y-2">
+                    {(selectedItem.workEvidence && selectedItem.workEvidence.length > 0
+                      ? selectedItem.workEvidence
+                      : [
+                          {
+                            id: "ev-single",
+                            fileName: selectedItem.evidenceName || "work-evidence-file",
+                            fileType: selectedItem.evidenceType || "application/octet-stream",
+                            fileSize: selectedItem.evidenceSize || 0,
+                            fileUrl: selectedItem.evidenceUrl!,
+                            uploadedAt: selectedItem.submittedAt,
+                          },
+                        ]
+                    ).map((ev, idx) => {
+                      const isImage = (ev.fileType || "").startsWith("image/") || /\.(jpg|jpeg|png|webp|gif)$/i.test(ev.fileName || "");
+                      const isPdf = (ev.fileType || "").includes("pdf") || (ev.fileName || "").endsWith(".pdf");
+
+                      return (
+                        <div key={ev.id || idx} className="bg-white p-2.5 rounded-lg border border-slate-200 flex flex-col gap-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 overflow-hidden">
+                              <span className="text-base">{isImage ? "🖼️" : isPdf ? "📄" : "📊"}</span>
+                              <div className="truncate">
+                                <p className="font-bold text-slate-900 truncate text-[11px]">{ev.fileName}</p>
+                                <p className="text-[10px] text-slate-500 font-mono">
+                                  {ev.fileSize ? `${(ev.fileSize / 1024).toFixed(1)} KB` : "Document"} • {ev.fileType || "file"}
+                                </p>
+                              </div>
+                            </div>
+                            <a
+                              href={ev.fileUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] px-2.5 py-1 rounded transition"
+                            >
+                              {isPdf ? "📄 View PDF" : isImage ? "🔍 View Image" : "⬇️ Download"}
+                            </a>
+                          </div>
+
+                          {/* Image Thumbnail Preview */}
+                          {isImage && ev.fileUrl && (
+                            <div className="relative mt-1 max-h-36 overflow-hidden rounded border border-slate-200">
+                              <img
+                                src={ev.fileUrl}
+                                alt={ev.fileName}
+                                className="w-full object-cover max-h-36 rounded hover:opacity-95 transition"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 

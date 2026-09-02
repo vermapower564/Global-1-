@@ -377,6 +377,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Project title is required." }, { status: 400 });
     }
 
+    // Hierarchy Protection: If Project Manager is creating project, they cannot assign Admin as PM or subordinate
+    const userRoleUpper = (authUser.role || "").toUpperCase();
+    if (userRoleUpper === "PROJECT_MANAGER") {
+      if (requestedPMId && requestedPMId !== authUser.id) {
+        const pmTarget = await queryDb<any[]>(`SELECT role FROM user WHERE id = ? LIMIT 1`, [requestedPMId]);
+        if (pmTarget && pmTarget.length > 0) {
+          const targetRole = (pmTarget[0].role || "").toUpperCase();
+          if (["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR"].includes(targetRole)) {
+            return NextResponse.json(
+              {
+                success: false,
+                error: "Hierarchy Violation: A Project Manager cannot assign a Project to an Admin or place an Admin in a subordinate role.",
+              },
+              { status: 400 }
+            );
+          }
+        }
+      }
+    }
+
     // 1. Validate Project Manager
     const targetPMId = requestedPMId || authUser.id;
     const pmValidation = await validateProjectRoleAssignment(targetPMId, "PROJECT_MANAGER");
@@ -659,6 +679,11 @@ export async function PUT(req: NextRequest) {
       for (const uid of set) {
         if (uid) {
           try {
+            const userCheck = await queryDb<any[]>(`SELECT role FROM user WHERE id = ? LIMIT 1`, [uid]);
+            if (userCheck && userCheck.length > 0) {
+              const uRole = (userCheck[0].role || "").toUpperCase();
+              if (ADMIN_ROLES.includes(uRole)) continue; // Admin cannot be added as subordinate team member
+            }
             await queryDb(`INSERT INTO _assignedstaffprojects (A, B) VALUES (?, ?)`, [id, uid]);
           } catch {}
         }

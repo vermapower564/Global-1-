@@ -49,6 +49,25 @@ export async function authenticateRequest(
       };
     }
 
+    // 2b. Check Active Account Status in Database
+    const { queryDb } = await import("@/lib/db");
+    const activeCheck = await queryDb<any[]>(
+      `SELECT isActive FROM user WHERE id = ? LIMIT 1`,
+      [decoded.id]
+    );
+    if (activeCheck && activeCheck.length > 0) {
+      const isAct = activeCheck[0].isActive;
+      if (isAct === 0 || isAct === false) {
+        return {
+          user: null,
+          response: NextResponse.json(
+            { success: false, error: "Your account is inactive. Please contact the organisation administrator." },
+            { status: 403 }
+          ),
+        };
+      }
+    }
+
     const role = (decoded.role || "EMPLOYEE") as Role;
     const permissions = getRolePermissions(role);
 

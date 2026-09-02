@@ -34,6 +34,49 @@ export default function DailyWorkPage() {
 
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
 
+  // Evidence Upload State
+  const [isUploadingEvidence, setIsUploadingEvidence] = useState(false);
+  const [evidenceUrl, setEvidenceUrl] = useState("");
+  const [evidenceName, setEvidenceName] = useState("");
+  const [evidenceType, setEvidenceType] = useState("");
+  const [evidenceSize, setEvidenceSize] = useState<number>(0);
+
+  const handleEvidenceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 15 * 1024 * 1024) {
+      alert("File size exceeds maximum allowed limit of 15 MB.");
+      return;
+    }
+
+    try {
+      setIsUploadingEvidence(true);
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("category", "work-evidence");
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: fd,
+      });
+
+      const json = await res.json();
+      if (json.success && json.url) {
+        setEvidenceUrl(json.url);
+        setEvidenceName(file.name);
+        setEvidenceType(file.type || "application/octet-stream");
+        setEvidenceSize(file.size);
+      } else {
+        alert(json.error || "Failed to upload evidence file.");
+      }
+    } catch (err: any) {
+      alert("Upload error: " + err.message);
+    } finally {
+      setIsUploadingEvidence(false);
+    }
+  };
+
   useEffect(() => {
     setUpdates(getStoredWorkUpdates());
 
@@ -57,6 +100,7 @@ export default function DailyWorkPage() {
             achievements: item.achievements || "",
             blockers: item.blockers || "",
             tomorrowPlan: item.tomorrowPlan || "",
+            workEvidence: item.workEvidence || [],
             status: item.status || "PENDING",
             rating: item.rating || 5,
             managerRemarks: item.managerRemarks || "",
@@ -80,16 +124,25 @@ export default function DailyWorkPage() {
     e.preventDefault();
 
     const today = new Date().toISOString().split("T")[0];
-    addStoredWorkUpdate({
+    const payload = {
       ...formData,
       date: today,
-    });
+      evidenceUrl: evidenceUrl || undefined,
+      evidenceName: evidenceName || undefined,
+      evidenceType: evidenceType || undefined,
+      evidenceSize: evidenceSize || undefined,
+      workEvidence: evidenceUrl
+        ? [{ fileName: evidenceName, fileType: evidenceType, fileSize: evidenceSize, fileUrl: evidenceUrl }]
+        : [],
+    };
+
+    addStoredWorkUpdate(payload);
 
     try {
       await fetch("/api/daily-work", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
     } catch (err: any) {
       console.warn("MySQL save fallback:", err.message);
@@ -107,6 +160,10 @@ export default function DailyWorkPage() {
       driveLinks: "",
       screenshots: "",
     }));
+    setEvidenceUrl("");
+    setEvidenceName("");
+    setEvidenceType("");
+    setEvidenceSize(0);
 
     setTimeout(() => setSubmittedSuccess(false), 3500);
   };
@@ -254,13 +311,62 @@ export default function DailyWorkPage() {
               rows={3}
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Detail specific feature implementations, bug fixes, refactoring..."
+              placeholder="Detail specific feature implementations, backend API work, database optimization, documentation..."
               className="w-full rounded-xl border border-slate-200 dark:border-cyan-900/60 bg-slate-50 dark:bg-slate-950 p-3 text-xs text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none font-medium"
             />
           </div>
 
+          {/* Attach Work Evidence / Document */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-cyan-200/80 mb-1">
+              Attach Work Evidence / Document (Optional — PDF, DOCX, XLSX, CSV, TXT, PNG, JPG, WebP)
+            </label>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-3">
+                <label className="cursor-pointer bg-cyan-900/40 hover:bg-cyan-900/60 text-cyan-200 font-extrabold text-xs px-3.5 py-2 rounded-xl border border-cyan-700/60 transition flex items-center gap-2 shrink-0">
+                  <span>📎 {isUploadingEvidence ? "Uploading Evidence..." : "Attach File"}</span>
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,image/*"
+                    onChange={handleEvidenceUpload}
+                    disabled={isUploadingEvidence}
+                    className="hidden"
+                  />
+                </label>
+                <input
+                  type="text"
+                  value={evidenceUrl}
+                  onChange={(e) => setEvidenceUrl(e.target.value)}
+                  placeholder="Cloudinary HTTPS URL or upload evidence file above..."
+                  className="w-full rounded-xl border border-slate-200 dark:border-cyan-900/60 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-xs font-mono text-slate-800 dark:text-cyan-300 focus:border-cyan-500 focus:outline-none"
+                />
+              </div>
+              {evidenceName && (
+                <div className="text-[11px] font-bold text-cyan-400 flex items-center justify-between bg-cyan-950/60 border border-cyan-800/60 px-3 py-1.5 rounded-xl">
+                  <span>✓ Evidence Attached: <span className="underline">{evidenceName}</span> ({((evidenceSize || 0) / 1024).toFixed(1)} KB)</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEvidenceUrl("");
+                      setEvidenceName("");
+                      setEvidenceType("");
+                      setEvidenceSize(0);
+                    }}
+                    className="text-rose-400 hover:text-rose-300 font-black ml-2"
+                  >
+                    ✕ Remove
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="flex justify-end pt-2">
-            <button type="submit" className="bg-cyan-600 hover:bg-cyan-700 text-white font-extrabold text-xs px-6 py-2.5 rounded-xl shadow-md transition border border-cyan-400">
+            <button
+              type="submit"
+              disabled={isUploadingEvidence}
+              className="bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white font-extrabold text-xs px-6 py-2.5 rounded-xl shadow-md transition border border-cyan-400"
+            >
               Submit EOD Report Permanently
             </button>
           </div>

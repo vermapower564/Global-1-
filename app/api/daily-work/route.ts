@@ -24,7 +24,11 @@ export async function GET(request: NextRequest) {
     const filterYear = searchParams.get("year");
     const search = searchParams.get("search") || "";
 
-    const isManager = EVALUATOR_ROLES.includes(authUser.role);
+    const userRole = (authUser.role || "").toUpperCase();
+    const isHrOrAdmin = ["SUPER_ADMIN", "DIRECTOR", "ADMIN_HR", "HR"].includes(userRole);
+    const isTeamLeader = userRole === "TEAM_LEADER";
+    const isProjectManager = userRole === "PROJECT_MANAGER";
+    const isManager = isHrOrAdmin || isTeamLeader || isProjectManager;
 
     let sql = `
       SELECT 
@@ -38,10 +42,33 @@ export async function GET(request: NextRequest) {
     `;
     const params: any[] = [];
 
-    // Worker role visibility scoping
-    if (!isManager) {
-      sql += ` AND w.userId = ?`;
-      params.push(authUser.id);
+    // RBAC & Scope Scoping:
+    // - Regular Employee: Strictly sees own updates
+    // - Team Leader / PM: Sees own + updates of members in their team/projects
+    // - HR / Admin: Sees all or filtered
+    let teamMemberIds: string[] = [];
+    if (isTeamLeader || isProjectManager) {
+      const managedTeamRows = await queryDb<any[]>(
+        `SELECT B AS memberId FROM _assignedstaffprojects WHERE A IN (
+           SELECT id FROM project WHERE teamLeaderId = ? OR projectManagerId = ?
+         )
+         UNION
+         SELECT id AS memberId FROM user WHERE managerId = ?`,
+        [authUser.id, authUser.id, authUser.id]
+      );
+      teamMemberIds = (managedTeamRows || []).map((m) => m.memberId).filter(Boolean);
+    }
+
+    if (!isHrOrAdmin) {
+      if (isTeamLeader || isProjectManager) {
+        const allowedIds = Array.from(new Set([authUser.id, ...teamMemberIds]));
+        const placeholders = allowedIds.map(() => "?").join(",");
+        sql += ` AND w.userId IN (${placeholders})`;
+        params.push(...allowedIds);
+      } else {
+        sql += ` AND w.userId = ?`;
+        params.push(authUser.id);
+      }
     } else {
       if (filterUserId) {
         sql += ` AND w.userId = ?`;
@@ -91,36 +118,78 @@ export async function GET(request: NextRequest) {
 
     const rawRows = await queryDbCached<any[]>(sql, params, 5);
 
-    const updates = (rawRows || []).map((r) => ({
-      id: r.id,
-      userId: r.userId,
-      date: r.date,
-      projectName: r.projectName,
-      clientName: r.clientName,
-      startTime: r.startTime,
-      endTime: r.endTime,
-      hoursWorked: r.hoursWorked,
-      priority: r.priority,
-      description: r.description,
-      achievements: r.achievements,
-      blockers: r.blockers,
-      tomorrowPlan: r.tomorrowPlan,
-      gitCommits: r.gitCommits,
-      driveLinks: r.driveLinks,
-      screenshots: r.screenshots,
-      status: r.status,
-      rating: r.rating,
-      managerRemarks: r.managerRemarks,
-      submittedAt: r.submittedAt,
-      user: {
-        id: r.user_id,
-        employeeId: r.user_employeeId,
-        name: r.user_name,
-        email: r.user_email,
-        role: r.user_role,
-        department: r.department_name ? { name: r.department_name } : null,
-      },
-    }));
+    // Batch fetch associated work evidence documents
+    const workIds = (rawRows || []).map((r) => r.id);
+    let evidenceMap: { [dwId: string]: any[] } = {};
+    if (workIds.length > 0) {
+      const placeholders = workIds.map(() => "?").join(",");
+      const evidenceRows = await queryDb<any[]>(
+        `SELECT id, dailyWorkUpdateId, fileName, fileType, fileSize, fileUrl, uploadedByUserId, uploadedAt 
+         FROM workevidence 
+         WHERE dailyWorkUpdateId IN (${placeholders})
+         ORDER BY uploadedAt ASC`,
+        workIds
+      );
+      (evidenceRows || []).forEach((ev) => {
+        if (!evidenceMap[ev.dailyWorkUpdateId]) evidenceMap[ev.dailyWorkUpdateId] = [];
+        evidenceMap[ev.dailyWorkUpdateId].push(ev);
+      });
+    }
+
+    const updates = (rawRows || []).map((r) => {
+      let workEvList = evidenceMap[r.id] || [];
+      // Fallback to direct evidence columns if workevidence table row isn't created yet
+      if (workEvList.length === 0 && r.evidenceUrl) {
+        workEvList = [
+          {
+            id: `EV-${r.id}`,
+            dailyWorkUpdateId: r.id,
+            fileName: r.evidenceName || "work-evidence-document",
+            fileType: r.evidenceType || "application/octet-stream",
+            fileSize: r.evidenceSize || 0,
+            fileUrl: r.evidenceUrl,
+            uploadedByUserId: r.userId,
+            uploadedAt: r.submittedAt,
+          },
+        ];
+      }
+
+      return {
+        id: r.id,
+        userId: r.userId,
+        date: r.date,
+        projectName: r.projectName,
+        clientName: r.clientName,
+        startTime: r.startTime,
+        endTime: r.endTime,
+        hoursWorked: r.hoursWorked,
+        priority: r.priority,
+        description: r.description,
+        achievements: r.achievements,
+        blockers: r.blockers,
+        tomorrowPlan: r.tomorrowPlan,
+        gitCommits: r.gitCommits,
+        driveLinks: r.driveLinks,
+        screenshots: r.screenshots,
+        evidenceUrl: r.evidenceUrl,
+        evidenceName: r.evidenceName,
+        evidenceType: r.evidenceType,
+        evidenceSize: r.evidenceSize,
+        workEvidence: workEvList,
+        status: r.status,
+        rating: r.rating,
+        managerRemarks: r.managerRemarks,
+        submittedAt: r.submittedAt,
+        user: {
+          id: r.user_id,
+          employeeId: r.user_employeeId,
+          name: r.user_name,
+          email: r.user_email,
+          role: r.user_role,
+          department: r.department_name ? { name: r.department_name } : null,
+        },
+      };
+    });
 
     return NextResponse.json({
       success: true,
@@ -143,8 +212,11 @@ export async function POST(request: NextRequest) {
       return authResult.response || NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
     }
 
+    const authUser = authResult.user;
     const body = await request.json().catch(() => ({}));
     const {
+      projectId,
+      taskId,
       projectName,
       clientName,
       startTime,
@@ -158,55 +230,193 @@ export async function POST(request: NextRequest) {
       gitCommits,
       driveLinks,
       screenshots,
+      evidenceUrl,
+      evidenceName,
+      evidenceType,
+      evidenceSize,
+      workEvidence,
     } = body;
 
-    if (!description && !projectName) {
+    if (!description && !projectName && !projectId && !taskId) {
       return NextResponse.json(
-        { success: false, error: "Project name and work description are required." },
+        { success: false, error: "Project, task, or work description is required." },
         { status: 400 }
       );
     }
 
-    const updateId = `DWU-${authResult.user.id}-${Date.now()}`;
+    // Resolve optional project and task titles
+    let finalProjectName = projectName || "OMS Operations";
+    let finalProjectId = projectId || null;
+    let finalTaskId = taskId || null;
+
+    if (finalProjectId) {
+      const projRows = await queryDb<any[]>(`SELECT id, projectTitle FROM project WHERE id = ? LIMIT 1`, [finalProjectId]);
+      if (projRows && projRows.length > 0) {
+        finalProjectName = projRows[0].projectTitle;
+      }
+    }
+
+    if (finalTaskId) {
+      const taskRows = await queryDb<any[]>(`SELECT id, title, projectId FROM task WHERE id = ? LIMIT 1`, [finalTaskId]);
+      if (taskRows && taskRows.length > 0) {
+        if (!finalProjectId && taskRows[0].projectId) {
+          finalProjectId = taskRows[0].projectId;
+        }
+      }
+    }
+
+    const updateId = `DWU-${authUser.id}-${Date.now()}`;
     const parsedHours = parseFloat(hoursWorked) || 8.0;
 
-    await queryDb(
-      `INSERT INTO dailyworkupdate (
-        id, userId, date, hoursWorked, description, achievements, blockers, tomorrowPlan,
-        status, priority, projectName, clientName, startTime, endTime, gitCommits, driveLinks, screenshots, submittedAt
-      ) VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-      [
-        updateId,
-        authResult.user.id,
-        parsedHours,
-        description || "Daily Task Work Log",
-        achievements || null,
-        blockers || null,
-        tomorrowPlan || null,
-        priority === "HIGH" ? "HIGH" : priority === "LOW" ? "LOW" : "MEDIUM",
-        projectName || "OMS Operations",
-        clientName || "Internal Enterprise",
-        startTime || "09:00 AM",
-        endTime || "06:00 PM",
-        gitCommits || null,
-        driveLinks || null,
-        screenshots || null,
-      ]
-    );
+    // Resolve primary attachment metadata & validate persistent storage URL format
+    const mainEvidence = Array.isArray(workEvidence) && workEvidence.length > 0 ? workEvidence[0] : null;
+    const primaryUrl = evidenceUrl || mainEvidence?.fileUrl || null;
+    const primaryName = evidenceName || mainEvidence?.fileName || null;
+    const primaryType = evidenceType || mainEvidence?.fileType || null;
+    const primarySize = Number(evidenceSize || mainEvidence?.fileSize) || null;
+
+    // File URL persistence check: Reject local file system paths (e.g., C:\fakepath, blob:, file://)
+    if (primaryUrl) {
+      const lowerUrl = primaryUrl.toLowerCase();
+      if (lowerUrl.includes("fakepath") || lowerUrl.startsWith("file:") || lowerUrl.startsWith("blob:")) {
+        return NextResponse.json(
+          { success: false, error: "Invalid evidence file: Temporary local browser paths are not permitted. Files must be stored via persistent storage." },
+          { status: 400 }
+        );
+      }
+    }
+
+    // 1. Insert into dailyworkupdate
+    try {
+      await queryDb(
+        `INSERT INTO dailyworkupdate (
+          id, userId, date, hoursWorked, description, achievements, blockers, tomorrowPlan,
+          status, priority, projectName, clientName, startTime, endTime, gitCommits, driveLinks, screenshots,
+          evidenceUrl, evidenceName, evidenceType, evidenceSize, projectId, taskId, submittedAt
+        ) VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [
+          updateId,
+          authUser.id,
+          parsedHours,
+          description || "Daily Task Work Log",
+          achievements || null,
+          blockers || null,
+          tomorrowPlan || null,
+          priority === "HIGH" ? "HIGH" : priority === "LOW" ? "LOW" : "MEDIUM",
+          finalProjectName,
+          clientName || "Internal Enterprise",
+          startTime || "09:00 AM",
+          endTime || "06:00 PM",
+          gitCommits || null,
+          driveLinks || null,
+          screenshots || null,
+          primaryUrl,
+          primaryName,
+          primaryType,
+          primarySize,
+          finalProjectId,
+          finalTaskId,
+        ]
+      );
+    } catch (insertErr: any) {
+      // Fallback for schemas without taskId column
+      await queryDb(
+        `INSERT INTO dailyworkupdate (
+          id, userId, date, hoursWorked, description, achievements, blockers, tomorrowPlan,
+          status, priority, projectName, clientName, startTime, endTime, gitCommits, driveLinks, screenshots,
+          evidenceUrl, evidenceName, evidenceType, evidenceSize, projectId, submittedAt
+        ) VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [
+          updateId,
+          authUser.id,
+          parsedHours,
+          description || "Daily Task Work Log",
+          achievements || null,
+          blockers || null,
+          tomorrowPlan || null,
+          priority === "HIGH" ? "HIGH" : priority === "LOW" ? "LOW" : "MEDIUM",
+          finalProjectName,
+          clientName || "Internal Enterprise",
+          startTime || "09:00 AM",
+          endTime || "06:00 PM",
+          gitCommits || null,
+          driveLinks || null,
+          screenshots || null,
+          primaryUrl,
+          primaryName,
+          primaryType,
+          primarySize,
+          finalProjectId,
+        ]
+      );
+    }
+
+    // 2. Insert records into workevidence table for all attached evidence documents
+    const attachmentsToSave = Array.isArray(workEvidence) && workEvidence.length > 0
+      ? workEvidence
+      : primaryUrl
+      ? [{ fileName: primaryName || "work-evidence", fileType: primaryType || "application/octet-stream", fileSize: primarySize || 0, fileUrl: primaryUrl }]
+      : [];
+
+    for (const att of attachmentsToSave) {
+      if (att.fileUrl) {
+        const evId = `WE-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`.toUpperCase();
+        await queryDb(
+          `INSERT INTO workevidence (id, dailyWorkUpdateId, fileName, fileType, fileSize, fileUrl, uploadedByUserId, uploadedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, NOW(3))`,
+          [
+            evId,
+            updateId,
+            att.fileName || "work-evidence-document",
+            att.fileType || "application/octet-stream",
+            Number(att.fileSize) || 0,
+            att.fileUrl,
+            authUser.id,
+          ]
+        );
+      }
+    }
 
     clearQueryCache("dailyworkupdate");
 
+    // 3. Send Notification to Manager / Team Leader if evidence attached
+    if (attachmentsToSave.length > 0) {
+      try {
+        const managerRows = await queryDb<any[]>(
+          `SELECT managerId FROM user WHERE id = ? LIMIT 1`,
+          [authUser.id]
+        );
+        const managerId = managerRows && managerRows[0]?.managerId;
+        if (managerId) {
+          const notifId = `NOTIF-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`.toUpperCase();
+          await queryDb(
+            `INSERT INTO notification (id, userId, title, message, type, isRead, linkUrl, createdAt)
+             VALUES (?, ?, ?, ?, 'INFO', 0, '/daily-work/approvals', NOW(3))`,
+            [
+              notifId,
+              managerId,
+              `📎 Work Evidence Submitted: ${authUser.email.split("@")[0]}`,
+              `${authUser.email.split("@")[0]} submitted a Daily Work Update for project "${projectName || "General"}" with ${attachmentsToSave.length} work-evidence document(s) attached.`,
+            ]
+          );
+        }
+      } catch (notifErr) {
+        console.warn("Failed sending evidence notification:", notifErr);
+      }
+    }
+
     await logAuditEvent(
-      authResult.user.id,
+      authUser.id,
       "WORK_UPDATE_SUBMITTED",
-      `Submitted daily work report for project: ${projectName || "General"}`
+      `Submitted daily work report for project: ${projectName || "General"} with ${attachmentsToSave.length} evidence file(s)`
     );
 
     return NextResponse.json(
       {
         success: true,
-        message: "✓ Daily Work EOD update saved to TiDB Cloud!",
+        message: "✓ Daily Work EOD update and work evidence saved to database!",
         id: updateId,
+        hasEvidence: attachmentsToSave.length > 0,
       },
       { status: 201 }
     );
@@ -226,7 +436,8 @@ export async function PATCH(request: NextRequest) {
       return authResult.response || NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
     }
 
-    const isManager = EVALUATOR_ROLES.includes(authResult.user.role);
+    const userRole = (authResult.user.role || "").toUpperCase();
+    const isManager = EVALUATOR_ROLES.includes(userRole);
     if (!isManager) {
       return NextResponse.json({ success: false, error: "Forbidden: Only managers and team leaders can evaluate work updates." }, { status: 403 });
     }

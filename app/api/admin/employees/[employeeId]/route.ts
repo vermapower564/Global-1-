@@ -480,6 +480,10 @@ async function handleUpdateEmployee(
       updateFields.push("joiningDate = ?");
       updateValues.push(new Date(joiningDate));
     }
+    if (body.unlockAccount || body.resetLockout || body.action === "UNLOCK_ACCOUNT") {
+      updateFields.push("failedLoginAttempts = 0");
+      updateFields.push("lockoutUntil = NULL");
+    }
     if (emergencyContact !== undefined) {
       updateFields.push("emergencyContact = ?");
       updateValues.push(emergencyContact.trim());
